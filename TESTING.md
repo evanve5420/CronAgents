@@ -67,6 +67,8 @@ Test config loading and validation:
 - Unknown schedule type rejected with clear message
 - Malformed JSON produces a parse error
 - Optional fields default correctly (`copilotPath`, `maxRunHistory`, `retentionDays`)
+- Per-agent execution policy defaults apply correctly (`timeout: 10m`, `skipOnBattery: false`, `retryCount: 0`)
+- Reject invalid per-agent execution policy values (negative `retryCount`, malformed `timeout`, non-boolean `skipOnBattery`)
 - `retentionDays` and `maxRunHistory` validated as positive integers (or 0 for unlimited/disabled)
 - JSON Schema file validates against the JSON Schema meta-schema
 
@@ -113,6 +115,9 @@ Test `Invoke-ScheduledAgent.ps1` end-to-end with the mock:
 - Mock invocation log shows correct flags: `--agent`, `--silent`, `--allow-all-tools`
 - Passes `--deny-tool` when agent config specifies tool restrictions
 - Passes `--add-dir` when agent has extra trusted directories
+- Enforces per-agent `timeout` and marks timed-out runs clearly in `meta.json`
+- Retries failed runs up to `retryCount` additional times and records retry attempts in metadata/logs
+- Does not start agents with `skipOnBattery: true` while the system is on battery power
 - Handles non-zero exit code gracefully (marks run as failed in `meta.json`)
 - Updates `state.json` with new last-run timestamp and any scheduler bookkeeping needed to prevent duplicate queueing
 
@@ -132,23 +137,40 @@ Test the feedback lifecycle with the mock:
 Test all `chronagents.ps1` subcommands:
 
 - `run <agent>` invokes `Invoke-ScheduledAgent.ps1` with correct args; rejects unknown agent names
+- `pause` (no argument) sets `schedulerPaused: true` in `state.json`
 - `pause <agent>` sets `enabled: false` in `state.json`; rejects unknown agents
+- `resume` (no argument) clears global pause
 - `resume <agent>` sets `enabled: true` in `state.json`
+- `status` shows global pause state prominently when active
 - `status` lists agents with enabled/disabled state, next scheduled run time, pending feedback count
 - `list` shows all configured agents with schedule type, parameters, and next scheduled run
+- `status` or run detail surfaces skipped-on-battery, timed-out, and retried outcomes clearly
 - `feedback <agent>` identifies the most recent unprocessed `feedback.md`; reports "no pending feedback" when none
 - `evaluate` triggers feedback evaluator for all pending feedback; reports "nothing to evaluate" when none
+- `doctor` reports pass/warn/fail for task count, config validity, state integrity
+
+**Interactive menu** (no-argument mode):
+- Launching `chronagents.ps1` with no subcommand enters the interactive menu
+- Each numbered option dispatches to the correct subcommand logic
+- Layered menus (e.g. agent selection for ad-hoc run, global vs. per-agent pause) navigate correctly
+- Invalid input re-prompts without crashing
+- Option 7 / Ctrl+C exits cleanly
 
 ### SchedulerLoop.Tests.ps1
 
 Test the single-heartbeat scheduler behavior:
 
 - One scheduler tick evaluates all configured agents from the same scheduler wake cycle
+- When `schedulerPaused: true`, no agents are evaluated or enqueued regardless of due state
+- Per-agent `enabled: false` skips that agent while others still run normally
+- Global pause + per-agent pause interact correctly: resuming global pause does not un-pause individually paused agents
 - Multiple due agents in the same slot are queued from one tick, not from separate timers
 - Agents run sequentially in config order when more than one matches the same slot
 - A second check in the same due window does not enqueue the same agent twice
 - If an agent is still running when its next slot arrives, the scheduler coalesces or skips the duplicate according to policy rather than stacking another run
 - Restarting the scheduler does not duplicate a run when prior due-state bookkeeping is already recorded
+- Agents with `skipOnBattery: true` remain due-but-unstarted until AC power returns, or are marked skipped according to policy
+- Retries stay inside the same queued work item rather than creating new scheduled entries
 
 ### RetentionCleanup.Tests.ps1
 
@@ -182,6 +204,28 @@ This does NOT apply to unit or integration tests — those use the deterministic
 - Run `Invoke-ScheduledAgent.ps1` once against real Copilot CLI, verify output artifacts exist and are non-empty
 - Write feedback to the run's `feedback.md`, trigger evaluator, verify `feedback-result.md` written and `feedbackProcessed` set to true
 - Clean up temp directory
+
+---
+
+## Test isolation policy
+
+Tests must never interfere with a real CronAgents installation running on the same machine.
+
+- **Task Scheduler**: Tests that touch Task Scheduler must use a distinct task path (`\CronAgents-Test\`) and a distinct task name (`CronAgents-Test`), never the production `\CronAgents\CronAgents` entry. Teardown must always unregister test tasks, even on failure (use `try/finally`).
+- **Config and state**: All tests operate in a temp directory with their own `chronagents.json` and `state.json`. They must never read or write the user's real config or state files.
+- **Run directories**: Tests create run output under the temp directory, never under the user's real `.chronagents/runs/`.
+- **Cleanup**: Every test that creates OS-level side effects (tasks, temp dirs, processes) must clean up in a `finally` block or Pester `AfterAll`/`AfterEach` so failures don't leave artifacts behind.
+
+### HealthCheck.Tests.ps1
+
+Test `Test-CronAgentsHealth.ps1` / `chronagents.ps1 doctor`:
+
+- Reports pass when exactly one task exists under `\CronAgents-Test\` with correct definition
+- Reports warning when zero tasks exist (not installed)
+- Reports error when more than one task exists (accumulation bug)
+- Reports error when task definition doesn't match expected action/trigger
+- Reports pass for valid config+state, error for corrupted `state.json`, error for invalid config
+- All tests use the `\CronAgents-Test\` task path and clean up after themselves
 
 ---
 
