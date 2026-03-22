@@ -1,0 +1,4 @@
+# Runtime data (all branches)
+.chronagents/runs/
+.chronagents/state.json
+.chronagents/scheduler.log

@@ -82,10 +82,20 @@ CronAgents/
 │   ├── fixtures/                             ← sample configs, run data, feedback files
 │   └── mocks/
 │       └── copilot.ps1                       ← mock Copilot CLI for testing
+├── docs/                                     ← developer/design docs (not user-facing)
+│   ├── PLAN.md                               ← this file — master build plan
+│   ├── TESTING.md                            ← test specifications
+│   ├── AGENT-VERSIONING.md                   ← git branch model design
+│   ├── FUTURE.md                             ← roadmap beyond day 0
+│   ├── SCRIPT-MODE.md                        ← future script mode design
+│   ├── UX-REQUIREMENTS.md                    ← future HTML dashboard requirements
+│   └── LANDSCAPE.md                          ← competitive intelligence (gitignored)
 ├── .gitignore
-├── README.md
+├── README.md                                 ← user-facing: quickstart, config reference, usage
 └── LICENSE
 ```
+
+**Documentation split:** User-facing documentation lives in `README.md` at the repo root — this is what someone reads when they clone the project and want to get started (quickstart, config reference, CLI usage, troubleshooting). Developer/design documentation lives in `docs/` — architecture decisions, build plan, test specs, roadmap. This separation ensures users aren't overwhelmed by internals when they just want to use the tool, while contributors have full design context when they need it.
 
 `.github` is reserved for Copilot customizations that apply when *developing this repo* (workspace instructions, prompts). Scaffold-internal agents (feedback evaluator, dashboard summarizer) and their skills live in `scheduler/agents/` and `scheduler/skills/` because they are product components of the CronAgents runtime, not repo development tools. The scheduler passes `--add-dir=scheduler/` when invoking them so Copilot CLI can resolve them. User-defined scheduled workload agents live in `.chronagents/agents/` (gitignored), user-global directories like `C:\Users\<user>\.copilot`, or both.
 
@@ -338,13 +348,17 @@ Feedback is always a **separate file per run**, never part of the dashboard.
 
 Documentation is a day-0 deliverable, not an afterthought. Every feature must be documented as it's built — a user who clones this repo should be able to set up, configure, and use CronAgents without reading the source code.
 
+Two audiences, two locations:
+- **User-facing** (`README.md`) — at the repo root. Quickstart, config reference, CLI usage, troubleshooting. Written for someone who cloned the repo and wants to use it.
+- **Developer/design** (`docs/`) — build plan, test specs, architecture decisions, roadmap. Written for contributors and agents building the project.
+
 **Step 13** — `README.md` — Quickstart (install, configure, first agent, first run), full config reference (every field, type, default, example), feedback system explanation, branching/sync workflow overview, CLI command reference, troubleshooting section.
 
-**Step 14** — `copilot-instructions.md` — Workspace instructions for extending the project (core principles, project structure, test enforcement).
+**Step 14** — `.github/copilot-instructions.md` — Workspace instructions for extending the project (core principles, no-duplication rule, project structure, test enforcement).
 
 **Step 15** — Example agent files (`.example` suffix) — kept as templates under `templates/agents/`. Users copy them into `.chronagents/agents/` or a user-global Copilot directory to activate. Each example includes inline comments explaining every frontmatter field and prompt pattern.
 
-**Step 16** — `LANDSCAPE.md` — market map, competitor assessment, and positioning notes so the project README and roadmap stay grounded in what already exists.
+**Step 16** — `docs/LANDSCAPE.md` — market map, competitor assessment, and positioning notes so the project README and roadmap stay grounded in what already exists. Gitignored — development context only, not for distribution.
 
 **Step 17** — Inline help — Every `chronagents.ps1` subcommand supports `--help` with usage, description, and examples. The TUI menu shows context-sensitive hints.
 
