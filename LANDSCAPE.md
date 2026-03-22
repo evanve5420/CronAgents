@@ -1,12 +1,12 @@
-# ChronAgents Landscape Assessment
+Ok# CronAgents Landscape Assessment
 
 ## Executive Summary
 
-ChronAgents does not enter an empty market. Public projects already exist for autonomous coding loops, scheduled agent runtimes, assistant platforms with automation, and agent workstations with recurring tasks.
+CronAgents does not enter an empty market. Public projects already exist for autonomous coding loops, scheduled agent runtimes, assistant platforms with automation, and agent workstations with recurring tasks.
 
 The opportunity is narrower and more credible than "scheduled agents do not exist." The more defensible position is:
 
-ChronAgents is a lightweight, repo-local, Copilot-customization-native scheduler for recurring agent runs, markdown dashboarding, and feedback-driven self-maintenance.
+CronAgents is a lightweight, repo-local, Copilot-customization-native scheduler for recurring agent runs, markdown dashboarding, and feedback-driven self-maintenance.
 
 That combination is still uncommon.
 
@@ -27,7 +27,7 @@ What they solve:
 - Task or PRD progression
 - Fresh-session loops with file or git-based state
 
-Why they are not ChronAgents:
+Why they are not CronAgents:
 - They are completion loops, not recurring schedulers
 - They are centered on project delivery automation, not ongoing scheduled maintenance tasks
 - Feedback is typically operational or review-gate oriented, not a first-class repo-maintainer loop for agent definitions
@@ -64,7 +64,7 @@ What they solve:
 - Rich local IDE or desktop surfaces
 - Remote control, productivity tools, and broader runtime management
 
-Why they are not ChronAgents:
+Why they are not CronAgents:
 - They are products/platforms, not minimal scaffolding
 - They introduce substantial UI, runtime, and operational surface area
 - Their scheduler is one feature inside a much larger system
@@ -81,7 +81,7 @@ What they solve:
 - Long-lived interactive agent experiences
 - Automation as one feature among many
 
-Why they are not ChronAgents:
+Why they are not CronAgents:
 - Their center of gravity is the assistant platform, not repo-local scheduled execution
 - They require much broader control-plane or app-level concepts
 - They are not intended as lightweight scaffolding for Copilot repo automation
@@ -120,7 +120,7 @@ Why they are not ChronAgents:
 
 ## Positioning Recommendation
 
-ChronAgents should avoid claiming that scheduled agents do not exist. That statement is no longer credible after a broader market scan.
+CronAgents should avoid claiming that scheduled agents do not exist. That statement is no longer credible after a broader market scan.
 
 The project should instead claim:
 
@@ -133,11 +133,11 @@ The project should instead claim:
 
 ## Suggested One-Sentence Pitch
 
-ChronAgents is a lightweight, repo-local scheduler for GitHub Copilot agents that runs recurring workflows, writes markdown dashboards, and uses human feedback to improve the agent setup over time.
+CronAgents is a lightweight, repo-local scheduler for GitHub Copilot agents that runs recurring workflows, writes markdown dashboards, and uses human feedback to improve the agent setup over time.
 
 ## Suggested Anti-Pitch
 
-ChronAgents is not trying to be:
+CronAgents is not trying to be:
 
 - a generic agent runtime like AgentUse
 - a LangChain service wrapper like LangChain Runner

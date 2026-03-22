@@ -1,6 +1,6 @@
-# Testing Plan — ChronAgents
+# Testing Plan — CronAgents
 
-Detailed test strategy for the ChronAgents scheduler, CLI wrapper, feedback system, and dashboard. All tests use **Pester** (ships with PowerShell, zero install).
+Detailed test strategy for the CronAgents scheduler, CLI wrapper, feedback system, and dashboard. All tests use **Pester** (ships with PowerShell, zero install).
 
 Referenced from [PLAN.md](PLAN.md) Phase 6.
 

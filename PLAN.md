@@ -1,8 +1,8 @@
-# Plan: ChronAgents — Scheduled Copilot Agent Scaffolding
+# Plan: CronAgents — Scheduled Copilot Agent Scaffolding
 
 A reusable scaffolding that runs Copilot CLI agents on configurable schedules, reports results via a live dashboard markdown file, collects human feedback, and includes a self-improving feedback agent that edits agent/skill/memory files. PowerShell scheduler, JSON config, Copilot CLI invocation.
 
-**Positioning:** This is not an empty market, but the nearby projects cluster into different shapes. Ralph-family projects focus on loop-until-complete autonomous coding. AgentUse and LangChain Runner support scheduled or triggered agents, but they are generic runtimes rather than Copilot-first repo scaffolds. OpenClaw, NanoClaw, Khoj, and Dorabot are assistant platforms where scheduling is one feature among many. ChronAgents is positioned as a lightweight, repo-local, Copilot-customization-native scheduler with markdown dashboarding and a first-class human feedback loop.
+**Positioning:** This is not an empty market, but the nearby projects cluster into different shapes. Ralph-family projects focus on loop-until-complete autonomous coding. AgentUse and LangChain Runner support scheduled or triggered agents, but they are generic runtimes rather than Copilot-first repo scaffolds. OpenClaw, NanoClaw, Khoj, and Dorabot are assistant platforms where scheduling is one feature among many. CronAgents is positioned as a lightweight, repo-local, Copilot-customization-native scheduler with markdown dashboarding and a first-class human feedback loop.
 
 **High-level differentiation:**
 - Copilot-first, using repo customization primitives like `.agent.md`, `SKILL.md`, prompts, and workspace instructions
@@ -19,7 +19,7 @@ A reusable scaffolding that runs Copilot CLI agents on configurable schedules, r
 **Step 1** — Create the directory layout:
 
 ```
-ChronAgents/
+CronAgents/
 ├── .github/
 │   ├── copilot-instructions.md               ← workspace instructions for repo development
 │   └── prompts/
@@ -29,7 +29,7 @@ ChronAgents/
 │       ├── daily-review.agent.md.example
 │       └── weekly-deps.agent.md.example
 ├── scheduler/
-│   ├── Start-ChronAgents.ps1                 ← main entry point
+│   ├── Start-CronAgents.ps1                  ← main entry point
 │   ├── Invoke-ScheduledAgent.ps1             ← runs one agent via Copilot CLI
 │   ├── Update-Dashboard.ps1                  ← regenerates dashboard.md
 │   ├── agents/                               ← scaffold-internal agents (committed)
@@ -72,7 +72,7 @@ ChronAgents/
 └── LICENSE
 ```
 
-`.github` is reserved for Copilot customizations that apply when *developing this repo* (workspace instructions, prompts). Scaffold-internal agents (feedback evaluator, dashboard summarizer) and their skills live in `scheduler/agents/` and `scheduler/skills/` because they are product components of the ChronAgents runtime, not repo development tools. The scheduler passes `--add-dir=scheduler/` when invoking them so Copilot CLI can resolve them. User-defined scheduled workload agents live in `.chronagents/agents/` (gitignored), user-global directories like `C:\Users\<user>\.copilot`, or both.
+`.github` is reserved for Copilot customizations that apply when *developing this repo* (workspace instructions, prompts). Scaffold-internal agents (feedback evaluator, dashboard summarizer) and their skills live in `scheduler/agents/` and `scheduler/skills/` because they are product components of the CronAgents runtime, not repo development tools. The scheduler passes `--add-dir=scheduler/` when invoking them so Copilot CLI can resolve them. User-defined scheduled workload agents live in `.chronagents/agents/` (gitignored), user-global directories like `C:\Users\<user>\.copilot`, or both.
 
 **Step 2** — `.gitignore` should ignore repo-local workload agent definitions and runtime data by default so adopters can keep their scheduled workload agents untracked. Scaffold-internal agents under `scheduler/agents/` are committed. Examples and templates remain committed. Run data (`.chronagents/runs/`) is also ignored.
 
@@ -121,7 +121,7 @@ Resolution model (simplified, leverages native Copilot CLI resolution):
 
   The dashboard-summarizer agent lives in `scheduler/agents/dashboard-summarizer.agent.md` and ships with the scaffold alongside the feedback evaluator. It has `tools: [read]` only — no edit access.
 
-**Step 8** — `Start-ChronAgents.ps1` — Main loop. Reads config, validates, polls every 60s. Each tick follows this order:
+**Step 8** — `Start-CronAgents.ps1` — Main loop. Reads config, validates, polls every 60s. Each tick follows this order:
 
   1. **Feedback sweep** — run the feedback evaluator for all pending feedback (non-empty `feedback.md` + `feedbackProcessed: false`). This ensures agent/skill edits from human feedback take effect *before* the next workload runs.
   2. **Scheduled agents** — check `Test-AgentDue` per agent, invoke due agents. If `autoFeedback` is true, also trigger the feedback evaluator immediately after each individual run (for self-review of the run that just happened).
@@ -145,7 +145,7 @@ Resolution model (simplified, leverages native Copilot CLI resolution):
 
 ## Phase 4: Feedback System
 
-**Step 9** — `feedback-evaluator.agent.md` — Copilot agent with `tools: [read, edit, search]`. Reads feedback from run directories, evaluates it, edits agent/skill/memory files accordingly. Outputs a changelog. Cannot edit scheduler scripts, config schema, or its own definition. This is the one shared agent that ships with the scaffold so every ChronAgents setup has the same baseline maintainer behavior.
+**Step 9** — `feedback-evaluator.agent.md` — Copilot agent with `tools: [read, edit, search]`. Reads feedback from run directories, evaluates it, edits agent/skill/memory files accordingly. Outputs a changelog. Cannot edit scheduler scripts, config schema, or its own definition. This is the one shared agent that ships with the scaffold so every CronAgents setup has the same baseline maintainer behavior.
 
 **Feedback flow (explicit):**
 1. Agent runs → scheduler creates run directory with `feedback.md` stub
@@ -204,7 +204,7 @@ Run all tests except E2E: `Invoke-Pester ./tests/ -ExcludeTag 'E2E'`
 
 ## Verification (manual checklist)
 
-1. Run `Start-ChronAgents.ps1` with invalid config → clear validation error
+1. Run `Start-CronAgents.ps1` with invalid config → clear validation error
 2. `Test-AgentDue` with various schedule types and timestamps (also covered by Pester)
 3. `chronagents.ps1 run <agent>` → verify run directory created with all artifacts
 4. Open `dashboard.md` after runs → verify table renders with links to runs and feedback
@@ -242,7 +242,7 @@ The old `gh copilot` extension was retired October 2025. The replacement is the 
 copilot --agent=<name> -p "<prompt>" --allow-all-tools --silent --share=<path>
 ```
 
-Key flags used by ChronAgents:
+Key flags used by CronAgents:
 
 | Flag | Purpose |
 |------|---------|
@@ -271,7 +271,7 @@ Agent profiles are `.agent.md` files with YAML frontmatter. Key fields: `name`, 
 
 Project-level overrides user-level on name collisions. `COPILOT_HOME` env var overrides the user config directory. `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` adds extra instruction search paths.
 
-### Impact on ChronAgents design
+### Impact on CronAgents design
 
 1. `--agent` flag confirmed — agent instructions load from `.agent.md` files natively, no prompt inlining needed
 2. `--silent` + `--output-format=json` ideal for parsing run results in PowerShell

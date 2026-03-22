@@ -1,6 +1,6 @@
-# UX Requirements — ChronAgents Interactive Dashboard
+# UX Requirements — CronAgents Interactive Dashboard
 
-Future-phase requirements for an interactive UI layer on top of the ChronAgents scheduler. Not part of the initial implementation — the Phase 1 management surface is the `chronagents.ps1` CLI wrapper plus the read-only `dashboard.md`.
+Future-phase requirements for an interactive UI layer on top of the CronAgents scheduler. Not part of the initial implementation — the Phase 1 management surface is the `chronagents.ps1` CLI wrapper plus the read-only `dashboard.md`.
 
 ---
 
@@ -15,9 +15,9 @@ Future-phase requirements for an interactive UI layer on top of the ChronAgents 
 
 ## Approach: PowerShell micro HTTP server
 
-The scheduler already runs as a persistent polling process (`Start-ChronAgents.ps1`). Adding a `System.Net.HttpListener` on `localhost:9077` is straightforward — `HttpListener` ships with .NET, which PowerShell already requires.
+The scheduler already runs as a persistent polling process (`Start-CronAgents.ps1`). Adding a `System.Net.HttpListener` on `localhost:9077` is straightforward — `HttpListener` ships with .NET, which PowerShell already requires.
 
-- **Server**: ~50 lines of PowerShell added to `Start-ChronAgents.ps1` (or a separate `Start-DashboardServer.ps1` module)
+- **Server**: ~50 lines of PowerShell added to `Start-CronAgents.ps1` (or a separate `Start-DashboardServer.ps1` module)
 - **Frontend**: single `dashboard.html` with vanilla JS/CSS, served by the listener. Polls a JSON API endpoint for live state.
 - **Total additional code**: ~50 lines PowerShell + ~300 lines HTML/JS/CSS
 - **No dependencies beyond PowerShell/.NET**
@@ -45,7 +45,7 @@ The scheduler already runs as a persistent polling process (`Start-ChronAgents.p
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  ChronAgents Dashboard                    [Settings] │
+│  CronAgents Dashboard                     [Settings] │
 ├──────────────────────────────────────────────────────┤
 │                                                      │
 │  Agents                                              │
