@@ -88,7 +88,7 @@ CronAgents/
 
 If cron syntax is added, it should be treated as a normalized internal representation, not as a promise of arbitrary minute-level scheduling. Day 0 policy is deliberately coarse because the scheduler runs agents sequentially and most real agent runs will take longer than a minute.
 
-Settings include `autoFeedback` toggle, `maxRunHistory`, `copilotPath` (defaults to `copilot`), `retentionDays` (default 14 — run directories older than this are deleted; set to 0 to disable), and optional overrides for Copilot CLI environment.
+Settings include `autoFeedback` toggle, `maxRunHistory`, `copilotPath` (defaults to `copilot`), `retentionDays` (default 14 — run directories older than this are deleted; set to 0 to disable), `startupDelay` (default `5m` — how long the scheduler waits after process start before the first evaluation tick; set to `0` to disable), and optional overrides for Copilot CLI environment.
 
 Each agent should also support scheduler-execution policies:
 - `timeout` — maximum runtime before the scheduler terminates the agent process. Default: `10m`.
@@ -158,7 +158,7 @@ Resolution model (simplified, leverages native Copilot CLI resolution):
 
   The dashboard-summarizer agent lives in `scheduler/agents/dashboard-summarizer.agent.md` and ships with the scaffold alongside the feedback evaluator. It has `tools: [read]` only — no edit access.
 
-**Step 8** — `Start-CronAgents.ps1` — Main loop. Reads config, validates, and maintains one centralized scheduler heartbeat with coarse wake intervals. Each tick follows this order:
+**Step 8** — `Start-CronAgents.ps1` — Main loop. Reads config, validates, applies `startupDelay` (default `5m`) before the first evaluation tick to avoid competing with the post-boot resource storm, then maintains one centralized scheduler heartbeat with coarse wake intervals. The delay logs its countdown so the user knows the scheduler is alive but waiting. Set `startupDelay: "0"` to skip. Each tick follows this order:
 
   1. **Feedback sweep** — run the feedback evaluator for all pending feedback (non-empty `feedback.md` + `feedbackProcessed: false`). This ensures agent/skill edits from human feedback take effect *before* the next workload runs.
   2. **Scheduled agents** — check `Test-AgentDue` per agent for the current scheduler window, collect all due agents, enqueue each at most once, then invoke them sequentially from the same loop. If `autoFeedback` is true, also trigger the feedback evaluator immediately after each individual run (for self-review of the run that just happened).
@@ -296,6 +296,7 @@ Run all tests except E2E: `Invoke-Pester ./tests/ -ExcludeTag 'E2E'`
 - **Reboot persistence** via one at-logon Task Scheduler entry (`Install-CronAgents.ps1`). No admin required. Idempotent — safe to run repeatedly, never stacks tasks. Clean uninstall via `Uninstall-CronAgents.ps1`
 - **Health check** via `chronagents.ps1 doctor` — verifies single bootstrap task, valid config, clean state, running process
 - **Copilot CLI only** (`copilot --agent=NAME -p "PROMPT" --allow-all-tools -s`). Multi-runner is future work
+- **Startup delay**: `startupDelay` default `5m` — the scheduler waits before the first evaluation tick after process start, letting the system settle after boot/logon. Configurable down to `0` for fast-boot machines or CI
 - **Coarse schedule granularity** for day 0: 1 hour recommended, 30 minutes minimum. One centralized matcher loop, not per-agent cron jobs
 - **Per-agent execution policies**: `timeout` default `10m`, `skipOnBattery` default `false`, `retryCount` default `0`
 - **Agent versioning**: per-user long-running branches (`agents/<username>`) track user agent customizations with full git history. Scaffold code stays on `master`; user branches are supersets. Feedback evaluator edits are auto-committed. Scaffold updates merge from master via configurable sync policy (`notify` default, `auto`, `manual`). Pre-edit snapshots in run directories provide immediate rollback. Full design in [AGENT-VERSIONING.md](AGENT-VERSIONING.md)
@@ -364,10 +365,4 @@ Full CLI command reference: https://docs.github.com/en/copilot/reference/copilot
 
 ## Future Considerations
 
-1. **HTML dashboard** — Requirements captured in [UX-REQUIREMENTS.md](UX-REQUIREMENTS.md). Only worth doing after the CLI wrapper proves the command set.
-2. **Parallel execution & agent dependencies** — Currently agents run sequentially in config array order (the user controls execution order by arranging the `agents` array). A future version could add parallel execution for independent agents plus a `dependsOn: ["other-agent"]` config to express ordering constraints, with the scheduler building a dependency graph and running independent branches concurrently. Parallelism would make 30-minute schedules more attractive, but it adds complexity: Copilot CLI rate limits, concurrent `state.json` access, output interleaving, and topological sort. Not worth it until someone has enough agents to feel the sequential bottleneck.
-4. **Cloud reporting** — local markdown now, but `Update-Dashboard.ps1` is designed to be extensible to webhooks/Slack/Teams.
-5. **Cross-platform** — PowerShell Core runs on macOS/Linux, but initial target is Windows only.
-6. **PR gate enforcement** — The test suite is already structured for CI (`Invoke-Pester ./tests/ -ExcludeTag 'E2E'`). A future GitHub Actions workflow can run this as a required status check on PRs. Currently enforced via `copilot-instructions.md` only.
-7. **Script mode execution** — Allow agent entries to specify a `script` path instead of `agent`+`prompt`, so the scheduler runs a user-provided script (which may invoke Copilot CLI internally, or not at all). Covers token-efficient pre-work patterns, existing workflow automation, and general-purpose scheduling. Same timeout/retry/pause/logging benefits as prompt mode. Full design in [SCRIPT-MODE.md](SCRIPT-MODE.md).
-8. **Security review agent** — A scaffold-internal agent that reviews recent diffs to agent definitions, skills, config, and feedback for harmful patterns. Runs after the feedback-commit hook but before the next scheduled agents execute, so poisoned edits are caught before they take effect. Would watch for: prompt injection in agent definitions, unexpected tool additions/`--deny-tool` removals, feedback content attempting to manipulate the evaluator, and anomalous output patterns suggesting data exfiltration. Flagged issues auto-pause the affected agent and notify via dashboard/TUI. The infrastructure for this already exists: git branch diffs from agent versioning, pre-edit snapshots, and feedback-result.md changelogs provide structured input. Attack pattern knowledge would accumulate in a dedicated skill file (`scheduler/skills/security-reviewer/SKILL.md`) that can be community-contributed.
+Items beyond day-0 scope are tracked in [FUTURE.md](FUTURE.md) — HTML dashboard, parallel execution, cloud reporting, cross-platform, PR gates, script mode, security review agent.
