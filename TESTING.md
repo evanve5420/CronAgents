@@ -51,10 +51,11 @@ These are fast, pure-function tests. No Copilot CLI (real or mock) needed.
 
 Test `Test-AgentDue` and `Get-NextRunTime`:
 
-- **Interval schedules**: returns due when enough time has elapsed, not due when interval hasn't passed, due on first run ever (no prior timestamp), handles sub-hour and multi-day intervals
-- **Daily schedules**: due when past scheduled time with no run today, not due when already run today, due on first run ever, handles midnight rollover
+- **Interval schedules**: returns due when enough time has elapsed, not due when interval hasn't passed, and rejects intervals smaller than 30 minutes for day 0
+- **Daily schedules**: returns due when past scheduled time with no run today, not due when already run today, due on first run ever, handles midnight rollover
 - **Weekly schedules**: due on the correct day and time, not due on wrong day, not due when already run this week
-- **Edge cases**: DST spring-forward (clock jumps 1:59→3:00), DST fall-back (clock repeats 1:00-2:00), `Get-NextRunTime` returns correct next occurrence for all schedule types, returns immediate for first-ever run
+- **Next-run calculation**: `Get-NextRunTime` returns correct next occurrence for interval, daily, and weekly schedules
+- **Edge cases**: DST spring-forward, DST fall-back, timezone conversion, and long-running agents whose previous execution extends beyond the next nominal slot
 
 ### ConfigValidation.Tests.ps1
 
@@ -90,6 +91,7 @@ Test `state.json` read/write/recovery:
 - Creates `state.json` if it doesn't exist
 - Reads existing state correctly
 - Updates one agent's timestamp without disturbing others
+- Persists enough per-agent scheduler state to avoid duplicate queueing across restarts
 - Handles enabled/disabled toggle per agent
 - Recovers from corrupted `state.json` (resets to empty state)
 
@@ -112,7 +114,7 @@ Test `Invoke-ScheduledAgent.ps1` end-to-end with the mock:
 - Passes `--deny-tool` when agent config specifies tool restrictions
 - Passes `--add-dir` when agent has extra trusted directories
 - Handles non-zero exit code gracefully (marks run as failed in `meta.json`)
-- Updates `state.json` with new last-run timestamp
+- Updates `state.json` with new last-run timestamp and any scheduler bookkeeping needed to prevent duplicate queueing
 
 ### FeedbackFlow.Tests.ps1
 
@@ -133,9 +135,20 @@ Test all `chronagents.ps1` subcommands:
 - `pause <agent>` sets `enabled: false` in `state.json`; rejects unknown agents
 - `resume <agent>` sets `enabled: true` in `state.json`
 - `status` lists agents with enabled/disabled state, next scheduled run time, pending feedback count
-- `list` shows all configured agents with schedule type and parameters
+- `list` shows all configured agents with schedule type, parameters, and next scheduled run
 - `feedback <agent>` identifies the most recent unprocessed `feedback.md`; reports "no pending feedback" when none
 - `evaluate` triggers feedback evaluator for all pending feedback; reports "nothing to evaluate" when none
+
+### SchedulerLoop.Tests.ps1
+
+Test the single-heartbeat scheduler behavior:
+
+- One scheduler tick evaluates all configured agents from the same scheduler wake cycle
+- Multiple due agents in the same slot are queued from one tick, not from separate timers
+- Agents run sequentially in config order when more than one matches the same slot
+- A second check in the same due window does not enqueue the same agent twice
+- If an agent is still running when its next slot arrives, the scheduler coalesces or skips the duplicate according to policy rather than stacking another run
+- Restarting the scheduler does not duplicate a run when prior due-state bookkeeping is already recorded
 
 ### RetentionCleanup.Tests.ps1
 

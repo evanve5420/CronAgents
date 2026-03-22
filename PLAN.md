@@ -80,10 +80,13 @@ CronAgents/
 
 ## Phase 2: Configuration System
 
-**Step 3** — `chronagents.json` config — defines agents, their schedules, prompts, and settings. Three schedule types initially:
+**Step 3** — `chronagents.json` config — defines agents, their schedules, prompts, and settings. Day 0 should support coarse-grained recurring schedules only, with **1 hour as the recommended default** and **30 minutes as the finest supported interval**.
+  - `{ "type": "interval", "every": "1h" }`
   - `{ "type": "interval", "every": "4h" }`
   - `{ "type": "daily", "time": "09:00" }`
   - `{ "type": "weekly", "day": "monday", "time": "10:00" }`
+
+If cron syntax is added, it should be treated as a normalized internal representation, not as a promise of arbitrary minute-level scheduling. Day 0 policy is deliberately coarse because the scheduler runs agents sequentially and most real agent runs will take longer than a minute.
 
 Settings include `autoFeedback` toggle, `maxRunHistory`, `copilotPath` (defaults to `copilot`), `retentionDays` (default 14 — run directories older than this are deleted; set to 0 to disable), and optional overrides for Copilot CLI environment.
 
@@ -101,7 +104,16 @@ Resolution model (simplified, leverages native Copilot CLI resolution):
 
 ## Phase 3: PowerShell Scheduler
 
-**Step 5** — `lib/ScheduleParser.ps1` — Functions: `Test-AgentDue` (given agent config + last-run timestamp, returns bool), `Get-NextRunTime` (calculates next scheduled run). Reads/writes `.chronagents/state.json`.
+**Step 5** — `lib/ScheduleParser.ps1` — Functions: `Test-AgentDue` and `Get-NextRunTime`, with helpers for interval, daily, and weekly schedules. Reads/writes `.chronagents/state.json`.
+
+**Scheduling mechanism:**
+- `Start-CronAgents.ps1` is a single long-running scheduler process with one centralized heartbeat. There is **not** a separate Windows Task Scheduler entry, cron daemon job, or timer per agent.
+- Day 0 uses a coarse scheduler cadence: wake on a fixed boundary no more than every 30 minutes, or sleep dynamically until the next known due time. Do not wake every minute unless later evidence justifies it.
+- On each wake, the scheduler checks all configured agents against the current time slot and collects the agents that are due.
+- Due agents are enqueued once and run sequentially in config order.
+- If an agent is still running when its next scheduled slot arrives, the scheduler must **not** stack duplicate runs for the same agent. It either coalesces them into one pending run or skips the missed slot, depending on configured policy.
+- The scheduler records per-agent state in `.chronagents/state.json` so the same due window is not re-enqueued repeatedly after restarts or repeated checks.
+- This makes schedule times advisory due markers: the system guarantees "run when due and capacity allows," not exact launch at the top of the slot.
 
 **Step 6** — `Invoke-ScheduledAgent.ps1` — Invokes `copilot --agent=<name> -p "<prompt>" --allow-all-tools --silent --share=<run-dir>/session.md`, captures output, creates run directory `.chronagents/runs/<timestamp>_<agent-name>/` with:
   - `output.md` — captured agent stdout
@@ -121,14 +133,14 @@ Resolution model (simplified, leverages native Copilot CLI resolution):
 
   The dashboard-summarizer agent lives in `scheduler/agents/dashboard-summarizer.agent.md` and ships with the scaffold alongside the feedback evaluator. It has `tools: [read]` only — no edit access.
 
-**Step 8** — `Start-CronAgents.ps1` — Main loop. Reads config, validates, polls every 60s. Each tick follows this order:
+**Step 8** — `Start-CronAgents.ps1` — Main loop. Reads config, validates, and maintains one centralized scheduler heartbeat with coarse wake intervals. Each tick follows this order:
 
   1. **Feedback sweep** — run the feedback evaluator for all pending feedback (non-empty `feedback.md` + `feedbackProcessed: false`). This ensures agent/skill edits from human feedback take effect *before* the next workload runs.
-  2. **Scheduled agents** — check `Test-AgentDue` per agent, invoke due agents. If `autoFeedback` is true, also trigger the feedback evaluator immediately after each individual run (for self-review of the run that just happened).
+  2. **Scheduled agents** — check `Test-AgentDue` per agent for the current scheduler window, collect all due agents, enqueue each at most once, then invoke them sequentially from the same loop. If `autoFeedback` is true, also trigger the feedback evaluator immediately after each individual run (for self-review of the run that just happened).
   3. **Dashboard update** — regenerate `dashboard.md` reflecting all changes from this tick.
   4. **Retention cleanup** — once per day, delete run directories older than `retentionDays` (preserving runs with unprocessed feedback regardless of age).
 
-  Handles Ctrl+C gracefully.
+  This is intentionally one persistent scheduler loop, not one OS-level job per agent. Handles Ctrl+C gracefully.
 
 **Step 8a** — `chronagents.ps1` — CLI wrapper for management actions. Subcommands:
   - `run <agent>` — trigger a one-off run outside the schedule
@@ -218,9 +230,9 @@ Run all tests except E2E: `Invoke-Pester ./tests/ -ExcludeTag 'E2E'`
 
 ## Decisions
 
-- **PowerShell polling process** (60s interval), not Windows Task Scheduler integration — simpler, self-contained
+- **Single PowerShell scheduler heartbeat** with coarse wake intervals, not separate Windows Task Scheduler jobs per agent — simpler, self-contained
 - **Copilot CLI only** (`copilot --agent=NAME -p "PROMPT" --allow-all-tools -s`). Multi-runner is future work
-- **Simple schedule types** (daily/interval/weekly). Full cron parsing is future
+- **Coarse schedule granularity** for day 0: 1 hour recommended, 30 minutes minimum. One centralized matcher loop, not per-agent cron jobs
 - **Agent ownership**: the feedback evaluator is the one shared scaffold agent. User-defined scheduled agents should be allowed to live entirely in ignored repo-local or user-global directories
 - **Dashboard**: single tracked markdown file the user keeps open in VS Code — read-only, never edited by user
 - **Feedback**: separate `feedback.md` per run directory — the user's edit surface, not the dashboard
@@ -287,7 +299,7 @@ Full CLI command reference: https://docs.github.com/en/copilot/reference/copilot
 ## Future Considerations
 
 1. **HTML dashboard** — Requirements captured in [UX-REQUIREMENTS.md](UX-REQUIREMENTS.md). Only worth doing after the CLI wrapper proves the command set.
-2. **Parallel execution & agent dependencies** — Currently agents run sequentially in config array order (the user controls execution order by arranging the `agents` array). A future version could add parallel execution for independent agents plus a `dependsOn: ["other-agent"]` config to express ordering constraints, with the scheduler building a dependency graph and running independent branches concurrently. Adds complexity: Copilot CLI rate limits, concurrent `state.json` access, output interleaving, and topological sort. Not worth it until someone has enough agents to feel the sequential bottleneck.
+2. **Parallel execution & agent dependencies** — Currently agents run sequentially in config array order (the user controls execution order by arranging the `agents` array). A future version could add parallel execution for independent agents plus a `dependsOn: ["other-agent"]` config to express ordering constraints, with the scheduler building a dependency graph and running independent branches concurrently. Parallelism would make 30-minute schedules more attractive, but it adds complexity: Copilot CLI rate limits, concurrent `state.json` access, output interleaving, and topological sort. Not worth it until someone has enough agents to feel the sequential bottleneck.
 4. **Cloud reporting** — local markdown now, but `Update-Dashboard.ps1` is designed to be extensible to webhooks/Slack/Teams.
 5. **Cross-platform** — PowerShell Core runs on macOS/Linux, but initial target is Windows only.
 6. **PR gate enforcement** — The test suite is already structured for CI (`Invoke-Pester ./tests/ -ExcludeTag 'E2E'`). A future GitHub Actions workflow can run this as a required status check on PRs. Currently enforced via `copilot-instructions.md` only.
