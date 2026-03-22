@@ -90,12 +90,25 @@ CronAgents/
 │   ├── SCRIPT-MODE.md                        ← future script mode design
 │   ├── UX-REQUIREMENTS.md                    ← future HTML dashboard requirements
 │   └── LANDSCAPE.md                          ← competitive intelligence (gitignored)
+├── guide/                                    ← user-facing documentation
+│   ├── getting-started.md                    ← prerequisites, install, first run
+│   ├── configuration.md                      ← chronagents.json reference (all fields, defaults, examples)
+│   ├── cli-reference.md                      ← chronagents.ps1 subcommands + TUI menu
+│   ├── writing-agents.md                     ← how to create/register a scheduled agent
+│   ├── feedback-system.md                    ← how the feedback loop works, editing feedback.md
+│   ├── branching-and-sync.md                 ← user branch model, sync commands
+│   └── troubleshooting.md                    ← common issues, health check, logs
 ├── .gitignore
-├── README.md                                 ← user-facing: quickstart, config reference, usage
+├── README.md                                 ← landing page: overview, feature highlights, docs map
 └── LICENSE
 ```
 
-**Documentation split:** User-facing documentation lives in `README.md` at the repo root — this is what someone reads when they clone the project and want to get started (quickstart, config reference, CLI usage, troubleshooting). Developer/design documentation lives in `docs/` — architecture decisions, build plan, test specs, roadmap. This separation ensures users aren't overwhelmed by internals when they just want to use the tool, while contributors have full design context when they need it.
+**Documentation split — three tiers:**
+- **`README.md`** — landing page and elevator pitch. Project overview, feature highlights, and a docs map linking into `guide/`. This is the first thing someone sees; it should be concise and inviting, not a wall of reference material.
+- **`guide/`** — user-facing how-to documentation. Getting started, full config reference, CLI reference, writing agents, feedback system, branching/sync, troubleshooting. Written for someone who cloned the repo and wants to use it without reading source code.
+- **`docs/`** — developer/design internals. Build plan, test specs, architecture decisions, roadmap, competitive landscape. Written for contributors and agents building the project.
+
+This separation ensures users aren't overwhelmed by internals, contributors have full design context, and the README stays readable as the project grows.
 
 `.github` is reserved for Copilot customizations that apply when *developing this repo* (workspace instructions, prompts). Scaffold-internal agents (feedback evaluator, dashboard summarizer) and their skills live in `scheduler/agents/` and `scheduler/skills/` because they are product components of the CronAgents runtime, not repo development tools. The scheduler passes `--add-dir=scheduler/` when invoking them so Copilot CLI can resolve them. User-defined scheduled workload agents live in `.chronagents/agents/` (gitignored), user-global directories like `C:\Users\<user>\.copilot`, or both.
 
@@ -348,11 +361,21 @@ Feedback is always a **separate file per run**, never part of the dashboard.
 
 Documentation is a day-0 deliverable, not an afterthought. Every feature must be documented as it's built — a user who clones this repo should be able to set up, configure, and use CronAgents without reading the source code.
 
-Two audiences, two locations:
-- **User-facing** (`README.md`) — at the repo root. Quickstart, config reference, CLI usage, troubleshooting. Written for someone who cloned the repo and wants to use it.
-- **Developer/design** (`docs/`) — build plan, test specs, architecture decisions, roadmap. Written for contributors and agents building the project.
+Three tiers, three audiences:
+- **`README.md`** (landing page) — concise project overview, feature highlights, and a docs map linking into `guide/`. First impression for anyone who opens the repo.
+- **`guide/`** (user-facing) — the docs you read to use the tool. Written for someone who cloned the repo and wants to get up and running without reading source code.
+- **`docs/`** (developer/design) — build plan, test specs, architecture decisions, roadmap. Written for contributors and agents building the project.
 
-**Step 13** — `README.md` — Quickstart (install, configure, first agent, first run), full config reference (every field, type, default, example), feedback system explanation, branching/sync workflow overview, CLI command reference, troubleshooting section.
+**Step 13** — `guide/` pages:
+- `getting-started.md` — prerequisites, install, configure, first agent, first run
+- `configuration.md` — full `chronagents.json` reference (every field, type, default, example)
+- `cli-reference.md` — all `chronagents.ps1` subcommands, TUI menu, `--help` examples
+- `writing-agents.md` — how to create an `.agent.md`, register it in config, test it manually
+- `feedback-system.md` — how the feedback loop works, editing `feedback.md`, auto-feedback
+- `branching-and-sync.md` — user branch model, sync commands, conflict resolution
+- `troubleshooting.md` — common issues, `chronagents.ps1 doctor`, reading logs
+
+**Step 13a** — `README.md` — project overview, feature bullets, quick-start teaser (link to `guide/getting-started.md`), docs map table linking every `guide/` page, badges, license.
 
 **Step 14** — `.github/copilot-instructions.md` — Workspace instructions for extending the project (core principles, no-duplication rule, project structure, test enforcement).
 
