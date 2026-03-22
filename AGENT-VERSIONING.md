@@ -193,7 +193,7 @@ The `backup/` subdirectory mirrors the relative paths of edited files.
 The interactive menu gains sync awareness:
 
 ```
-CronAgents (branch: agents/evan, 3 behind master)
+CronAgents (branch: agents/<user>, 3 behind master)
 ──────────────────────────
  1) Status & upcoming runs
  2) Trigger ad-hoc run
@@ -201,10 +201,11 @@ CronAgents (branch: agents/evan, 3 behind master)
  4) View run history
  5) Submit feedback
  6) Health check (doctor)
- 7) Sync from master          ← new
- 8) Exit
+ 7) Sync from master
+ 8) Branch info
+ 9) Exit
 ──────────────────────────
-Select [1-8]:
+Select [1-9]:
 ```
 
 ---

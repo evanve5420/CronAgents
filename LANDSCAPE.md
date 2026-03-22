@@ -1,4 +1,4 @@
-Ok# CronAgents Landscape Assessment
+# CronAgents Landscape Assessment
 
 ## Executive Summary
 

@@ -1,0 +1,15 @@
+# Workspace Instructions — CronAgents
+
+## Core principles
+
+1. **Generic, not personal.** This project is meant to be shared with coworkers and potentially open-sourced. Hardcode nothing specific to any user, machine, path, or environment. All user-specific values must come from config (`chronagents.json`), environment variables, or runtime detection (e.g., `$env:USERNAME`, `git config user.name`). File paths must be relative to the repo root or resolved dynamically.
+
+2. **No duplicated logic.** Make use of the shared PowerShell module (`scheduler/lib/CronAgents.psd1`) and its nested modules. If a function is needed in more than one script, it belongs in `lib/`. The CLI wrapper, scheduler, health check, and tests must all call the same functions — never reimplement.
+
+## Before committing
+
+Run all non-E2E tests and verify they pass:
+
+```powershell
+Invoke-Pester ./tests/ -ExcludeTag 'E2E'
+```

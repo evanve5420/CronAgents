@@ -67,9 +67,13 @@ Test config loading and validation:
 - Unknown schedule type rejected with clear message
 - Malformed JSON produces a parse error
 - Optional fields default correctly (`copilotPath`, `maxRunHistory`, `retentionDays`)
-- Per-agent execution policy defaults apply correctly (`timeout: 10m`, `skipOnBattery: false`, `retryCount: 0`)
+- Per-agent execution policy defaults apply correctly (`timeout: 10m`, `skipOnBattery: false`, `retryCount: 0`, `model: null`)
 - Reject invalid per-agent execution policy values (negative `retryCount`, malformed `timeout`, non-boolean `skipOnBattery`)
+- `model` field accepts valid model strings and rejects empty strings
 - `retentionDays` and `maxRunHistory` validated as positive integers (or 0 for unlimited/disabled)
+- `startupDelay` validated: accepts duration strings (`"5m"`, `"0"`, `"10m"`), rejects negative or malformed values
+- `versioning` block defaults: missing block defaults to `syncPolicy: "notify"`, `userName: null`, `autoCommitFeedback: true`, `branchPrefix: "agents"`
+- `versioning.syncPolicy` rejects unknown values (only `"auto"`, `"notify"`, `"manual"` accepted)
 - JSON Schema file validates against the JSON Schema meta-schema
 
 ### Dashboard.Tests.ps1
@@ -97,6 +101,16 @@ Test `state.json` read/write/recovery:
 - Handles enabled/disabled toggle per agent
 - Recovers from corrupted `state.json` (resets to empty state)
 
+### AgentVersioning.Tests.ps1
+
+Test the versioning helper functions in isolation using temp git repos. No Copilot CLI needed.
+
+- **Branch detection**: Given a temp repo with various branch states, verify `Get-CronAgentsBranch` correctly identifies current branch and whether it matches the expected `agents/<user>` pattern
+- **Username resolution**: Test priority chain — explicit config → `git config user.name` (with slugification edge cases: spaces, special chars, unicode) → `$env:USERNAME` fallback
+- **Divergence calculation**: Given a temp repo where master is N commits ahead, verify `Get-BranchDivergence` returns correct ahead/behind counts
+- **Commit message formatting**: Verify feedback commits produce structured messages from changelog input
+- **Config defaults**: Verify missing `versioning` block defaults to `notify` / auto-detect / `true` / `agents`
+
 ---
 
 ## Integration tests
@@ -113,6 +127,7 @@ Test `Invoke-ScheduledAgent.ps1` end-to-end with the mock:
 - Creates `session.md` via `--share`
 - Creates `feedback.md` stub with template content
 - Mock invocation log shows correct flags: `--agent`, `--silent`, `--allow-all-tools`
+- Passes `--model=<value>` when agent config specifies a model override; omits flag when model is null/unset
 - Passes `--deny-tool` when agent config specifies tool restrictions
 - Passes `--add-dir` when agent has extra trusted directories
 - Enforces per-agent `timeout` and marks timed-out runs clearly in `meta.json`
@@ -137,6 +152,10 @@ Test the feedback lifecycle with the mock:
 Test all `chronagents.ps1` subcommands:
 
 - `run <agent>` invokes `Invoke-ScheduledAgent.ps1` with correct args; rejects unknown agent names
+- `install` registers Task Scheduler entry idempotently; bootstraps user branch if absent
+- `uninstall` removes Task Scheduler entry cleanly
+- `sync` triggers merge from master; reports clean merge or conflict
+- `branch` shows current branch name, ahead/behind counts, last sync date
 - `pause` (no argument) sets `schedulerPaused: true` in `state.json`
 - `pause <agent>` sets `enabled: false` in `state.json`; rejects unknown agents
 - `resume` (no argument) clears global pause
@@ -160,6 +179,7 @@ Test all `chronagents.ps1` subcommands:
 
 Test the single-heartbeat scheduler behavior:
 
+- `startupDelay` is respected: scheduler sleeps for configured duration before first tick; `startupDelay: "0"` skips the wait
 - One scheduler tick evaluates all configured agents from the same scheduler wake cycle
 - When `schedulerPaused: true`, no agents are evaluated or enqueued regardless of due state
 - Per-agent `enabled: false` skips that agent while others still run normally
@@ -182,6 +202,32 @@ Test the run directory cleanup mechanism:
 - Removes stale entries from `state.json` for deleted agents
 - Defaults to 14 days when `retentionDays` is not configured
 - `retentionDays: 0` means never delete
+
+### SyncWorkflow.Tests.ps1
+
+Test full sync and bootstrap workflows against temp git repos with mock Copilot CLI.
+
+- **Auto-bootstrap (no branch exists)**: Init temp repo with only master. Run bootstrap. Verify `agents/<user>` branch created from master HEAD, working tree on new branch.
+- **Auto-bootstrap (branch exists)**: Init temp repo with existing `agents/<user>` branch. Run bootstrap. Verify checkout to existing branch, no duplicate branch created.
+- **Auto-bootstrap (dirty working tree)**: Init temp repo with uncommitted changes. Run bootstrap. Verify it warns and aborts, no data loss.
+- **Clean merge**: Create temp repo. Add commits to master after user branch diverges. Run sync. Verify merge succeeds, user customization files preserved, scaffold files updated.
+- **Conflict merge (agent-assisted)**: Create temp repo where master and user branch both edit the same file. Run sync with mock copilot that "resolves" conflicts. Verify merge completes with agent's resolution.
+- **Conflict merge (agent fails)**: Same as above but mock copilot leaves conflicts. Verify `git merge --abort` is called, user notified, no corrupted state.
+- **Feedback-commit hook**: Edit files as the feedback evaluator would, run the commit hook. Verify correct files staged, commit message formatted from changelog, commit exists in branch history.
+- **Feedback-commit failure**: Simulate `git commit` failure (e.g., lock file). Verify files remain edited on disk, failure logged, dashboard notified, pre-edit snapshots still exist.
+
+### BackupRestore.Tests.ps1
+
+Test pre-edit snapshot creation and recovery.
+
+- **Snapshot creation**: Run feedback evaluator mock that edits two files. Verify `backup/` directory in run dir contains exact copies of both files pre-edit.
+- **Snapshot path mirroring**: Edit files at nested paths (`.chronagents/agents/nested/deep/agent.md`). Verify backup preserves the relative path structure.
+- **Snapshot survives git failure**: Simulate git commit failure after backup. Verify snapshots exist and are readable.
+- **Retention cleanup preserves recent backups**: Run retention cleanup. Verify backups in recent run dirs survive, backups in expired (and feedback-processed) run dirs are cleaned up.
+
+### Test isolation for versioning tests
+
+All versioning tests (`AgentVersioning`, `SyncWorkflow`, `BackupRestore`) create **temp git repos** (`New-TemporaryFile` → `git init`) and clean up in `AfterAll`/`finally`. They never touch the real CronAgents repo, the user's global git config, or any real branches. The tests use `GIT_DIR` / `GIT_WORK_TREE` env vars or `git -C <path>` to scope all git operations to the temp directory.
 
 ---
 
