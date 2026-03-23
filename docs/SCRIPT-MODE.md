@@ -2,7 +2,7 @@
 
 ## Summary
 
-Extend CronAgents so an "agent" entry in `chronagents.json` can be either a **prompt-mode** invocation (current design: scheduler calls Copilot CLI with a prompt) or a **script-mode** invocation (scheduler runs a user-provided script that handles its own logic). Both modes inherit the same scheduling, timeout, retry, pause, health-check, and logging benefits.
+Extend CronAgents so an "agent" entry in `cronagents.json` can be either a **prompt-mode** invocation (current design: scheduler calls Copilot CLI with a prompt) or a **script-mode** invocation (scheduler runs a user-provided script that handles its own logic). Both modes inherit the same scheduling, timeout, retry, pause, health-check, and logging benefits.
 
 ---
 
@@ -38,9 +38,9 @@ A general-purpose scheduler that already handles wake-up, logging, retry, and he
 Script mode uses the same per-agent `.json` scheduling config files as prompt mode. The discriminator is the presence of `script` instead of `agent`+`prompt`.
 
 ```jsonc
-// File: .chronagents/agents/daily-review.json (prompt mode — existing)
+// File: .cronagents/agents/daily-review.json (prompt mode — existing)
 {
-  "$schema": "../../chronagents-agent.schema.json",
+  "$schema": "../../cronagents-agent.schema.json",
   "name": "Daily Code Review",
   "agent": "daily-review",
   "prompt": "Review today's changes and summarize",
@@ -50,9 +50,9 @@ Script mode uses the same per-agent `.json` scheduling config files as prompt mo
 ```
 
 ```jsonc
-// File: .chronagents/agents/mcp-sync.json (script mode)
+// File: .cronagents/agents/mcp-sync.json (script mode)
 {
-  "$schema": "../../chronagents-agent.schema.json",
+  "$schema": "../../cronagents-agent.schema.json",
   "name": "MCP Config Sync",
   "script": "./scripts/sync-mcp-configs.ps1",
   "schedule": { "type": "weekly", "day": "monday", "time": "08:00" },
@@ -62,9 +62,9 @@ Script mode uses the same per-agent `.json` scheduling config files as prompt mo
 ```
 
 ```jsonc
-// File: .chronagents/agents/weekly-report.json (script mode — no Copilot CLI inside)
+// File: .cronagents/agents/weekly-report.json (script mode — no Copilot CLI inside)
 {
-  "$schema": "../../chronagents-agent.schema.json",
+  "$schema": "../../cronagents-agent.schema.json",
   "name": "Weekly Report",
   "script": "./scripts/generate-report.ps1",
   "schedule": { "type": "weekly", "day": "friday", "time": "17:00" },
@@ -72,7 +72,7 @@ Script mode uses the same per-agent `.json` scheduling config files as prompt mo
 }
 ```
 
-**Discrimination:** A per-agent config specifies exactly one of: `agent`+`prompt` (agent mode), `prompt`-only (prompt-only mode), or `script` (script mode). The `chronagents-agent.schema.json` enforces this via `oneOf`.
+**Discrimination:** A per-agent config specifies exactly one of: `agent`+`prompt` (agent mode), `prompt`-only (prompt-only mode), or `script` (script mode). The `cronagents-agent.schema.json` enforces this via `oneOf`.
 
 ---
 
@@ -88,9 +88,9 @@ Script mode uses the same per-agent `.json` scheduling config files as prompt mo
 | Timeout | Enforced by scheduler | Enforced by scheduler | Enforced by scheduler |
 | Retry | Per `retryCount` | Per `retryCount` | Per `retryCount` |
 | `skipOnBattery` | Supported | Supported | Supported |
-| Pause/resume | Supported | Supported |
-| Dashboard | Full integration | Full integration |
-| Feedback | `feedback.md` stub created | `feedback.md` stub created |
+| Pause/resume | Supported | Supported | Supported |
+| Dashboard | Full integration | Full integration | Full integration |
+| Feedback | `feedback.md` stub created | `feedback.md` stub created | `feedback.md` stub created |
 
 ### Environment variables provided to script-mode invocations
 
@@ -98,9 +98,9 @@ The scheduler sets these for the script's process:
 
 | Variable | Value |
 |----------|-------|
-| `CRONAGENTS_RUN_DIR` | Absolute path to the run directory (e.g. `.chronstate/runs/20260322T0800_mcp-sync_a7f3/`) |
+| `CRONAGENTS_RUN_DIR` | Absolute path to the run directory (e.g. `.cronstate/runs/20260322T0800_mcp-sync_a7f3/`) |
 | `CRONAGENTS_AGENT_NAME` | The `name` from config |
-| `CRONAGENTS_CONFIG` | Absolute path to `chronagents.json` |
+| `CRONAGENTS_CONFIG` | Absolute path to `cronagents.json` |
 
 Scripts can use `CRONAGENTS_RUN_DIR` to write additional artifacts (logs, diffs, reports) that the dashboard and feedback system will pick up.
 
@@ -120,7 +120,7 @@ Scripts can use `CRONAGENTS_RUN_DIR` to write additional artifacts (logs, diffs,
 Script-mode runs produce the same run directory structure as prompt-mode runs:
 
 ```
-.chronstate/runs/20260322T0800_mcp-sync_a7f3/
+.cronstate/runs/20260322T0800_mcp-sync_a7f3/
 ├── output.md          ← captured stdout
 ├── summary.md         ← LLM-generated summary (from run-summarizer agent)
 ├── meta.json          ← run metadata (includes "mode": "script")
@@ -128,7 +128,7 @@ Script-mode runs produce the same run directory structure as prompt-mode runs:
 └── feedback-result.md ← written by evaluator if feedback provided
 ```
 
-The `meta.json` includes a `mode` field (`"prompt"` or `"script"`) so the run-summarizer agent and dashboard assembly can adjust presentation. `session.md` is omitted for script-mode runs since there's no single Copilot session to capture (the script may invoke zero or many Copilot sessions internally).
+The `meta.json` includes a `mode` field (`"agent"`, `"prompt"`, or `"script"`) so the run-summarizer agent and dashboard assembly can adjust presentation. `session.md` is omitted for script-mode runs since there's no single Copilot session to capture (the script may invoke zero or many Copilot sessions internally).
 
 ---
 
@@ -147,6 +147,6 @@ For straightforward "run this prompt on a schedule" use cases, prompt mode remai
 ## Open Questions
 
 1. **Should script-mode entries participate in auto-feedback?** The feedback evaluator is designed around Copilot CLI output. For scripts that internally call Copilot, the evaluator could still read `output.md`, but the feedback loop may be less meaningful for pure-script runs.
-2. **Script argument passing.** Should config support an `args` array for scripts? Or should scripts read `CRONAGENTS_*` env vars and `chronagents.json` for all configuration?
+2. **Script argument passing.** Should config support an `args` array for scripts? Or should scripts read `CRONAGENTS_*` env vars and `cronagents.json` for all configuration?
 3. **Cross-platform path handling.** Scripts with `.ps1` extension invoke via `pwsh -File`. What about `.sh` on WSL, `.py`, or bare executables? Day 0 could restrict to `.ps1` only and expand later.
 4. **Copilot CLI passthrough for hybrid scripts.** Should the scheduler pass `copilotPath` as an env var so scripts don't need to resolve the Copilot CLI binary themselves?

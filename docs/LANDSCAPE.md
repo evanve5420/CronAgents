@@ -104,19 +104,7 @@ Why they are not CronAgents:
 
 ## Competitor Matrix
 
-| Project | Category | Built-in Scheduling | Copilot-First | Repo-Local Config | Markdown/Config-File Driven | Human Feedback Loop | Weight | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `agentuse/agentuse` | Scheduled runtime | Yes | No | Partial | Yes | Limited | Medium | Closest direct competitor on scheduled execution |
-| `tadata-org/langchain-runner` | Scheduled runtime | Yes | No | No | Partial | No | Medium | SDK and service wrapper for LangChain/LangGraph agents |
-| `jrswab/axe` | Agent executor | No, external cron | No | Yes | Yes | Limited | Light | Strong philosophical neighbor: small focused agents triggered by Unix tools |
-| `iannuttall/ralph` | Coding loop | No, loop-based | Partial | Yes | Yes | Limited | Light | Minimal file-based autonomous coding loop |
-| `michaelshimeles/ralphy` | Coding loop | No, loop-based | Partial | Yes | Yes | Limited | Medium | Strong multi-runner ecosystem around PRD-driven execution |
-| `jscraik/ralph-gold` | Coding loop | Supervision, not cron-first | Partial | Yes | Yes | Review gate, not maintainer loop | Medium | More operationally mature Ralph-style orchestrator |
-| `milisp/codexia` | Workstation | Yes | No | No | Partial | Limited | Heavy | Desktop/headless product with scheduler and remote control |
-| `suitedaces/dorabot` | Workstation / assistant | Yes | No | No | Partial | Yes, but platform-level | Heavy | 24/7 IDE-style agent with memory and messaging |
-| `openclaw/openclaw` | Assistant platform | Yes | No | No | Partial | Platform-level | Very heavy | Massive assistant platform; cron is a feature, not the thesis |
-| `qwibitai/nanoclaw` | Assistant platform | Yes | No | No | Partial | Platform-level | Heavy | Lightweight relative to OpenClaw, still assistant-first |
-| `khoj-ai/khoj` | Assistant / second brain | Yes | No | No | Partial | Limited | Heavy | Personal AI product with automation and agents |
+See the category analysis above for detailed positioning against each project.
 
 ## Positioning Recommendation
 

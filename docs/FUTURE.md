@@ -18,11 +18,11 @@ A `runIf` predicate per agent: only run when a condition is met. Day-0 candidate
 
 ### 3. Agent Tags / Groups
 
-`"tags": ["review", "maintenance"]` per agent, then `chronagents.ps1 pause --tag=review`. As agent count grows, managing them individually gets tedious. The tag filtering is just a `Where-Object` on the config array — minimal code.
+`"tags": ["review", "maintenance"]` per agent, then `cronagents.ps1 pause --tag=review`. As agent count grows, managing them individually gets tedious. The tag filtering is just a `Where-Object` on the config array — minimal code.
 
 ### 4. Feedback Evaluator Edit Scope
 
-A config-level `editScope` per agent restricting which paths the evaluator can modify when processing feedback for that agent. Currently enforced only by the evaluator's prompt instructions ("cannot edit scheduler scripts"). A config allowlist (e.g., `"editScope": [".chronagents/agents/daily-review*"]`) lets the scheduler validate the evaluator's edits after the fact and reject out-of-scope changes before committing.
+A config-level `editScope` per agent restricting which paths the evaluator can modify when processing feedback for that agent. Currently enforced only by the evaluator's prompt instructions ("cannot edit scheduler scripts"). A config allowlist (e.g., `"editScope": [".cronagents/agents/daily-review*"]`) lets the scheduler validate the evaluator's edits after the fact and reject out-of-scope changes before committing.
 
 ### 5. Windows Notifications
 
@@ -42,7 +42,7 @@ A scaffold-internal agent that reviews recent diffs to agent definitions, skills
 
 ### 8. Parallel Execution & Agent Dependencies
 
-Currently agents run sequentially in discovery order. A future version could add parallel execution for independent agents plus a `dependsOn: ["other-agent-id"]` config to express ordering constraints, with the scheduler building a dependency graph and running independent branches concurrently. Parallelism would make 30-minute schedules more attractive, but it adds complexity: Copilot CLI rate limits, concurrent `.chronstate/state.json` access (already designed with file-level locking), output interleaving, and topological sort. Not worth it until someone has enough agents to feel the sequential bottleneck. Run directory naming already includes a random nonce to prevent collisions.
+Currently agents run sequentially in discovery order. A future version could add parallel execution for independent agents plus a `dependsOn: ["other-agent-id"]` config to express ordering constraints, with the scheduler building a dependency graph and running independent branches concurrently. Parallelism would make 30-minute schedules more attractive, but it adds complexity: Copilot CLI rate limits, concurrent `.cronstate/state.json` access (already designed with file-level locking), output interleaving, and topological sort. Not worth it until someone has enough agents to feel the sequential bottleneck. Run directory naming already includes a random nonce to prevent collisions.
 
 ### 9. Cloud Reporting
 
@@ -66,15 +66,7 @@ Global cap on Copilot CLI invocations per hour. Prevents a misconfigured schedul
 
 ### 14. SQLite State Backend
 
-Replace `StateManager.ps1`'s JSON file backend with SQLite. The `StateManager` module boundary already abstracts all state access behind `Get-AgentState` / `Set-AgentState` — swapping the backing store would be an internal change with no impact on callers. SQLite is single-file, zero-server, and handles concurrent writers natively with WAL mode.
-
-**Trigger points** (when the JSON file approach starts to hurt):
-- **Token budget tracking** (#15) — cumulative counters with atomic increment-and-check across many agents
-- **Rate limiting** (#13) — sliding window queries ("how many runs in the last hour?") are painful in flat JSON
-- **Run history queries** — the HTTP dashboard needs filtered/sorted/paginated run data; scanning `meta.json` files in `.chronstate/runs/` directories doesn't scale
-- **Parallel execution** (#8) — SQLite's built-in concurrency is more robust than file-level locks
-
-Day 0 JSON files are the right starting point — zero dependencies, human-readable, trivially debuggable. SQLite becomes worth it when any of the above trigger points arrive.
+Replace `StateManager.ps1`'s JSON file backend with SQLite. The `StateManager` module boundary already abstracts all state access — swapping the backing store is an internal change. Worth considering when token budget tracking, rate limiting, run history queries, or parallel execution make flat JSON painful. Day 0 JSON files are the right starting point.
 
 ---
 
@@ -86,7 +78,7 @@ Day 0 JSON files are the right starting point — zero dependencies, human-reada
 
 ### 16. Config Profiles / Inheritance
 
-A base `chronagents.json` with environment overlays: `chronagents.work.json` for work hours, `chronagents.home.json` for personal projects. `chronagents.ps1 --profile=work`. Useful when one machine serves multiple contexts.
+A base `cronagents.json` with environment overlays: `cronagents.work.json` for work hours, `cronagents.home.json` for personal projects. `cronagents.ps1 --profile=work`. Useful when one machine serves multiple contexts.
 
 ### 17. Webhook Triggers
 
@@ -94,4 +86,4 @@ An HTTP endpoint (from the future dashboard server) that can trigger agent runs.
 
 ### 18. Remote Config
 
-Pull config from a URL or git ref so teams can centrally manage agent definitions. `"configSource": "https://..."` or `"configRef": "origin/main:chronagents.json"`. Relevant when you have many coworkers and want consistent agent behavior.
+Pull config from a URL or git ref so teams can centrally manage agent definitions. `"configSource": "https://..."` or `"configRef": "origin/main:cronagents.json"`. Relevant when you have many coworkers and want consistent agent behavior.

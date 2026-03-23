@@ -83,7 +83,7 @@ function Get-NextSlotTime {
             return $Now
         }
         'weekly' {
-            $targetDay = [System.DayOfWeek]::($Schedule.day)
+            $targetDay = [System.DayOfWeek]$Schedule.day
             $tod       = [datetime]::ParseExact($Schedule.time, 'HH:mm', $null).TimeOfDay
 
             # Days forward to the next occurrence of target day (0 = today)

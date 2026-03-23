@@ -16,7 +16,7 @@ The `copilot-instructions.md` for this repository instructs agents to run all no
 
 ### Mock Copilot CLI
 
-A PowerShell script at `tests/mocks/copilot.ps1` that accepts the same flags as the real `copilot` binary. The `copilotPath` config key in `chronagents.json` lets the test harness point at this mock without modifying production code.
+A PowerShell script at `tests/mocks/copilot.ps1` that accepts the same flags as the real `copilot` binary. The `copilotPath` config key in `cronagents.json` lets the test harness point at this mock without modifying production code.
 
 The mock should:
 - Accept all flags the scheduler passes (agent, prompt, silent, share, allow/deny tool, output format, etc.)
@@ -29,9 +29,9 @@ The mock should:
 ### Fixtures
 
 `tests/fixtures/` should contain:
-- Several `chronagents.json` variants: valid minimal, valid full-featured, missing required fields, malformed JSON
+- Several `cronagents.json` variants: valid minimal, valid full-featured, missing required fields, malformed JSON
 - Several per-agent `.json` schedule config variants: valid, missing required fields, unknown schedule type, invalid execution policies
-- Pre-built run directories (under a mock `.chronstate/runs/`) representing different states: successful run, failed run, run with pending feedback, run with processed feedback, run older than retention threshold, run with cached `summary.md`
+- Pre-built run directories (under a mock `.cronstate/runs/`) representing different states: successful run, failed run, run with pending feedback, run with processed feedback, run older than retention threshold, run with cached `summary.md`
 - A trivial `.agent.md` + sibling `.json` pair for testing agent invocation
 
 ### Test helper module
@@ -40,7 +40,7 @@ The mock should:
 - Create a temp test environment with proper directory structure and config pointing at the mock
 - Clean up the temp environment after each test
 - Parse the mock's invocation log into structured objects for assertion
-- Generate a `chronagents.json` pre-configured to use the mock `copilotPath`
+- Generate a `cronagents.json` pre-configured to use the mock `copilotPath`
 
 ---
 
@@ -63,7 +63,7 @@ Test `Test-AgentDue` and `Get-NextRunTime`:
 Test config loading, agent discovery, and validation:
 
 - Valid global config loads without errors
-- Agent discovery finds `.json` files in `.chronagents/agents/`
+- Agent discovery finds `.json` files in `.cronagents/agents/`
 - Per-agent config with no schedule produces a specific error
 - Per-agent config with no `prompt` field produces a specific error
 - Per-agent config with both `agent` and `script` produces a discrimination error
@@ -102,9 +102,9 @@ Test `Update-Dashboard.ps1` deterministic markdown assembly from cached run data
 
 ### StateManagement.Tests.ps1
 
-Test `.chronstate/state.json` read/write/recovery:
+Test `.cronstate/state.json` read/write/recovery:
 
-- Creates `.chronstate/state.json` if it doesn't exist (creates `.chronstate/` directory too)
+- Creates `.cronstate/state.json` if it doesn't exist (creates `.cronstate/` directory too)
 - Reads existing state correctly
 - Updates one agent's timestamp (keyed by agent ID) without disturbing others
 - Persists enough per-agent scheduler state to avoid duplicate queueing across restarts
@@ -133,7 +133,7 @@ These use the mock Copilot CLI. The mock's invocation log lets tests verify exac
 
 Test `Invoke-ScheduledAgent.ps1` end-to-end with the mock:
 
-- Creates run directory in `.chronstate/runs/` with correct naming (`<timestamp>_<agent-id>_<nonce>`)
+- Creates run directory in `.cronstate/runs/` with correct naming (`<timestamp>_<agent-id>_<nonce>`)
 - Creates `output.md` with captured agent output
 - Creates `meta.json` with agent ID, display name, start/end time, exit code, prompt, `feedbackProcessed: false`
 - Invokes run-summarizer agent after completion; `summary.md` written to run directory
@@ -149,7 +149,7 @@ Test `Invoke-ScheduledAgent.ps1` end-to-end with the mock:
 - Retries failed runs up to `retryCount` additional times and records retry attempts in metadata/logs
 - Does not start agents with `skipOnBattery: true` while the system is on battery power
 - Handles non-zero exit code gracefully (marks run as failed in `meta.json`)
-- Updates `.chronstate/state.json` with new last-run timestamp (keyed by agent ID) and any scheduler bookkeeping needed to prevent duplicate queueing
+- Updates `.cronstate/state.json` with new last-run timestamp (keyed by agent ID) and any scheduler bookkeeping needed to prevent duplicate queueing
 
 ### FeedbackFlow.Tests.ps1
 
@@ -164,14 +164,14 @@ Test the feedback lifecycle with the mock:
 
 ### CliWrapper.Tests.ps1
 
-Test all `chronagents.ps1` subcommands:
+Test all `cronagents.ps1` subcommands:
 
 - `run <agent-id>` invokes `Invoke-ScheduledAgent.ps1` with correct args; rejects unknown agent IDs
 - `install` registers Task Scheduler entry idempotently; bootstraps user branch if absent
 - `uninstall` removes Task Scheduler entry cleanly
 - `sync` triggers merge from master; reports clean merge or conflict
 - `branch` shows current branch name, ahead/behind counts, last sync date
-- `pause` (no argument) sets `schedulerPaused: true` in `.chronstate/state.json`
+- `pause` (no argument) sets `schedulerPaused: true` in `.cronstate/state.json`
 - `pause <agent-id>` sets `enabled: false` in `state.json`; rejects unknown agent IDs
 - `resume` (no argument) clears global pause
 - `resume <agent-id>` sets `enabled: true` in `state.json`
@@ -184,7 +184,7 @@ Test all `chronagents.ps1` subcommands:
 - `doctor` reports pass/warn/fail for task count, config validity, state integrity
 
 **Interactive menu** (no-argument mode):
-- Launching `chronagents.ps1` with no subcommand enters the interactive menu
+- Launching `cronagents.ps1` with no subcommand enters the interactive menu
 - Each numbered option dispatches to the correct subcommand logic
 - Layered menus (e.g. agent selection for ad-hoc run, global vs. per-agent pause) navigate correctly
 - Invalid input re-prompts without crashing
@@ -212,10 +212,10 @@ Test the single-heartbeat scheduler behavior:
 
 Test the run directory cleanup mechanism:
 
-- Deletes run directories (in `.chronstate/runs/`) older than `retentionDays`
+- Deletes run directories (in `.cronstate/runs/`) older than `retentionDays`
 - Preserves run directories within `retentionDays`
 - Does NOT delete runs with unprocessed feedback regardless of age
-- Removes stale entries from `.chronstate/state.json` for deleted agents
+- Removes stale entries from `.cronstate/state.json` for deleted agents
 - Defaults to 14 days when `retentionDays` is not configured
 - `retentionDays: 0` means never delete
 
@@ -236,8 +236,8 @@ Test full sync and bootstrap workflows against temp git repos with mock Copilot 
 
 Test pre-edit snapshot creation and recovery.
 
-- **Snapshot creation**: Run feedback evaluator mock that edits two files. Verify `backup/` directory in run dir (`.chronstate/runs/...`) contains exact copies of both files pre-edit.
-- **Snapshot path mirroring**: Edit files at nested paths (`.chronagents/agents/nested/deep/agent.md`). Verify backup preserves the relative path structure.
+- **Snapshot creation**: Run feedback evaluator mock that edits two files. Verify `backup/` directory in run dir (`.cronstate/runs/...`) contains exact copies of both files pre-edit.
+- **Snapshot path mirroring**: Edit files at nested paths (`.cronagents/agents/nested/deep/agent.md`). Verify backup preserves the relative path structure.
 - **Snapshot survives git failure**: Simulate git commit failure after backup. Verify snapshots exist and are readable.
 - **Retention cleanup preserves recent backups**: Run retention cleanup. Verify backups in recent run dirs survive, backups in expired (and feedback-processed) run dirs are cleaned up.
 
@@ -274,13 +274,13 @@ This does NOT apply to unit or integration tests — those use the deterministic
 Tests must never interfere with a real CronAgents installation running on the same machine.
 
 - **Task Scheduler**: Tests that touch Task Scheduler must use a distinct task path (`\CronAgents-Test\`) and a distinct task name (`CronAgents-Test`), never the production `\CronAgents\CronAgents` entry. Teardown must always unregister test tasks, even on failure (use `try/finally`).
-- **Config and state**: All tests operate in a temp directory with their own `chronagents.json` and `state.json`. They must never read or write the user's real config or state files.
-- **Run directories**: Tests create run output under the temp directory, never under the user's real `.chronstate/runs/`.
+- **Config and state**: All tests operate in a temp directory with their own `cronagents.json` and `state.json`. They must never read or write the user's real config or state files.
+- **Run directories**: Tests create run output under the temp directory, never under the user's real `.cronstate/runs/`.
 - **Cleanup**: Every test that creates OS-level side effects (tasks, temp dirs, processes) must clean up in a `finally` block or Pester `AfterAll`/`AfterEach` so failures don't leave artifacts behind.
 
 ### HealthCheck.Tests.ps1
 
-Test `Test-CronAgentsHealth.ps1` / `chronagents.ps1 doctor`:
+Test `Test-CronAgentsHealth.ps1` / `cronagents.ps1 doctor`:
 
 - Reports pass when exactly one task exists under `\CronAgents-Test\` with correct definition
 - Reports warning when zero tasks exist (not installed)
@@ -302,7 +302,7 @@ Test `Test-CronAgentsHealth.ps1` / `chronagents.ps1 doctor`:
 ## Coverage goals
 
 - Every public function has at least one positive and one negative test case
-- Every `chronagents.ps1` subcommand is exercised
+- Every `cronagents.ps1` subcommand is exercised
 - Every run directory artifact is verified in at least one integration test
 - Mock invocation log is checked in every integration test to verify exact CLI flags
 - E2E is a smoke test only — one run + one feedback cycle is sufficient

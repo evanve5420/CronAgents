@@ -29,22 +29,22 @@ master                    ← scaffold code, templates, scaffold agents. Shared/
 └── agents/bob            ← Bob's customizations layered on top of master
 ```
 
-- `master` contains all scaffold runtime code (`scheduler/`, `chronagents.ps1`, configs, templates, tests, docs) plus scaffold-internal agents (`scheduler/agents/`). No user-specific agent definitions.
-- `agents/<username>` branches are **supersets** of master: they contain everything on master plus the user's personal agent/skill/instruction files under `.chronagents/agents/` and related directories.
+- `master` contains all scaffold runtime code (`scheduler/`, `cronagents.ps1`, configs, templates, tests, docs) plus scaffold-internal agents (`scheduler/agents/`). No user-specific agent definitions.
+- `agents/<username>` branches are **supersets** of master: they contain everything on master plus the user's personal agent/skill/instruction files under `.cronagents/agents/` and related directories.
 - User branches diverge from master **only** in the customization directories. Scaffold code is never edited on user branches (unless intentionally, which creates a legitimate merge conflict).
 
 ### What lives where
 
 | Content | Branch | Tracked? |
 |---------|--------|----------|
-| Scaffold runtime (`scheduler/`, `chronagents.ps1`, etc.) | `master` | Yes |
-| Global config (`chronagents.json`) | `master` | Yes |
+| Scaffold runtime (`scheduler/`, `cronagents.ps1`, etc.) | `master` | Yes |
+| Global config (`cronagents.json`) | `master` | Yes |
 | Scaffold agents (feedback-evaluator, run-summarizer) | `master` (in `scheduler/agents/`) | Yes |
 | Templates/examples | `master` (in `templates/`) | Yes |
 | Tests, docs, config schemas | `master` | Yes |
-| User workload agents + schedule configs (`.chronagents/agents/`) | `agents/<user>` | Yes (on user branch) |
+| User workload agents + schedule configs (`.cronagents/agents/`) | `agents/<user>` | Yes (on user branch) |
 | User skill/instruction overrides | `agents/<user>` | Yes (on user branch) |
-| Runtime data (`.chronstate/` — runs, state, logs) | Neither | Gitignored on all branches |
+| Runtime data (`.cronstate/` — runs, state, logs) | Neither | Gitignored on all branches |
 
 ### Why supersets, not separate trees
 
@@ -58,10 +58,10 @@ User branches are supersets of master (scaffold + customizations), not disconnec
 
 ## Auto-Bootstrap
 
-On first run (or `chronagents.ps1 install`), the scheduler detects branch state and bootstraps automatically:
+On first run (or `cronagents.ps1 install`), the scheduler detects branch state and bootstraps automatically:
 
 ```
-Start-CronAgents.ps1 / chronagents.ps1 install
+Start-CronAgents.ps1 / cronagents.ps1 install
   → Does agents/<user> branch exist?
     → No:  git checkout -b agents/<user> from master
     → Yes: git checkout agents/<user>
@@ -69,7 +69,7 @@ Start-CronAgents.ps1 / chronagents.ps1 install
 ```
 
 **Username resolution** (in priority order):
-1. `userName` field in `chronagents.json` (explicit config)
+1. `userName` field in `cronagents.json` (explicit config)
 2. `git config user.name` (slugified: lowercased, spaces → hyphens, non-alphanumeric stripped)
 3. `$env:USERNAME` (fallback)
 
@@ -82,7 +82,7 @@ The bootstrap is **non-destructive**: it never force-pushes, never deletes branc
 After the feedback evaluator edits files and writes `feedback-result.md`, the **scheduler** (not the evaluator) performs:
 
 ```powershell
-git add .chronagents/agents/ <any other edited paths from changelog>
+git add .cronagents/agents/ <any other edited paths from changelog>
 git commit -m "feedback: <agent-name> — <one-line summary>"
 ```
 
@@ -101,13 +101,13 @@ A **sync** operation merges `master → agents/<user>` to bring scaffold improve
 
 ### Sync policies
 
-Configured via `syncPolicy` in `chronagents.json`:
+Configured via `syncPolicy` in `cronagents.json`:
 
 | Policy | Behavior | Default? |
 |--------|----------|----------|
 | `auto` | Merge master → user branch automatically between scheduler ticks. On conflict, pause sync and flag in dashboard/TUI. | No |
 | `notify` | Check for divergence on each scheduler startup, report in dashboard/TUI (`N commits behind master`). User triggers merge manually. | **Yes** |
-| `manual` | No automatic checking. User runs `chronagents.ps1 sync` explicitly. | No |
+| `manual` | No automatic checking. User runs `cronagents.ps1 sync` explicitly. | No |
 
 ### Sync execution
 
@@ -150,7 +150,7 @@ If `git merge` fails with conflicts:
 Regardless of git branching, the feedback evaluator **always** creates pre-edit snapshots:
 
 ```
-.chronstate/runs/<timestamp>_<agent-id>_<nonce>/
+.cronstate/runs/<timestamp>_<agent-id>_<nonce>/
 ├── backup/
 │   ├── daily-review.agent.md    ← copy of file before evaluator edited it
 │   └── review-skill/SKILL.md   ← copy of file before evaluator edited it
@@ -179,8 +179,8 @@ The `backup/` subdirectory mirrors the relative paths of edited files.
 
 | Command | Behavior |
 |---------|----------|
-| `chronagents.ps1 sync` | Manually trigger merge from master. Reports clean merge or conflict status. |
-| `chronagents.ps1 branch` | Show current branch, commits ahead/behind master, last sync date. |
+| `cronagents.ps1 sync` | Manually trigger merge from master. Reports clean merge or conflict status. |
+| `cronagents.ps1 branch` | Show current branch, commits ahead/behind master, last sync date. |
 
 ### Updated subcommands
 
@@ -213,7 +213,7 @@ Select [1-9]:
 
 ## Configuration
 
-New fields in `chronagents.json`:
+New fields in `cronagents.json`:
 
 ```jsonc
 {
@@ -234,39 +234,7 @@ All fields are optional with sensible defaults. A user who never touches this se
 
 ## Testing
 
-### Unit tests (`AgentVersioning.Tests.ps1`)
-
-Test the versioning helper functions in isolation using temp git repos. No Copilot CLI needed.
-
-- **Branch detection**: Given a temp repo with various branch states, verify `Get-CronAgentsBranch` correctly identifies current branch and whether it matches the expected `agents/<user>` pattern
-- **Username resolution**: Test priority chain — explicit config → `git config user.name` (with slugification edge cases: spaces, special chars, unicode) → `$env:USERNAME` fallback
-- **Divergence calculation**: Given a temp repo where master is N commits ahead, verify `Get-BranchDivergence` returns correct ahead/behind counts
-- **Commit message formatting**: Verify feedback commits produce structured messages from changelog input
-- **Config defaults**: Verify missing `versioning` block defaults to `notify` / auto-detect / `true` / `agents`
-
-### Integration tests (`SyncWorkflow.Tests.ps1`)
-
-Test full sync and bootstrap workflows against temp git repos with mock Copilot CLI.
-
-- **Auto-bootstrap (no branch exists)**: Init temp repo with only master. Run bootstrap. Verify `agents/<user>` branch created from master HEAD, working tree on new branch.
-- **Auto-bootstrap (branch exists)**: Init temp repo with existing `agents/<user>` branch. Run bootstrap. Verify checkout to existing branch, no duplicate branch created.
-- **Auto-bootstrap (dirty working tree)**: Init temp repo with uncommitted changes. Run bootstrap. Verify it warns and aborts, no data loss.
-- **Clean merge**: Create temp repo. Add commits to master after user branch diverges. Run sync. Verify merge succeeds, user customization files preserved, scaffold files updated.
-- **Conflict merge (agent-assisted)**: Create temp repo where master and user branch both edit the same file. Run sync with mock copilot that "resolves" conflicts. Verify merge completes with agent's resolution.
-- **Conflict merge (agent fails)**: Same as above but mock copilot leaves conflicts. Verify `git merge --abort` is called, user notified, no corrupted state.
-- **Feedback-commit hook**: Edit files as the feedback evaluator would, run the commit hook. Verify correct files staged, commit message formatted from changelog, commit exists in branch history.
-- **Feedback-commit failure**: Simulate `git commit` failure (e.g., lock file). Verify files remain edited on disk, failure logged, dashboard notified, pre-edit snapshots still exist.
-
-### Pre-edit snapshot tests (`BackupRestore.Tests.ps1`)
-
-- **Snapshot creation**: Run feedback evaluator mock that edits two files. Verify `backup/` directory in run dir contains exact copies of both files pre-edit.
-- **Snapshot path mirroring**: Edit files at nested paths (`.chronagents/agents/nested/deep/agent.md`). Verify backup preserves the relative path structure.
-- **Snapshot survives git failure**: Simulate git commit failure after backup. Verify snapshots exist and are readable.
-- **Retention cleanup preserves recent backups**: Run retention cleanup. Verify backups in recent run dirs survive, backups in expired (and feedback-processed) run dirs are cleaned up.
-
-### Test isolation
-
-All versioning tests create **temp git repos** (`New-TemporaryFile` → `git init`) and clean up in `AfterAll`/`finally`. They never touch the real CronAgents repo, the user's global git config, or any real branches. The tests use `GIT_DIR` / `GIT_WORK_TREE` env vars or `git -C <path>` to scope all git operations to the temp directory.
+See [TESTING.md](TESTING.md) — `AgentVersioning.Tests.ps1`, `SyncWorkflow.Tests.ps1`, `BackupRestore.Tests.ps1`.
 
 ---
 
@@ -278,4 +246,4 @@ All versioning tests create **temp git repos** (`New-TemporaryFile` → `git ini
 
 3. **Agent file locations outside the repo**: User agents in `~/.copilot/agents/` (user-global Copilot directory) are outside the git repo entirely. The branching model can't version those. Pre-edit snapshots (option A) are the only safety net for user-global agents.
 
-4. **Branch cleanup**: If a user is removed from the team, their `agents/<user>` branch lingers. Not a day-0 concern but worth a `chronagents.ps1 prune-branches` command eventually.
+4. **Branch cleanup**: If a user is removed from the team, their `agents/<user>` branch lingers. Not a day-0 concern but worth a `cronagents.ps1 prune-branches` command eventually.

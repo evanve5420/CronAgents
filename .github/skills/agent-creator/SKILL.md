@@ -29,7 +29,7 @@ Skip anything already clear from context:
    - `--allow-all-tools` only when genuinely needed — confirm with the user
 5. **Model preference?**
 6. **Execution policies?** — timeout, skip on battery, retry on failure
-7. **Placement** — `.chronagents/agents/` (project-local) or `~/.copilot/agents/` (user-global)
+7. **Placement** — `.cronagents/agents/` (project-local) or `~/.copilot/agents/` (user-global)
 
 ## Create
 
@@ -51,9 +51,9 @@ tools:
 Sibling `.json` — **filename stem = stable agent ID**:
 
 ```jsonc
-// .chronagents/agents/<agent-id>.json
+// .cronagents/agents/<agent-id>.json
 {
-  "$schema": "../../chronagents-agent.schema.json",
+  "$schema": "../../cronagents-agent.schema.json",
   "name": "<Display Name>",
   "agent": "<agent-name>",
   "prompt": "<run prompt>",
@@ -67,9 +67,9 @@ Sibling `.json` — **filename stem = stable agent ID**:
 No `.agent.md`. Omit `agent` field — scheduler invokes `copilot -p` with `--allow-all-tools`. Use `denyTools` to restrict.
 
 ```jsonc
-// .chronagents/agents/<agent-id>.json
+// .cronagents/agents/<agent-id>.json
 {
-  "$schema": "../../chronagents-agent.schema.json",
+  "$schema": "../../cronagents-agent.schema.json",
   "name": "<Display Name>",
   "prompt": "<full prompt>",
   "schedule": { "type": "daily", "time": "09:00" },
@@ -85,4 +85,4 @@ Create in `scheduler/skills/<agent-name>/SKILL.md` if the agent needs domain kno
 
 - Agent mode: `.agent.md` has explicit `tools` list (least-privilege), `agent` in `.json` matches `.agent.md` name
 - Prompt-only: `.json` has `prompt` + `schedule`, no `agent` field, `denyTools` considered
-- Both: schedule type is `interval`/`daily`/`weekly`, test with `chronagents.ps1 run <agent-id>`
+- Both: schedule type is `interval`/`daily`/`weekly`, test with `cronagents.ps1 run <agent-id>`
