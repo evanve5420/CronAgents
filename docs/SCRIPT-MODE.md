@@ -35,54 +35,59 @@ A general-purpose scheduler that already handles wake-up, logging, retry, and he
 
 ## Proposed Config
 
+Script mode uses the same per-agent `.json` scheduling config files as prompt mode. The discriminator is the presence of `script` instead of `agent`+`prompt`.
+
 ```jsonc
+// File: .chronagents/agents/daily-review.json (prompt mode — existing)
 {
-  "agents": [
-    // Prompt mode (existing) — scheduler invokes Copilot CLI
-    {
-      "name": "daily-review",
-      "agent": "daily-review",
-      "prompt": "Review today's changes and summarize",
-      "schedule": { "type": "daily", "time": "09:00" },
-      "timeout": "10m"
-    },
-
-    // Script mode — scheduler invokes a user script
-    {
-      "name": "mcp-sync",
-      "script": "./scripts/sync-mcp-configs.ps1",
-      "schedule": { "type": "weekly", "day": "monday", "time": "08:00" },
-      "timeout": "15m",
-      "retryCount": 1
-    },
-
-    // Script mode — existing workflow, no Copilot CLI inside
-    {
-      "name": "weekly-report",
-      "script": "./scripts/generate-report.ps1",
-      "schedule": { "type": "weekly", "day": "friday", "time": "17:00" },
-      "timeout": "5m"
-    }
-  ]
+  "$schema": "../../chronagents-agent.schema.json",
+  "name": "Daily Code Review",
+  "agent": "daily-review",
+  "prompt": "Review today's changes and summarize",
+  "schedule": { "type": "daily", "time": "09:00" },
+  "timeout": "10m"
 }
 ```
 
-**Discrimination:** An agent entry specifies either `agent`+`prompt` (prompt mode) or `script` (script mode), never both. The schema enforces this via `oneOf`.
+```jsonc
+// File: .chronagents/agents/mcp-sync.json (script mode)
+{
+  "$schema": "../../chronagents-agent.schema.json",
+  "name": "MCP Config Sync",
+  "script": "./scripts/sync-mcp-configs.ps1",
+  "schedule": { "type": "weekly", "day": "monday", "time": "08:00" },
+  "timeout": "15m",
+  "retryCount": 1
+}
+```
+
+```jsonc
+// File: .chronagents/agents/weekly-report.json (script mode — no Copilot CLI inside)
+{
+  "$schema": "../../chronagents-agent.schema.json",
+  "name": "Weekly Report",
+  "script": "./scripts/generate-report.ps1",
+  "schedule": { "type": "weekly", "day": "friday", "time": "17:00" },
+  "timeout": "5m"
+}
+```
+
+**Discrimination:** A per-agent config specifies exactly one of: `agent`+`prompt` (agent mode), `prompt`-only (prompt-only mode), or `script` (script mode). The `chronagents-agent.schema.json` enforces this via `oneOf`.
 
 ---
 
 ## Execution Semantics
 
-| Concern | Prompt Mode | Script Mode |
-|---------|-------------|-------------|
-| What runs | `copilot --agent=NAME -p "PROMPT" …` | User-provided `.ps1` / `.sh` / executable |
-| Working directory | Repo root | Repo root |
-| Stdout capture | `output.md` in run directory | `output.md` in run directory |
-| Exit code | Copilot CLI exit code | Script exit code |
-| `--share` transcript | Auto-saved to `session.md` | N/A (script manages its own Copilot calls) |
-| Timeout | Enforced by scheduler | Enforced by scheduler |
-| Retry | Per `retryCount` | Per `retryCount` |
-| `skipOnBattery` | Supported | Supported |
+| Concern | Agent Mode | Prompt-Only Mode | Script Mode |
+|---------|-----------|-----------------|-------------|
+| What runs | `copilot --agent=NAME -p "PROMPT" …` | `copilot -p "PROMPT" --allow-all-tools …` | User-provided `.ps1` / `.sh` / executable |
+| Working directory | Repo root | Repo root | Repo root |
+| Stdout capture | `output.md` in run directory | `output.md` in run directory | `output.md` in run directory |
+| Exit code | Copilot CLI exit code | Copilot CLI exit code | Script exit code |
+| `--share` transcript | Auto-saved to `session.md` | Auto-saved to `session.md` | N/A (script manages its own Copilot calls) |
+| Timeout | Enforced by scheduler | Enforced by scheduler | Enforced by scheduler |
+| Retry | Per `retryCount` | Per `retryCount` | Per `retryCount` |
+| `skipOnBattery` | Supported | Supported | Supported |
 | Pause/resume | Supported | Supported |
 | Dashboard | Full integration | Full integration |
 | Feedback | `feedback.md` stub created | `feedback.md` stub created |
@@ -93,7 +98,7 @@ The scheduler sets these for the script's process:
 
 | Variable | Value |
 |----------|-------|
-| `CRONAGENTS_RUN_DIR` | Absolute path to the run directory (e.g. `.chronagents/runs/20260322T0800_mcp-sync/`) |
+| `CRONAGENTS_RUN_DIR` | Absolute path to the run directory (e.g. `.chronstate/runs/20260322T0800_mcp-sync_a7f3/`) |
 | `CRONAGENTS_AGENT_NAME` | The `name` from config |
 | `CRONAGENTS_CONFIG` | Absolute path to `chronagents.json` |
 
@@ -115,14 +120,15 @@ Scripts can use `CRONAGENTS_RUN_DIR` to write additional artifacts (logs, diffs,
 Script-mode runs produce the same run directory structure as prompt-mode runs:
 
 ```
-.chronagents/runs/20260322T0800_mcp-sync/
+.chronstate/runs/20260322T0800_mcp-sync_a7f3/
 ├── output.md          ← captured stdout
+├── summary.md         ← LLM-generated summary (from run-summarizer agent)
 ├── meta.json          ← run metadata (includes "mode": "script")
 ├── feedback.md        ← stub for human feedback
 └── feedback-result.md ← written by evaluator if feedback provided
 ```
 
-The `meta.json` includes a `mode` field (`"prompt"` or `"script"`) so the dashboard summarizer can adjust its presentation. `session.md` is omitted for script-mode runs since there's no single Copilot session to capture (the script may invoke zero or many Copilot sessions internally).
+The `meta.json` includes a `mode` field (`"prompt"` or `"script"`) so the run-summarizer agent and dashboard assembly can adjust presentation. `session.md` is omitted for script-mode runs since there's no single Copilot session to capture (the script may invoke zero or many Copilot sessions internally).
 
 ---
 

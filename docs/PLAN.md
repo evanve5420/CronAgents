@@ -10,7 +10,7 @@ A reusable scaffolding that runs Copilot CLI agents on configurable schedules, r
 - Repo-embedded rather than a global assistant platform or GUI workstation
 - Centered on scheduled runs plus feedback-driven self-maintenance, not just task execution
 
-**Customization location strategy:** Separate scaffold runtime from repo development from workload agents. `.github` holds only Copilot customizations for developing this repo (workspace instructions, prompts). Scaffold-internal agents (feedback evaluator, dashboard summarizer) live in `scheduler/agents/` as committed product components. User-defined scheduled workload agents live in gitignored repo-local directories or user-global Copilot directories.
+**Customization location strategy:** Separate scaffold runtime from repo development from workload agents. `.github` holds only Copilot customizations for developing this repo (workspace instructions, prompts). Scaffold-internal agents (feedback evaluator, run summarizer) live in `scheduler/agents/` as committed product components. User-defined scheduled workload agents live in gitignored repo-local directories or user-global Copilot directories.
 
 ---
 
@@ -34,17 +34,17 @@ CronAgents/
 ├── scheduler/
 │   ├── Start-CronAgents.ps1                  ← main entry point
 │   ├── Invoke-ScheduledAgent.ps1             ← runs one agent via Copilot CLI
-│   ├── Update-Dashboard.ps1                  ← regenerates dashboard.md
+│   ├── Update-Dashboard.ps1                  ← regenerates dashboard.md (deterministic, no LLM)
 │   ├── agents/                               ← scaffold-internal agents (committed)
 │   │   ├── feedback-evaluator.agent.md
-│   │   └── dashboard-summarizer.agent.md
+│   │   └── run-summarizer.agent.md           ← summarizes individual agent run output
 │   ├── skills/
 │   │   └── feedback-evaluator/
 │   │       └── SKILL.md
 │   └── lib/
 │       ├── CronAgents.psd1                   ← module manifest
-│       ├── ConfigLoader.ps1                  ← config loading, validation, defaults
-│       ├── StateManager.ps1                  ← state.json read/write/recovery
+│       ├── ConfigLoader.ps1                  ← config loading, validation, agent discovery
+│       ├── StateManager.ps1                  ← state.json read/write/recovery (file-locked)
 │       ├── ScheduleParser.ps1                ← schedule matching logic
 │       ├── RunManager.ps1                    ← run directory creation, metadata, output capture
 │       ├── GitHelpers.ps1                    ← branch detection, sync, commit, divergence
@@ -52,16 +52,23 @@ CronAgents/
 │       ├── Logger.ps1                        ← structured logging (global + per-run)
 │       └── RetentionCleanup.ps1              ← run directory expiration
 ├── chronagents.ps1                           ← CLI wrapper (run, status, pause, resume, feedback)
-├── chronagents.json                          ← user config
-├── chronagents.schema.json                   ← JSON Schema for validation + autocomplete
+├── chronagents.json                          ← global scheduler settings (no agent definitions)
+├── chronagents.schema.json                   ← JSON Schema for global config validation
+├── chronagents-agent.schema.json             ← JSON Schema for per-agent schedule config files
 ├── dashboard.md                              ← live at-a-glance results (read-only)
 ├── .chronagents/
-│   ├── agents/                               ← optional repo-local ignored workload agents
+│   └── agents/                               ← repo-local workload agents + scheduling configs
+│       ├── daily-review.agent.md             ← Copilot agent definition
+│       ├── daily-review.json                 ← scheduling config (id = filename stem)
+│       ├── weekly-deps.agent.md
+│       └── weekly-deps.json
+├── .chronstate/                              ← runtime data (always gitignored, entire directory)
 │   ├── state.json                            ← last-run timestamps + agent enabled/disabled
-│   ├── scheduler.log                         ← global scheduler log (gitignored, rotated)
+│   ├── scheduler.log                         ← global scheduler log (rotated)
 │   └── runs/                                 ← per-run detailed output
-│       └── <timestamp>_<agent>/
+│       └── <timestamp>_<agent-id>_<nonce>/   ← nonce = short random suffix for uniqueness
 │           ├── output.md                     ← captured agent output
+│           ├── summary.md                    ← LLM-generated run summary (cached, written once)
 │           ├── meta.json                     ← run metadata + feedbackProcessed flag
 │           ├── session.md                    ← full session transcript (--share)
 │           ├── scheduler.log                 ← per-run debug log (always debug level)
@@ -113,13 +120,17 @@ CronAgents/
 
 This separation ensures users aren't overwhelmed by internals, contributors have full design context, and the README stays readable as the project grows.
 
-`.github` is reserved for Copilot customizations that apply when *developing this repo* (workspace instructions, prompts). Scaffold-internal agents (feedback evaluator, dashboard summarizer) and their skills live in `scheduler/agents/` and `scheduler/skills/` because they are product components of the CronAgents runtime, not repo development tools. The scheduler passes `--add-dir=scheduler/` when invoking them so Copilot CLI can resolve them. User-defined scheduled workload agents live in `.chronagents/agents/` (gitignored), user-global directories like `C:\Users\<user>\.copilot`, or both.
+`.github` is reserved for Copilot customizations that apply when *developing this repo* (workspace instructions, prompts). Scaffold-internal agents (feedback evaluator, run summarizer) and their skills live in `scheduler/agents/` and `scheduler/skills/` because they are product components of the CronAgents runtime, not repo development tools. The scheduler passes `--add-dir=scheduler/` when invoking them so Copilot CLI can resolve them. User-defined scheduled workload agents live in `.chronagents/agents/` (tracked on user branches), user-global directories like `C:\Users\<user>\.copilot`, or both.
+
+**Config split — global settings vs. per-agent scheduling:** `chronagents.json` contains only global scheduler settings (log level, retention, quiet hours, versioning, etc.) — no agent definitions. Each user agent has a sibling `.json` scheduling config alongside its `.agent.md` file in `.chronagents/agents/`. The filename stem (e.g., `daily-review` from `daily-review.json`) serves as the **stable agent ID** used in state tracking, run directories, CLI commands, and future `dependsOn` references. The human-readable `name` field inside the file is display-only and can be changed freely without breaking history. This separation means master never touches agent definitions, user branches never touch global settings, and merge conflicts between the two are structurally impossible.
+
+**Runtime data isolation:** All ephemeral runtime data lives in `.chronstate/` — a separate top-level directory that is always gitignored in its entirety. This includes `state.json`, `scheduler.log`, and all run directories under `runs/`. Clean separation from `.chronagents/` (which contains version-controlled code: agent definitions and scheduling configs on user branches) eliminates mixed git semantics within a single directory.
 
 **Shared module architecture** — `scheduler/lib/` is a single PowerShell module (`CronAgents.psd1` manifest) that all scripts import. This prevents duplicated logic between the scheduler, CLI wrapper, health check, and tests. Each `.ps1` in `lib/` is a nested module exporting specific functions:
 
 | Module file | Exported functions | Consumers |
 |---|---|---|
-| `ConfigLoader.ps1` | `Import-CronAgentsConfig`, `Test-CronAgentsConfig` | Scheduler, CLI wrapper, health check, tests |
+| `ConfigLoader.ps1` | `Import-CronAgentsConfig`, `Test-CronAgentsConfig`, `Get-AgentConfigs` | Scheduler, CLI wrapper, health check, tests |
 | `StateManager.ps1` | `Get-AgentState`, `Set-AgentState`, `Reset-AgentState` | Scheduler, CLI wrapper (pause/resume/status), tests |
 | `ScheduleParser.ps1` | `Test-AgentDue`, `Get-NextRunTime` | Scheduler, CLI wrapper (status/list), tests |
 | `RunManager.ps1` | `New-RunDirectory`, `Write-RunMetadata`, `Get-RunHistory` | `Invoke-ScheduledAgent.ps1`, `Update-Dashboard.ps1`, CLI wrapper, tests |
@@ -130,13 +141,17 @@ This separation ensures users aren't overwhelmed by internals, contributors have
 
 The top-level scripts (`Start-CronAgents.ps1`, `Invoke-ScheduledAgent.ps1`, `Update-Dashboard.ps1`, `chronagents.ps1`, `Test-CronAgentsHealth.ps1`) are thin orchestrators that import the module and call its functions. `tests/TestHelpers.psm1` also imports `CronAgents.psd1`, ensuring tests exercise the same code paths as production.
 
-**Step 2** — `.gitignore` should ignore runtime data (`.chronagents/runs/`, `state.json`) on all branches. User workload agent definitions under `.chronagents/agents/` are **tracked on user branches** (`agents/<username>`) but not on `master`. Scaffold-internal agents under `scheduler/agents/` are committed on `master`. Examples and templates remain committed on `master`. The per-user branch model, sync policies, auto-bootstrap, and pre-edit snapshot design are detailed in [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
+**Step 2** — `.gitignore` should ignore the entire `.chronstate/` directory on all branches (runtime data). The `.chronagents/` directory is **tracked on user branches** (`agents/<username>`) — this is where user agent definitions and scheduling configs live. On `master`, `.chronagents/` can be empty or absent. Scaffold-internal agents under `scheduler/agents/` are committed on `master`. Examples and templates remain committed on `master`. The per-user branch model, sync policies, auto-bootstrap, and pre-edit snapshot design are detailed in [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
 
 ---
 
 ## Phase 2: Configuration System
 
-**Step 3** — `chronagents.json` config — defines agents, their schedules, prompts, and settings. Day 0 should support coarse-grained recurring schedules only, with **1 hour as the recommended default** and **30 minutes as the finest supported interval**.
+Configuration is split into two layers: **global scheduler settings** (`chronagents.json`) and **per-agent scheduling configs** (individual `.json` files alongside each agent's `.agent.md`).
+
+### Step 3a — Global config: `chronagents.json`
+
+Contains only scheduler-wide settings — no agent definitions. Day 0 should support coarse-grained recurring schedules only, with **1 hour as the recommended default** and **30 minutes as the finest supported interval**.
   - `{ "type": "interval", "every": "1h" }`
   - `{ "type": "interval", "every": "4h" }`
   - `{ "type": "daily", "time": "09:00" }`
@@ -146,24 +161,13 @@ If cron syntax is added, it should be treated as a normalized internal represent
 
 Settings include `autoFeedback` toggle, `maxRunHistory`, `copilotPath` (defaults to `copilot`), `retentionDays` (default 14 — run directories older than this are deleted; set to 0 to disable), `startupDelay` (default `5m` — how long the scheduler waits after process start before the first evaluation tick; set to `0` to disable), `logLevel` (default `"info"`, also `"debug"`, `"warn"`, `"error"` — controls verbosity of scheduler log output), `quietHours` (optional — time window during which no agents are started; due agents queue until the window ends), and optional overrides for Copilot CLI environment.
 
-Each agent should also support scheduler-execution policies:
-- `timeout` — maximum runtime before the scheduler terminates the agent process. Default: `10m`.
-- `skipOnBattery` — when `true`, skip starting that agent while the device is on battery power. Default: `false`.
-- `retryCount` — number of retry attempts after a failed run before giving up for that schedule window. Default: `0`.
-- `model` — override the model used for this agent's Copilot CLI invocation (e.g., `"gpt-4o"`, `"claude-sonnet-4"`). When set, the scheduler passes `--model=<value>` to the CLI. When omitted, the agent uses whatever model its `.agent.md` frontmatter specifies (or Copilot's default).
-- `denyTools` — array of tool names to block via `--deny-tool` (e.g., `["shell(rm)", "shell(git push)"]`). This is an **additional restriction layer** on top of the agent's `.agent.md` `tools` frontmatter — the agent file defines what tools are available, `denyTools` in config further restricts at the scheduler level. Default: `[]`.
-- `extraCliFlags` — array of additional Copilot CLI flags passed verbatim (e.g., `["--no-ask-user", "--output-format=json"]`). Escape hatch for new CLI features without schema changes. Default: `[]`.
-- `envVars` — object of additional environment variables set for the agent's Copilot CLI process (e.g., `{ "COPILOT_CUSTOM_INSTRUCTIONS_DIRS": "./extra" }`). For secrets, reference system environment variables rather than embedding values in config. Default: `{}`.
-
-These are **per-agent scheduler policies**, not Task Scheduler settings. The one OS-level task only bootstraps the CronAgents process at logon.
-
 Agent versioning settings (in a `versioning` block):
 - `syncPolicy` — `"notify"` (default), `"auto"`, or `"manual"`. Controls how scaffold updates from master are handled. See [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
 - `userName` — explicit override for branch name (`agents/<userName>`). When omitted, auto-detected from `git config user.name` (slugified) or `$env:USERNAME`.
 - `autoCommitFeedback` — when `true` (default), the scheduler commits evaluator edits to the user branch automatically.
 - `branchPrefix` — branch naming prefix. Default `"agents"` → branches named `agents/<userName>`.
 
-### Complete config example
+#### Global config example
 
 ```jsonc
 {
@@ -181,60 +185,128 @@ Agent versioning settings (in a `versioning` block):
     "userName": null,
     "autoCommitFeedback": true,
     "branchPrefix": "agents"
-  },
-
-  "agents": [
-    {
-      "name": "daily-review",
-      "agent": "daily-review",
-      "prompt": "Review today's changes and summarize",
-      "schedule": { "type": "daily", "time": "09:00" },
-      "timeout": "10m",
-      "skipOnBattery": false,
-      "retryCount": 0,
-      "model": "claude-sonnet-4",
-      "denyTools": ["shell(rm)"],
-      "extraCliFlags": ["--no-ask-user"],
-      "envVars": {}
-    },
-    {
-      "name": "weekly-deps",
-      "agent": "weekly-deps",
-      "prompt": "Check for outdated dependencies and security advisories",
-      "schedule": { "type": "weekly", "day": "monday", "time": "10:00" },
-      "timeout": "15m",
-      "skipOnBattery": true,
-      "retryCount": 1
-    }
-  ]
+  }
 }
 ```
 
-All fields except `agents` are optional — sensible defaults apply. Per-agent fields `timeout`, `skipOnBattery`, `retryCount`, `model`, `denyTools`, `extraCliFlags`, and `envVars` are all optional with the defaults shown above.
+All fields are optional — sensible defaults apply.
 
-Resolution model (simplified, leverages native Copilot CLI resolution):
+### Step 3b — Per-agent scheduling configs
+
+Each user agent has a `.json` file alongside its `.agent.md` in `.chronagents/agents/` (or in user-global Copilot directories). The **filename stem is the stable agent ID** — used in `state.json` keys, run directory names, CLI arguments, and future `dependsOn` references. The `name` field inside the file is a human-readable display label that can be changed freely without breaking history.
+
+Agent discovery: the scheduler scans `.chronagents/agents/*.json` (and any additional directories from config) on startup. Each `.json` file found is a scheduling config. No central registration step — drop files in the right place and they're discovered.
+
+Per-agent scheduling config fields:
+- `name` — human-readable display name (mutable, display-only). Default: the agent ID (filename stem).
+- `agent` — agent file reference for Copilot CLI `--agent=` flag. Usually matches the `.agent.md` name. **Optional** — omit for prompt-only mode.
+- `prompt` — the prompt passed to Copilot CLI for each run. **Required.**
+- `schedule` — when to run. Supports `interval`, `daily`, `weekly` types. **Required.**
+- `timeout` — maximum runtime before the scheduler terminates the agent process. Default: `10m`.
+- `skipOnBattery` — when `true`, skip starting that agent while the device is on battery power. Default: `false`.
+- `retryCount` — number of retry attempts after a failed run before giving up for that schedule window. Default: `0`.
+- `model` — override the model used for this agent's Copilot CLI invocation (e.g., `"gpt-4o"`, `"claude-sonnet-4"`). When set, the scheduler passes `--model=<value>` to the CLI. When omitted, the agent uses whatever model its `.agent.md` frontmatter specifies (or Copilot's default).
+- `denyTools` — array of tool names to block via `--deny-tool` (e.g., `["shell(rm)", "shell(git push)"]`). In agent mode, this is an **additional restriction layer** on top of the agent's `.agent.md` `tools` frontmatter. In prompt-only mode, this is the **only** tool restriction mechanism (since there is no `.agent.md` to scope tools). Default: `[]`.
+- `extraCliFlags` — array of additional Copilot CLI flags passed verbatim (e.g., `["--no-ask-user", "--output-format=json"]`). Escape hatch for new CLI features without schema changes. Default: `[]`.
+- `envVars` — object of additional environment variables set for the agent's Copilot CLI process (e.g., `{ "COPILOT_CUSTOM_INSTRUCTIONS_DIRS": "./extra" }`). For secrets, reference system environment variables rather than embedding values in config. Default: `{}`.
+
+These are **per-agent scheduler policies**, not Task Scheduler settings. The one OS-level task only bootstraps the CronAgents process at logon.
+
+**Execution modes:**
+- **Agent mode:** Config has `agent` + `prompt`. Scheduler invokes `copilot --agent=<name> -p "<prompt>" --silent ...`. The `.agent.md` defines the system prompt, tool scoping, and behavior.
+- **Prompt-only mode:** Config has `prompt` but no `agent`. Scheduler invokes `copilot -p "<prompt>" --allow-all-tools --silent ...`. No `.agent.md` needed — useful for simple tasks expressible in a single prompt. `--allow-all-tools` is the default since there's no agent file to scope tools; use `denyTools` to restrict.
+- **Script mode** (future): Config has `script` instead of `agent`/`prompt`. Full design in [SCRIPT-MODE.md](SCRIPT-MODE.md).
+
+The `chronagents-agent.schema.json` enforces these as `oneOf` — a config specifies exactly one of: `agent`+`prompt`, `prompt`-only, or `script`.
+
+**Security: least-privilege tool scoping.** Agents should be configured with the minimum set of tools required for their task. The `.agent.md` `tools` frontmatter is the primary security boundary — it defines what Copilot CLI can access. `denyTools` in the scheduling config adds a second restriction layer at the scheduler level. For prompt-only mode (where no `.agent.md` exists), `denyTools` is the **only** restriction mechanism — users should be advised to specify deny rules for any destructive operations.
+
+#### Per-agent config example
+
+```jsonc
+// File: .chronagents/agents/daily-review.json
+// Agent ID: "daily-review" (from filename)
+{
+  "$schema": "../../chronagents-agent.schema.json",
+  "name": "Daily Code Review",
+  "agent": "daily-review",
+  "prompt": "Review today's changes and summarize",
+  "schedule": { "type": "daily", "time": "09:00" },
+  "timeout": "10m",
+  "skipOnBattery": false,
+  "retryCount": 0,
+  "model": "claude-sonnet-4",
+  "denyTools": ["shell(rm)"],
+  "extraCliFlags": ["--no-ask-user"],
+  "envVars": {}
+}
+```
+
+```jsonc
+// File: .chronagents/agents/weekly-deps.json
+// Agent ID: "weekly-deps" (from filename)
+{
+  "$schema": "../../chronagents-agent.schema.json",
+  "name": "Weekly Dependency Check",
+  "agent": "weekly-deps",
+  "prompt": "Check for outdated dependencies and security advisories",
+  "schedule": { "type": "weekly", "day": "monday", "time": "10:00" },
+  "timeout": "15m",
+  "skipOnBattery": true,
+  "retryCount": 1
+}
+```
+
+```jsonc
+// File: .chronagents/agents/morning-summary.json
+// Agent ID: "morning-summary" (from filename)
+// Prompt-only mode — no .agent.md needed
+{
+  "$schema": "../../chronagents-agent.schema.json",
+  "name": "Morning Summary",
+  "prompt": "Summarize all git commits from the last 24 hours. Group by author and highlight breaking changes.",
+  "schedule": { "type": "daily", "time": "08:00" },
+  "denyTools": ["shell(rm)", "shell(git push)", "shell(git reset)"]
+}
+```
+
+Per-agent fields `timeout`, `skipOnBattery`, `retryCount`, `model`, `denyTools`, `extraCliFlags`, and `envVars` are all optional with the defaults shown above. Only `prompt` and `schedule` are required. `agent` is required for agent mode, omitted for prompt-only mode.
+
+### Why split config?
+
+The git branch model has master owning global settings and user branches owning agent definitions. A single `chronagents.json` containing both would cause merge conflicts every time master changes a default while the user has agents defined. With the split, master's `chronagents.json` and users' `.chronagents/agents/*.json` files are in completely separate paths — structurally impossible to conflict. The split also enables future features naturally: config profiles (#15) only overlay global settings, remote config (#17) can push agent definitions independently, and agent sharing is just copying a `.json` + `.agent.md` pair.
+
+### Agent resolution model
+
+Simplified, leveraging native Copilot CLI resolution:
 - Copilot CLI already resolves agents from `.github/agents/` (project) → `~/.copilot/agents/` (user)
 - The scheduler sets `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` per-invocation if the user configures extra instruction directories
 - `copilotHome` config key (optional): overrides `COPILOT_HOME` env var to point Copilot CLI at a non-default config/agents root
-- scaffold agents (feedback-evaluator, dashboard-summarizer) live in `scheduler/agents/` — the scheduler passes `--add-dir=scheduler/` when invoking them
+- scaffold agents (feedback-evaluator, run-summarizer) live in `scheduler/agents/` — the scheduler passes `--add-dir=scheduler/` when invoking them
 - user workload agents resolve from `.chronagents/agents/` (via `--add-dir`), `~/.copilot/agents/`, or explicit paths in config
 - examples remain committed as templates only
 
-**Step 4** — `chronagents.schema.json` — JSON Schema for editor autocompletion and config validation.
+**Step 4** — `chronagents.schema.json` and `chronagents-agent.schema.json` — JSON Schemas for editor autocompletion and config validation. Two schemas: one for global config, one for per-agent scheduling configs.
 
 ---
 
 ## Phase 3: PowerShell Scheduler
 
-**Step 5** — `lib/ScheduleParser.ps1` — Functions: `Test-AgentDue` and `Get-NextRunTime`, with helpers for interval, daily, and weekly schedules. Reads/writes `.chronagents/state.json`.
+**Step 5** — `lib/ScheduleParser.ps1` — Functions: `Test-AgentDue` and `Get-NextRunTime`, with helpers for interval, daily, and weekly schedules. Reads state via `StateManager.ps1`.
+
+**State management (`lib/StateManager.ps1`):**
+- All scheduler state lives in `.chronstate/state.json` — separate from agent definitions.
+- The file stores: per-agent last-run timestamps (keyed by **agent ID**, i.e. the filename stem), per-agent enabled/disabled state, global scheduler pause flag, and a `schemaVersion` field for future migrations.
+- **Concurrency contract:** All reads and writes go through `Get-AgentState` / `Set-AgentState` which use file-level locking (`[System.IO.FileStream]` with `FileShare.None`) and atomic write-to-temp-then-rename. This prevents races between the scheduler loop, CLI wrapper, and future HTTP API.
+- **Recovery:** If `state.json` is unreadable or fails schema validation, `StateManager` resets to empty state and logs a warning. The `schemaVersion` field enables forward-compatible migrations when the state schema evolves.
 
 **Scheduling mechanism:**
 - `Start-CronAgents.ps1` is a single long-running scheduler process with one centralized heartbeat. There is **not** a separate Windows Task Scheduler entry, cron daemon job, or timer per agent.
 - Day 0 uses a coarse scheduler cadence: wake on a fixed boundary no more than every 30 minutes, or sleep dynamically until the next known due time. Do not wake every minute unless later evidence justifies it.
-- On each wake, the scheduler checks all configured agents against the current time slot and collects the agents that are due.
-- Due agents are enqueued once and run sequentially in config order.
+- On each wake, the scheduler checks all discovered agents against the current time slot and collects the agents that are due.
+- Due agents are enqueued once and run sequentially in discovery order.
 - If an agent is still running when its next scheduled slot arrives, the scheduler must **not** stack duplicate runs for the same agent. It either coalesces them into one pending run or skips the missed slot, depending on configured policy.
-- The scheduler records per-agent state in `.chronagents/state.json` so the same due window is not re-enqueued repeatedly after restarts or repeated checks.
+- The scheduler records per-agent state in `.chronstate/state.json` so the same due window is not re-enqueued repeatedly after restarts or repeated checks.
 - This makes schedule times advisory due markers: the system guarantees "run when due and capacity allows," not exact launch at the top of the slot.
 
 **Reboot persistence (POC-validated):**
@@ -250,12 +322,19 @@ Resolution model (simplified, leverages native Copilot CLI resolution):
 - Before registering, the script should check for unexpected tasks under `\CronAgents\` and warn (or refuse) if it finds entries it did not create.
 - The task name (`CronAgents`) and task path (`\CronAgents\`) are fixed constants, not user-configurable, to prevent accidental accumulation.
 
-**Step 6** — `Invoke-ScheduledAgent.ps1` — Invokes `copilot --agent=<name> -p "<prompt>" --allow-all-tools --silent --share=<run-dir>/session.md`, captures output, creates run directory `.chronagents/runs/<timestamp>_<agent-name>/` with:
+**Step 6** — `Invoke-ScheduledAgent.ps1` — Determines execution mode from the agent's scheduling config:
+  - **Agent mode** (`agent` field present): Invokes `copilot --agent=<name> -p "<prompt>" --silent --share=<run-dir>/session.md`
+  - **Prompt-only mode** (`agent` field absent): Invokes `copilot -p "<prompt>" --allow-all-tools --silent --share=<run-dir>/session.md`
+
+  Creates run directory `.chronstate/runs/<timestamp>_<agent-id>_<nonce>/` with:
   - `output.md` — captured agent stdout
-  - `meta.json` — run metadata (agent name, start/end time, exit code, prompt, `feedbackProcessed: false`)
+  - `meta.json` — run metadata (agent ID, display name, start/end time, exit code, prompt, `feedbackProcessed: false`)
+  - `summary.md` — LLM-generated summary of this run's output (written by run-summarizer agent after completion)
   - `session.md` — full session transcript (auto-saved by `--share`)
   - `feedback.md` — pre-populated stub template for human feedback (separate from dashboard)
   - `feedback-result.md` — created later by the feedback evaluator after processing
+
+  Run directory naming uses `<ISO-timestamp>_<agent-id>_<nonce>` where the nonce is a short random hex suffix (e.g., `20260322T090000_daily-review_a7f3`). The agent ID portion ensures human readability; the nonce prevents collisions if future parallel execution produces simultaneous completions.
 
   Uses `--deny-tool` for each entry in the agent's `denyTools` config array. Passes `--model=<value>` when the agent config specifies a model override. Appends any `extraCliFlags` verbatim. Sets any `envVars` as environment variables on the child process. The `copilotPath` config key allows tests to point at a mock.
 
@@ -264,39 +343,43 @@ Resolution model (simplified, leverages native Copilot CLI resolution):
   - Respect `skipOnBattery: true` before launch by checking device power state and recording the run as skipped rather than started.
   - Respect `retryCount` on failure by retrying the same scheduled run up to `N` additional times with simple backoff, without creating duplicate scheduled entries for the same window.
 
-**Step 7** — `Update-Dashboard.ps1` — Regenerates `dashboard.md` after each tick. The script collects run metadata (`meta.json`, exit codes, output size, feedback state) and invokes a **dashboard-summarizer agent** via Copilot CLI to produce the markdown. The agent decides how much space each run deserves:
+**Step 7** — Dashboard generation is split into two stages: **LLM summarization** (per-run, cached) and **deterministic assembly** (per-tick, no LLM).
+
+  **Stage 1 — Run summarization (LLM, once per agent run):** After each agent run completes, the scheduler invokes the **run-summarizer agent** (`scheduler/agents/run-summarizer.agent.md`) to produce a concise summary of that specific run's output. The summarizer reads `output.md` and `meta.json` from the run directory and decides how much detail the run deserves:
   - **Failures** get expanded detail: error context, which tools failed, suggested next steps
   - **Runs where work happened** (non-trivial output, file edits) get a meaningful summary of what changed
   - **No-op runs** collapse to a single line: "✓ no changes"
 
-  The agent writes structured markdown with a summary table (agent | last run | status | feedback | detail) plus per-run narrative sections scaled by importance. Links directly to `feedback.md` for runs awaiting feedback, and to `feedback-result.md` for processed runs. Dashboard is **read-only** — the user never edits it directly.
+  The summary is written to `summary.md` in the run directory and is **never regenerated** — it's a cached artifact. This means the LLM cost is exactly one invocation per agent run, not per dashboard refresh. The run-summarizer has `tools: [read]` only — no edit access.
 
-  The dashboard-summarizer agent lives in `scheduler/agents/dashboard-summarizer.agent.md` and ships with the scaffold alongside the feedback evaluator. It has `tools: [read]` only — no edit access.
+  **Stage 2 — Dashboard assembly (deterministic, no LLM):** `Update-Dashboard.ps1` is a pure script that reads `meta.json` + `summary.md` from recent run directories and assembles `dashboard.md` mechanically. It produces a summary table (agent | last run | status | feedback | detail) plus per-run sections using the cached `summary.md` content. Links directly to `feedback.md` for runs awaiting feedback, and to `feedback-result.md` for processed runs. Dashboard is **read-only** — the user never edits it directly.
+
+  Because the assembly is deterministic, it's fast, free (no tokens), fully testable with snapshot assertions, and produces structured data that the future HTTP API (`GET /api/status`) can reuse directly.
 
 **Step 8** — `Start-CronAgents.ps1` — Main loop. Reads config, validates, applies `startupDelay` (default `5m`) before the first evaluation tick to avoid competing with the post-boot resource storm, then maintains one centralized scheduler heartbeat with coarse wake intervals. The delay logs its countdown so the user knows the scheduler is alive but waiting. Set `startupDelay: "0"` to skip. Each tick follows this order:
 
   1. **Feedback sweep** — run the feedback evaluator for all pending feedback (non-empty `feedback.md` + `feedbackProcessed: false`). This ensures agent/skill edits from human feedback take effect *before* the next workload runs.
   2. **Quiet hours check** — if `quietHours` is configured and the current time falls within the window, skip all agent evaluation for this tick. Log the skip. Due agents remain due and will be picked up when the window ends.
-  3. **Scheduled agents** — check `Test-AgentDue` per agent for the current scheduler window, collect all due agents, enqueue each at most once, then invoke them sequentially from the same loop. If `autoFeedback` is true, also trigger the feedback evaluator immediately after each individual run (for self-review of the run that just happened).
+  3. **Scheduled agents** — check `Test-AgentDue` per agent for the current scheduler window, collect all due agents, enqueue each at most once, then invoke them sequentially from the same loop. After each agent run completes, invoke the **run-summarizer agent** to produce `summary.md` for that run (one LLM call per agent run, cached). If `autoFeedback` is true, also trigger the feedback evaluator immediately after each individual run (for self-review of the run that just happened).
       Before launch, the scheduler applies each agent's execution policies: skip when on battery if configured, enforce timeout, and perform bounded retries on failure.
-  3. **Dashboard update** — regenerate `dashboard.md` reflecting all changes from this tick.
+  3. **Dashboard update** — regenerate `dashboard.md` deterministically (no LLM) from cached `summary.md` + `meta.json` across recent runs.
   4. **Retention cleanup** — once per day, delete run directories older than `retentionDays` (preserving runs with unprocessed feedback regardless of age).
 
-  **Logging:** The scheduler writes structured log entries via a shared `Write-CronAgentsLog` function (in `lib/`), gated on the configured `logLevel`. Each run also captures a per-run log at `.chronagents/runs/<timestamp>_<agent>/scheduler.log` with debug-level detail regardless of the global log level — this ensures per-run troubleshooting is always possible. The global scheduler log writes to `.chronagents/scheduler.log` (gitignored, rotated by size).
+  **Logging:** The scheduler writes structured log entries via a shared `Write-CronAgentsLog` function (in `lib/`), gated on the configured `logLevel`. Each run also captures a per-run log at `.chronstate/runs/<timestamp>_<agent-id>_<nonce>/scheduler.log` with debug-level detail regardless of the global log level — this ensures per-run troubleshooting is always possible. The global scheduler log writes to `.chronstate/scheduler.log` (gitignored, rotated by size).
 
   This is intentionally one persistent scheduler loop, not one OS-level job per agent. Handles Ctrl+C gracefully.
 
 **Step 8a** — `chronagents.ps1` — CLI wrapper for management actions. Subcommands:
-  - `run <agent>` — trigger a one-off run outside the schedule
+  - `run <agent-id>` — trigger a one-off run outside the schedule
   - `status` — show scheduler state, next run times, pending feedback count
-  - `pause` — (no argument) set `schedulerPaused: true` in `state.json` — the scheduler loop continues running but skips all agent evaluation until resumed
-  - `pause <agent>` — set `enabled: false` for that agent in `state.json` (skipped by scheduler)
+  - `pause` — (no argument) set `schedulerPaused: true` in `.chronstate/state.json` — the scheduler loop continues running but skips all agent evaluation until resumed
+  - `pause <agent-id>` — set `enabled: false` for that agent in `state.json` (skipped by scheduler)
   - `resume` — (no argument) clear the global pause
-  - `resume <agent>` — set `enabled: true` for that agent in `state.json`
-  - `list` — list configured agents with schedule and last run
-  - `feedback [agent]` — open the most recent unprocessed `feedback.md` in `$EDITOR` / VS Code
+  - `resume <agent-id>` — set `enabled: true` for that agent in `state.json`
+  - `list` — list discovered agents with schedule and last run
+  - `feedback [agent-id]` — open the most recent unprocessed `feedback.md` in `$EDITOR` / VS Code
   - `evaluate` — manually trigger feedback evaluator for all pending feedback
-  - `doctor` — health check: verify exactly one Task Scheduler entry under `\CronAgents\`, config is valid, `state.json` is not corrupted, scheduler process is running, and no orphaned run directories exist
+  - `doctor` — health check: verify exactly one Task Scheduler entry under `\CronAgents\`, config is valid, `.chronstate/state.json` is not corrupted, scheduler process is running, and no orphaned run directories exist
   - `install` — register (or update) the at-logon Task Scheduler entry. Auto-bootstrap the `agents/<username>` branch if it doesn't exist. Idempotent.
   - `uninstall` — remove the Task Scheduler entry cleanly
   - `sync` — manually trigger merge from `master` into user branch. Reports clean merge or conflict status.
@@ -328,9 +411,10 @@ Resolution model (simplified, leverages native Copilot CLI resolution):
   - Exactly one task under `\CronAgents\` in Task Scheduler (warns on zero, errors on >1)
   - Task definition matches expected action/trigger (detects stale installs)
   - `chronagents.json` parses and validates against schema
-  - `state.json` is readable and not corrupted
+  - Agent config files in `.chronagents/agents/` parse and validate against agent schema
+  - `.chronstate/state.json` is readable and not corrupted
   - Scheduler process is currently running (optional — informational)
-  - No orphaned run directories that reference agents no longer in config
+  - No orphaned run directories (in `.chronstate/runs/`) that reference agents no longer discovered
   - Reports a pass/warn/fail summary the user can act on
 
 ---
@@ -350,7 +434,7 @@ Resolution model (simplified, leverages native Copilot CLI resolution):
 
 Feedback is always a **separate file per run**, never part of the dashboard.
 
-**Step 9a** — Feedback-commit hook — after the evaluator edits files and writes `feedback-result.md`, the scheduler commits the changes to the user's `agents/<username>` branch with a structured message (`feedback: <agent-name> — <summary>`). Pre-edit snapshots are written to the run directory's `backup/` folder **before** edits are applied, providing immediate rollback regardless of git state. Full design in [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
+**Step 9a** — Feedback-commit hook — after the evaluator edits files and writes `feedback-result.md`, the scheduler commits the changes to the user's `agents/<username>` branch with a structured message (`feedback: <agent-id> — <summary>`). Pre-edit snapshots are written to the run directory's `backup/` folder (in `.chronstate/runs/`) **before** edits are applied, providing immediate rollback regardless of git state. Full design in [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
 
 **Step 10** — `run-feedback.prompt.md` — Invokable as `/run-feedback` to trigger feedback processing for recent runs.
 
@@ -371,9 +455,9 @@ Three tiers, three audiences:
 
 **Step 13** — `guide/` pages:
 - `getting-started.md` — prerequisites, install, configure, first agent, first run
-- `configuration.md` — full `chronagents.json` reference (every field, type, default, example)
+- `configuration.md` — full `chronagents.json` reference (global settings) and per-agent `.json` schedule config reference (every field, type, default, example)
 - `cli-reference.md` — all `chronagents.ps1` subcommands, TUI menu, `--help` examples
-- `writing-agents.md` — how to create an `.agent.md`, register it in config, test it manually
+- `writing-agents.md` — how to create an `.agent.md` + sibling `.json` schedule config, test it manually
 - `feedback-system.md` — how the feedback loop works, editing `feedback.md`, auto-feedback
 - `branching-and-sync.md` — user branch model, sync commands, conflict resolution
 - `troubleshooting.md` — common issues, `chronagents.ps1 doctor`, reading logs
@@ -382,7 +466,7 @@ Three tiers, three audiences:
 
 **Step 14** — `.github/copilot-instructions.md` — Workspace instructions for extending the project (core principles, no-duplication rule, project structure, test enforcement).
 
-**Step 14a** — `.github/skills/agent-creator/SKILL.md` — Interactive skill that walks users through creating a new scheduled agent. Interviews the user, reads `guide/writing-agents.md` and `guide/configuration.md` for current structure/options, then scaffolds the `.agent.md` file and `chronagents.json` config entry. This is a development-time Copilot skill, not a runtime component.
+**Step 14a** — `.github/skills/agent-creator/SKILL.md` — Interactive skill that walks users through creating a new scheduled agent. Interviews the user, reads `guide/writing-agents.md` and `guide/configuration.md` for current structure/options, then scaffolds the `.agent.md` file and sibling `.json` schedule config. This is a development-time Copilot skill, not a runtime component.
 
 **Step 15** — Example agent files (`.example` suffix) — kept as templates under `templates/agents/`. Users copy them into `.chronagents/agents/` or a user-global Copilot directory to activate. Each example includes inline comments explaining every frontmatter field and prompt pattern.
 
@@ -445,7 +529,7 @@ Run all tests except E2E: `Invoke-Pester ./tests/ -ExcludeTag 'E2E'`
 - **Coarse schedule granularity** for day 0: 1 hour recommended, 30 minutes minimum. One centralized matcher loop, not per-agent cron jobs
 - **Per-agent execution policies**: `timeout` default `10m`, `skipOnBattery` default `false`, `retryCount` default `0`, `model` optional (overrides `.agent.md` frontmatter model), `denyTools` optional (additional restriction layer on top of agent frontmatter), `extraCliFlags` optional (escape hatch for new CLI flags), `envVars` optional (per-agent environment variables)
 - **Quiet hours**: optional `quietHours` config (`start`/`end` times) — scheduler skips agent evaluation during the window, due agents queue until it ends
-- **Logging**: `logLevel` config (default `info`) gates scheduler verbosity. Per-run logs always written at debug level to `scheduler.log` in the run directory. Global scheduler log at `.chronagents/scheduler.log` (gitignored)
+- **Logging**: `logLevel` config (default `info`) gates scheduler verbosity. Per-run logs always written at debug level to `scheduler.log` in the run directory. Global scheduler log at `.chronstate/scheduler.log` (gitignored)
 - **Agent versioning**: per-user long-running branches (`agents/<username>`) track user agent customizations with full git history. Scaffold code stays on `master`; user branches are supersets. Feedback evaluator edits are auto-committed. Scaffold updates merge from master via configurable sync policy (`notify` default, `auto`, `manual`). Pre-edit snapshots in run directories provide immediate rollback. Full design in [AGENT-VERSIONING.md](AGENT-VERSIONING.md)
 - **Agent ownership**: the feedback evaluator is the one shared scaffold agent. User-defined scheduled agents live on their `agents/<username>` branch (repo-local) or in user-global directories
 - **Dashboard**: single tracked markdown file the user keeps open in VS Code — read-only, never edited by user

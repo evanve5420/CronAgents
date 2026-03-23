@@ -38,13 +38,13 @@ master                    ← scaffold code, templates, scaffold agents. Shared/
 | Content | Branch | Tracked? |
 |---------|--------|----------|
 | Scaffold runtime (`scheduler/`, `chronagents.ps1`, etc.) | `master` | Yes |
-| Scaffold agents (feedback-evaluator, dashboard-summarizer) | `master` (in `scheduler/agents/`) | Yes |
+| Global config (`chronagents.json`) | `master` | Yes |
+| Scaffold agents (feedback-evaluator, run-summarizer) | `master` (in `scheduler/agents/`) | Yes |
 | Templates/examples | `master` (in `templates/`) | Yes |
-| Tests, docs, config schema | `master` | Yes |
-| User workload agents (`.chronagents/agents/`) | `agents/<user>` | Yes (on user branch) |
+| Tests, docs, config schemas | `master` | Yes |
+| User workload agents + schedule configs (`.chronagents/agents/`) | `agents/<user>` | Yes (on user branch) |
 | User skill/instruction overrides | `agents/<user>` | Yes (on user branch) |
-| Run data (`.chronagents/runs/`) | Neither | Gitignored on all branches |
-| Runtime state (`state.json`) | Neither | Gitignored on all branches |
+| Runtime data (`.chronstate/` — runs, state, logs) | Neither | Gitignored on all branches |
 
 ### Why supersets, not separate trees
 
@@ -150,11 +150,12 @@ If `git merge` fails with conflicts:
 Regardless of git branching, the feedback evaluator **always** creates pre-edit snapshots:
 
 ```
-.chronagents/runs/<timestamp>_<agent>/
+.chronstate/runs/<timestamp>_<agent-id>_<nonce>/
 ├── backup/
 │   ├── daily-review.agent.md    ← copy of file before evaluator edited it
 │   └── review-skill/SKILL.md   ← copy of file before evaluator edited it
 ├── output.md
+├── summary.md
 ├── meta.json
 ├── feedback.md
 ├── feedback-result.md

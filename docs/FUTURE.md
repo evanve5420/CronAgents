@@ -42,7 +42,7 @@ A scaffold-internal agent that reviews recent diffs to agent definitions, skills
 
 ### 8. Parallel Execution & Agent Dependencies
 
-Currently agents run sequentially in config array order (the user controls execution order by arranging the `agents` array). A future version could add parallel execution for independent agents plus a `dependsOn: ["other-agent"]` config to express ordering constraints, with the scheduler building a dependency graph and running independent branches concurrently. Parallelism would make 30-minute schedules more attractive, but it adds complexity: Copilot CLI rate limits, concurrent `state.json` access, output interleaving, and topological sort. Not worth it until someone has enough agents to feel the sequential bottleneck.
+Currently agents run sequentially in discovery order. A future version could add parallel execution for independent agents plus a `dependsOn: ["other-agent-id"]` config to express ordering constraints, with the scheduler building a dependency graph and running independent branches concurrently. Parallelism would make 30-minute schedules more attractive, but it adds complexity: Copilot CLI rate limits, concurrent `.chronstate/state.json` access (already designed with file-level locking), output interleaving, and topological sort. Not worth it until someone has enough agents to feel the sequential bottleneck. Run directory naming already includes a random nonce to prevent collisions.
 
 ### 9. Cloud Reporting
 
@@ -64,22 +64,34 @@ The test suite is already structured for CI (`Invoke-Pester ./tests/ -ExcludeTag
 
 Global cap on Copilot CLI invocations per hour. Prevents a misconfigured schedule from hammering the API. `"rateLimits": { "maxRunsPerHour": 10 }`.
 
+### 14. SQLite State Backend
+
+Replace `StateManager.ps1`'s JSON file backend with SQLite. The `StateManager` module boundary already abstracts all state access behind `Get-AgentState` / `Set-AgentState` — swapping the backing store would be an internal change with no impact on callers. SQLite is single-file, zero-server, and handles concurrent writers natively with WAL mode.
+
+**Trigger points** (when the JSON file approach starts to hurt):
+- **Token budget tracking** (#15) — cumulative counters with atomic increment-and-check across many agents
+- **Rate limiting** (#13) — sliding window queries ("how many runs in the last hour?") are painful in flat JSON
+- **Run history queries** — the HTTP dashboard needs filtered/sorted/paginated run data; scanning `meta.json` files in `.chronstate/runs/` directories doesn't scale
+- **Parallel execution** (#8) — SQLite's built-in concurrency is more robust than file-level locks
+
+Day 0 JSON files are the right starting point — zero dependencies, human-readable, trivially debuggable. SQLite becomes worth it when any of the above trigger points arrive.
+
 ---
 
 ## Far-Future
 
-### 14. Token / Cost Budgets
+### 15. Token / Cost Budgets
 
 `"tokenBudget": { "daily": 50000, "monthly": 500000 }` per agent or globally. Track cumulative token usage from `--output-format=json` metadata across runs. Auto-pause agents that exceed their budget. Becomes important with many agents running frequently and predictable costs are needed.
 
-### 15. Config Profiles / Inheritance
+### 16. Config Profiles / Inheritance
 
 A base `chronagents.json` with environment overlays: `chronagents.work.json` for work hours, `chronagents.home.json` for personal projects. `chronagents.ps1 --profile=work`. Useful when one machine serves multiple contexts.
 
-### 16. Webhook Triggers
+### 17. Webhook Triggers
 
 An HTTP endpoint (from the future dashboard server) that can trigger agent runs. `POST /api/trigger/daily-review` from a GitHub webhook fires on push. Blurs the line between scheduled and event-driven, but the infrastructure is already there in [UX-REQUIREMENTS.md](UX-REQUIREMENTS.md).
 
-### 17. Remote Config
+### 18. Remote Config
 
 Pull config from a URL or git ref so teams can centrally manage agent definitions. `"configSource": "https://..."` or `"configRef": "origin/main:chronagents.json"`. Relevant when you have many coworkers and want consistent agent behavior.

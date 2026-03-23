@@ -29,9 +29,10 @@ The mock should:
 ### Fixtures
 
 `tests/fixtures/` should contain:
-- Several `chronagents.json` variants: valid minimal, valid full-featured, missing required fields, unknown schedule type, malformed JSON
-- Pre-built run directories representing different states: successful run, failed run, run with pending feedback, run with processed feedback, run older than retention threshold
-- A trivial `.agent.md` file for testing agent invocation
+- Several `chronagents.json` variants: valid minimal, valid full-featured, missing required fields, malformed JSON
+- Several per-agent `.json` schedule config variants: valid, missing required fields, unknown schedule type, invalid execution policies
+- Pre-built run directories (under a mock `.chronstate/runs/`) representing different states: successful run, failed run, run with pending feedback, run with processed feedback, run older than retention threshold, run with cached `summary.md`
+- A trivial `.agent.md` + sibling `.json` pair for testing agent invocation
 
 ### Test helper module
 
@@ -59,14 +60,19 @@ Test `Test-AgentDue` and `Get-NextRunTime`:
 
 ### ConfigValidation.Tests.ps1
 
-Test config loading and validation:
+Test config loading, agent discovery, and validation:
 
-- Valid config loads without errors
-- Missing `agents` array produces a specific error naming the field
-- Agent with no schedule produces a specific error
+- Valid global config loads without errors
+- Agent discovery finds `.json` files in `.chronagents/agents/`
+- Per-agent config with no schedule produces a specific error
+- Per-agent config with no `prompt` field produces a specific error
+- Per-agent config with both `agent` and `script` produces a discrimination error
+- Per-agent config with neither `agent` nor `script` nor standalone `prompt` produces a clear error
+- Agent mode: config with `agent` + `prompt` validates correctly
+- Prompt-only mode: config with `prompt` but no `agent` validates correctly
 - Unknown schedule type rejected with clear message
-- Malformed JSON produces a parse error
-- Optional fields default correctly (`copilotPath`, `maxRunHistory`, `retentionDays`)
+- Malformed JSON (global or per-agent) produces a parse error
+- Global optional fields default correctly (`copilotPath`, `maxRunHistory`, `retentionDays`)
 - Per-agent execution policy defaults apply correctly (`timeout: 10m`, `skipOnBattery: false`, `retryCount: 0`, `model: null`)
 - Reject invalid per-agent execution policy values (negative `retryCount`, malformed `timeout`, non-boolean `skipOnBattery`)
 - `model` field accepts valid model strings and rejects empty strings
@@ -74,32 +80,38 @@ Test config loading and validation:
 - `startupDelay` validated: accepts duration strings (`"5m"`, `"0"`, `"10m"`), rejects negative or malformed values
 - `versioning` block defaults: missing block defaults to `syncPolicy: "notify"`, `userName: null`, `autoCommitFeedback: true`, `branchPrefix: "agents"`
 - `versioning.syncPolicy` rejects unknown values (only `"auto"`, `"notify"`, `"manual"` accepted)
-- JSON Schema file validates against the JSON Schema meta-schema
+- Agent ID derived correctly from filename stem (e.g., `daily-review.json` → ID `daily-review`)
+- Duplicate agent IDs (same filename stem in different discovery paths) produce a clear error
+- Both JSON Schema files validate against the JSON Schema meta-schema
 
 ### Dashboard.Tests.ps1
 
-Test `Update-Dashboard.ps1` markdown generation from sample run data:
+Test `Update-Dashboard.ps1` deterministic markdown assembly from cached run data:
 
 - Generated table has correct columns: agent, last run, status, feedback, detail
+- Uses cached `summary.md` content for per-run detail sections
 - Links directly to `feedback.md` for runs awaiting feedback
 - Links to `feedback-result.md` for processed runs
-- Shows "✓ no changes" for no-op runs
+- Shows "✓ no changes" for no-op runs (from summary)
 - Shows error indicator for failed runs
 - Shows "no runs yet" when history is empty
+- Handles missing `summary.md` gracefully (shows "summary pending" placeholder)
 - Sorts by most recent first
 - Respects `maxRunHistory` for row count
 - Excludes runs older than `retentionDays`
 
 ### StateManagement.Tests.ps1
 
-Test `state.json` read/write/recovery:
+Test `.chronstate/state.json` read/write/recovery:
 
-- Creates `state.json` if it doesn't exist
+- Creates `.chronstate/state.json` if it doesn't exist (creates `.chronstate/` directory too)
 - Reads existing state correctly
-- Updates one agent's timestamp without disturbing others
+- Updates one agent's timestamp (keyed by agent ID) without disturbing others
 - Persists enough per-agent scheduler state to avoid duplicate queueing across restarts
 - Handles enabled/disabled toggle per agent
-- Recovers from corrupted `state.json` (resets to empty state)
+- Recovers from corrupted `state.json` (resets to empty state, preserves `schemaVersion`)
+- **Concurrent access**: two simultaneous `Set-AgentState` calls for different agents both succeed without data loss
+- **Atomic writes**: a crash during write does not corrupt the file (temp-then-rename)
 
 ### AgentVersioning.Tests.ps1
 
@@ -121,20 +133,23 @@ These use the mock Copilot CLI. The mock's invocation log lets tests verify exac
 
 Test `Invoke-ScheduledAgent.ps1` end-to-end with the mock:
 
-- Creates run directory with correct naming (`<timestamp>_<agent>`)
+- Creates run directory in `.chronstate/runs/` with correct naming (`<timestamp>_<agent-id>_<nonce>`)
 - Creates `output.md` with captured agent output
-- Creates `meta.json` with agent name, start/end time, exit code, prompt, `feedbackProcessed: false`
+- Creates `meta.json` with agent ID, display name, start/end time, exit code, prompt, `feedbackProcessed: false`
+- Invokes run-summarizer agent after completion; `summary.md` written to run directory
 - Creates `session.md` via `--share`
 - Creates `feedback.md` stub with template content
-- Mock invocation log shows correct flags: `--agent`, `--silent`, `--allow-all-tools`
+- Mock invocation log shows correct flags: `--agent`, `--silent`
+- **Agent mode**: `--agent=<name>` flag present, no `--allow-all-tools` (tools scoped by `.agent.md`)
+- **Prompt-only mode**: no `--agent` flag, `--allow-all-tools` present
 - Passes `--model=<value>` when agent config specifies a model override; omits flag when model is null/unset
-- Passes `--deny-tool` when agent config specifies tool restrictions
+- Passes `--deny-tool` when agent config specifies tool restrictions (both agent and prompt-only modes)
 - Passes `--add-dir` when agent has extra trusted directories
 - Enforces per-agent `timeout` and marks timed-out runs clearly in `meta.json`
 - Retries failed runs up to `retryCount` additional times and records retry attempts in metadata/logs
 - Does not start agents with `skipOnBattery: true` while the system is on battery power
 - Handles non-zero exit code gracefully (marks run as failed in `meta.json`)
-- Updates `state.json` with new last-run timestamp and any scheduler bookkeeping needed to prevent duplicate queueing
+- Updates `.chronstate/state.json` with new last-run timestamp (keyed by agent ID) and any scheduler bookkeeping needed to prevent duplicate queueing
 
 ### FeedbackFlow.Tests.ps1
 
@@ -151,18 +166,18 @@ Test the feedback lifecycle with the mock:
 
 Test all `chronagents.ps1` subcommands:
 
-- `run <agent>` invokes `Invoke-ScheduledAgent.ps1` with correct args; rejects unknown agent names
+- `run <agent-id>` invokes `Invoke-ScheduledAgent.ps1` with correct args; rejects unknown agent IDs
 - `install` registers Task Scheduler entry idempotently; bootstraps user branch if absent
 - `uninstall` removes Task Scheduler entry cleanly
 - `sync` triggers merge from master; reports clean merge or conflict
 - `branch` shows current branch name, ahead/behind counts, last sync date
-- `pause` (no argument) sets `schedulerPaused: true` in `state.json`
-- `pause <agent>` sets `enabled: false` in `state.json`; rejects unknown agents
+- `pause` (no argument) sets `schedulerPaused: true` in `.chronstate/state.json`
+- `pause <agent-id>` sets `enabled: false` in `state.json`; rejects unknown agent IDs
 - `resume` (no argument) clears global pause
-- `resume <agent>` sets `enabled: true` in `state.json`
+- `resume <agent-id>` sets `enabled: true` in `state.json`
 - `status` shows global pause state prominently when active
-- `status` lists agents with enabled/disabled state, next scheduled run time, pending feedback count
-- `list` shows all configured agents with schedule type, parameters, and next scheduled run
+- `status` lists discovered agents with enabled/disabled state, next scheduled run time, pending feedback count
+- `list` shows all discovered agents with schedule type, parameters, and next scheduled run
 - `status` or run detail surfaces skipped-on-battery, timed-out, and retried outcomes clearly
 - `feedback <agent>` identifies the most recent unprocessed `feedback.md`; reports "no pending feedback" when none
 - `evaluate` triggers feedback evaluator for all pending feedback; reports "nothing to evaluate" when none
@@ -180,12 +195,13 @@ Test all `chronagents.ps1` subcommands:
 Test the single-heartbeat scheduler behavior:
 
 - `startupDelay` is respected: scheduler sleeps for configured duration before first tick; `startupDelay: "0"` skips the wait
-- One scheduler tick evaluates all configured agents from the same scheduler wake cycle
+- One scheduler tick evaluates all discovered agents from the same scheduler wake cycle
 - When `schedulerPaused: true`, no agents are evaluated or enqueued regardless of due state
 - Per-agent `enabled: false` skips that agent while others still run normally
 - Global pause + per-agent pause interact correctly: resuming global pause does not un-pause individually paused agents
 - Multiple due agents in the same slot are queued from one tick, not from separate timers
-- Agents run sequentially in config order when more than one matches the same slot
+- Agents run sequentially in discovery order when more than one matches the same slot
+- Run-summarizer agent is invoked once per agent completion (not per tick)
 - A second check in the same due window does not enqueue the same agent twice
 - If an agent is still running when its next slot arrives, the scheduler coalesces or skips the duplicate according to policy rather than stacking another run
 - Restarting the scheduler does not duplicate a run when prior due-state bookkeeping is already recorded
@@ -196,10 +212,10 @@ Test the single-heartbeat scheduler behavior:
 
 Test the run directory cleanup mechanism:
 
-- Deletes run directories older than `retentionDays`
+- Deletes run directories (in `.chronstate/runs/`) older than `retentionDays`
 - Preserves run directories within `retentionDays`
 - Does NOT delete runs with unprocessed feedback regardless of age
-- Removes stale entries from `state.json` for deleted agents
+- Removes stale entries from `.chronstate/state.json` for deleted agents
 - Defaults to 14 days when `retentionDays` is not configured
 - `retentionDays: 0` means never delete
 
@@ -220,7 +236,7 @@ Test full sync and bootstrap workflows against temp git repos with mock Copilot 
 
 Test pre-edit snapshot creation and recovery.
 
-- **Snapshot creation**: Run feedback evaluator mock that edits two files. Verify `backup/` directory in run dir contains exact copies of both files pre-edit.
+- **Snapshot creation**: Run feedback evaluator mock that edits two files. Verify `backup/` directory in run dir (`.chronstate/runs/...`) contains exact copies of both files pre-edit.
 - **Snapshot path mirroring**: Edit files at nested paths (`.chronagents/agents/nested/deep/agent.md`). Verify backup preserves the relative path structure.
 - **Snapshot survives git failure**: Simulate git commit failure after backup. Verify snapshots exist and are readable.
 - **Retention cleanup preserves recent backups**: Run retention cleanup. Verify backups in recent run dirs survive, backups in expired (and feedback-processed) run dirs are cleaned up.
@@ -259,7 +275,7 @@ Tests must never interfere with a real CronAgents installation running on the sa
 
 - **Task Scheduler**: Tests that touch Task Scheduler must use a distinct task path (`\CronAgents-Test\`) and a distinct task name (`CronAgents-Test`), never the production `\CronAgents\CronAgents` entry. Teardown must always unregister test tasks, even on failure (use `try/finally`).
 - **Config and state**: All tests operate in a temp directory with their own `chronagents.json` and `state.json`. They must never read or write the user's real config or state files.
-- **Run directories**: Tests create run output under the temp directory, never under the user's real `.chronagents/runs/`.
+- **Run directories**: Tests create run output under the temp directory, never under the user's real `.chronstate/runs/`.
 - **Cleanup**: Every test that creates OS-level side effects (tasks, temp dirs, processes) must clean up in a `finally` block or Pester `AfterAll`/`AfterEach` so failures don't leave artifacts behind.
 
 ### HealthCheck.Tests.ps1

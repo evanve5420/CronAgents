@@ -1,4 +1,2 @@
-# Runtime data (all branches)
-.chronagents/runs/
-.chronagents/state.json
-.chronagents/scheduler.log
+# Runtime data (all branches — entire directory is gitignored)
+.chronstate/

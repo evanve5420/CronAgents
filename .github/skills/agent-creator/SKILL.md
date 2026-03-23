@@ -1,98 +1,88 @@
 ---
 name: agent-creator
-description: "Create a new CronAgents scheduled agent. Use when: creating an agent, adding a scheduled task, writing an .agent.md, configuring a new agent in chronagents.json"
+description: "Create a new CronAgents scheduled agent or prompt-only invocation"
 argument-hint: "Describe what the agent should do (e.g., 'review PRs every morning')"
 ---
 
 # Agent Creator
 
-Create a fully configured CronAgents scheduled agent — the `.agent.md` file, the `chronagents.json` config entry, and optionally a companion SKILL.md.
-
-## When to Use
-
-- User wants to add a new scheduled agent
-- User wants to convert an idea into a working agent + config
-- User wants help editing an `.agent.md` or per-agent config options
+Create a CronAgents scheduled entry: either a custom agent (`.agent.md` + `.json` config) or a prompt-only invocation (`.json` config only).
 
 ## Gather Context
 
-Before creating anything, read the project's documentation to stay current on structure and options:
+Read these for current structure and options (fall back to [docs/PLAN.md](../../../docs/PLAN.md) if they don't exist yet):
 
-1. Read [guide/writing-agents.md](../../../guide/writing-agents.md) for `.agent.md` structure, frontmatter fields, prompt patterns, and placement rules
-2. Read [guide/configuration.md](../../../guide/configuration.md) for all per-agent config fields, types, defaults, and examples
-
-If those files don't exist yet, fall back to [docs/PLAN.md](../../../docs/PLAN.md) — search for "Complete config example" and "Step 3" for the config schema, and "templates/agents/" for agent file structure.
+1. [guide/writing-agents.md](../../../guide/writing-agents.md)
+2. [guide/configuration.md](../../../guide/configuration.md)
 
 ## Interview the User
 
-Ask about the following (skip anything already clear from context):
+Skip anything already clear from context:
 
-1. **What should the agent do?** — summarize in one sentence
-2. **Schedule** — how often? (daily at 9am, every 4 hours, weekly Monday, etc.)
-3. **Model preference** — specific model, or use the default?
-4. **Tool restrictions** — any tools to deny? (e.g., `shell(rm)`, `shell(git push)`)
-5. **Execution policies** — timeout, skip on battery, retry on failure?
-6. **Placement** — project-local (`.chronagents/agents/`) or user-global (`~/.copilot/agents/`)?
+1. **What should it do?**
+2. **Schedule** — daily at 9am, every 4h, weekly Monday, etc.
+3. **Agent or prompt-only?** — Prompt-only is simpler when no custom system instructions or tool scoping is needed. Agent mode when the task needs custom behavior, tool restrictions, or a system prompt.
+4. **What tools does it need?** — Scope to the **minimum required**. Start restrictive; the user can expand later.
+   - Read-only: `tools: [read]` or `[read, search]`
+   - Edits files: `tools: [read, edit, search]`
+   - Shell access: `tools: [read, shell]` — use `denyTools` to block destructive ops (`shell(rm)`, `shell(git push)`)
+   - `--allow-all-tools` only when genuinely needed — confirm with the user
+5. **Model preference?**
+6. **Execution policies?** — timeout, skip on battery, retry on failure
+7. **Placement** — `.chronagents/agents/` (project-local) or `~/.copilot/agents/` (user-global)
 
-## Create the Agent
+## Create
 
-### 1. Write the `.agent.md` file
+### Agent mode
 
-Place it in the chosen location. Use this structure:
+`.agent.md` — scope `tools` to what the task actually needs:
 
 ```markdown
 ---
 name: <agent-name>
 description: "<one-line description>"
 tools:
-  - <tool references as needed>
+  - <minimum tools needed>
 ---
 
-<System prompt for the agent — what it does, how it behaves, what output format to use>
+<System prompt>
 ```
 
-Naming: lowercase, hyphenated, descriptive (e.g., `daily-review`, `weekly-deps`, `stale-branch-cleanup`).
-
-### 2. Add the config entry to `chronagents.json`
-
-Add an object to the `agents` array:
+Sibling `.json` — **filename stem = stable agent ID**:
 
 ```jsonc
+// .chronagents/agents/<agent-id>.json
 {
-  "name": "<agent-name>",          // must match .agent.md name
-  "agent": "<agent-name>",         // agent file reference
-  "prompt": "<what to tell the agent each run>",
-  "schedule": { "type": "daily", "time": "09:00" },
-  // Optional per-agent overrides (all have sensible defaults):
-  // "timeout": "10m",
-  // "skipOnBattery": false,
-  // "retryCount": 0,
-  // "model": "claude-sonnet-4",
-  // "denyTools": [],
-  // "extraCliFlags": [],
-  // "envVars": {}
+  "$schema": "../../chronagents-agent.schema.json",
+  "name": "<Display Name>",
+  "agent": "<agent-name>",
+  "prompt": "<run prompt>",
+  "schedule": { "type": "daily", "time": "09:00" }
+  // Optional: timeout, skipOnBattery, retryCount, model, denyTools, extraCliFlags, envVars
 }
 ```
 
-### 3. Optionally create a companion SKILL.md
+### Prompt-only mode
 
-If the agent needs domain knowledge to do its job well, create a skill in `scheduler/skills/<agent-name>/SKILL.md` and reference it from the agent's prompt or instructions.
+No `.agent.md`. Omit `agent` field — scheduler invokes `copilot -p` with `--allow-all-tools`. Use `denyTools` to restrict.
+
+```jsonc
+// .chronagents/agents/<agent-id>.json
+{
+  "$schema": "../../chronagents-agent.schema.json",
+  "name": "<Display Name>",
+  "prompt": "<full prompt>",
+  "schedule": { "type": "daily", "time": "09:00" },
+  "denyTools": ["shell(rm)", "shell(git push)"]
+}
+```
+
+### Companion SKILL.md (optional, agent mode only)
+
+Create in `scheduler/skills/<agent-name>/SKILL.md` if the agent needs domain knowledge.
 
 ## Validate
 
-After creating:
-
-- [ ] `.agent.md` has valid YAML frontmatter with `name` and `description`
-- [ ] `name` in `.agent.md` matches `agent` field in config
-- [ ] Config entry has required fields: `name`, `agent`, `prompt`, `schedule`
-- [ ] Schedule uses a supported type: `interval`, `daily`, or `weekly`
-- [ ] If `denyTools` specified, entries are valid tool patterns
-- [ ] Test manually: `chronagents.ps1 run <agent-name>`
-
-## Example
-
-> "Create an agent that checks for outdated npm dependencies every Monday"
-
-Result:
-- `.chronagents/agents/weekly-deps.agent.md` — agent with instructions to run `npm outdated`, summarize findings, flag security issues
-- `chronagents.json` entry — `weekly`, Monday 10:00, 15m timeout, `skipOnBattery: true`
+- Agent mode: `.agent.md` has explicit `tools` list (least-privilege), `agent` in `.json` matches `.agent.md` name
+- Prompt-only: `.json` has `prompt` + `schedule`, no `agent` field, `denyTools` considered
+- Both: schedule type is `interval`/`daily`/`weekly`, test with `chronagents.ps1 run <agent-id>`

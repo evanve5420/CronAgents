@@ -33,7 +33,7 @@ The scheduler already runs as a persistent polling process (`Start-CronAgents.ps
 | Trigger one-off run | `POST /api/run/:agent` | `chronagents.ps1 run <agent>` |
 | Pause an agent | `POST /api/pause/:agent` | `chronagents.ps1 pause <agent>` |
 | Resume an agent | `POST /api/resume/:agent` | `chronagents.ps1 resume <agent>` |
-| View run history | `GET /api/runs[?agent=X]` | reading `.chronagents/runs/` |
+| View run history | `GET /api/runs[?agent=X]` | reading `.chronstate/runs/` |
 | View run detail | `GET /api/runs/:id` | reading specific run directory |
 | Submit feedback | `POST /api/feedback/:runId` | writing to `feedback.md` in run directory |
 | Trigger feedback evaluator | `POST /api/evaluate` | `chronagents.ps1 evaluate` |

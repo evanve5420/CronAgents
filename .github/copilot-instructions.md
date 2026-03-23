@@ -8,7 +8,7 @@
 
 ## Keep in sync
 
-When changing the config schema (`chronagents.json`, `chronagents.schema.json`) or `.agent.md` structure, update `.github/skills/agent-creator/SKILL.md` to match. That skill is how users create new agents — if it falls out of date, they'll get bad scaffolding.
+When changing the config schema (`chronagents.json`, `chronagents.schema.json`, `chronagents-agent.schema.json`) or `.agent.md` structure, update `.github/skills/agent-creator/SKILL.md` to match. That skill is how users create new agents — if it falls out of date, they'll get bad scaffolding.
 
 ## Before committing
 
