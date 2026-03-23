@@ -1,0 +1,5 @@
+{
+  "logLevel": "superverbose",
+  "retentionDays": -5,
+  "maxRunHistory": -1
+}

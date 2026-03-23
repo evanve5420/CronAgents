@@ -1,0 +1,16 @@
+{
+  "$schema": "./cronagents.schema.json",
+  "autoFeedback": false,
+  "maxRunHistory": 50,
+  "copilotPath": "copilot",
+  "retentionDays": 14,
+  "startupDelay": "5m",
+  "logLevel": "info",
+  "quietHours": null,
+  "versioning": {
+    "syncPolicy": "notify",
+    "userName": null,
+    "autoCommitFeedback": true,
+    "branchPrefix": "agents"
+  }
+}

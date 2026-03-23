@@ -1,0 +1,103 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cronagents.dev/cronagents.schema.json",
+  "title": "CronAgents Global Configuration",
+  "description": "Schema for the cronagents.json global scheduler configuration file.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path or URL to this schema file."
+    },
+    "autoFeedback": {
+      "type": "boolean",
+      "default": false,
+      "description": "Auto-trigger feedback evaluator after each run."
+    },
+    "maxRunHistory": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 50,
+      "description": "Max run directories to keep. 0 = unlimited."
+    },
+    "copilotPath": {
+      "type": "string",
+      "default": "copilot",
+      "description": "Path to the Copilot CLI binary."
+    },
+    "retentionDays": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 14,
+      "description": "Delete run directories older than this many days. 0 = never delete."
+    },
+    "startupDelay": {
+      "type": "string",
+      "default": "5m",
+      "pattern": "^[0-9]+(m|h|s)?$|^0$",
+      "description": "Delay before first scheduler tick (e.g. '5m', '1h', '30s', '0')."
+    },
+    "logLevel": {
+      "type": "string",
+      "enum": ["debug", "info", "warn", "error"],
+      "default": "info",
+      "description": "Minimum log level for scheduler output."
+    },
+    "quietHours": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "string",
+              "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+              "description": "Start of quiet hours in HH:MM format."
+            },
+            "end": {
+              "type": "string",
+              "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+              "description": "End of quiet hours in HH:MM format."
+            }
+          },
+          "required": ["start", "end"],
+          "additionalProperties": false
+        }
+      ],
+      "default": null,
+      "description": "Time window during which no agents are run. Null to disable."
+    },
+    "versioning": {
+      "type": "object",
+      "properties": {
+        "syncPolicy": {
+          "type": "string",
+          "enum": ["auto", "notify", "manual"],
+          "default": "notify",
+          "description": "How the scheduler handles git sync after agent runs."
+        },
+        "userName": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ],
+          "default": null,
+          "description": "Git user name override. Null = detect from git config."
+        },
+        "autoCommitFeedback": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically commit feedback-evaluator changes."
+        },
+        "branchPrefix": {
+          "type": "string",
+          "default": "agents",
+          "description": "Prefix for branches created by versioning."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Git versioning settings for agent runs."
+    }
+  },
+  "additionalProperties": false
+}

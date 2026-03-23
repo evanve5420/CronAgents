@@ -1,0 +1,5 @@
+{
+  "name": "Prompt Only Test",
+  "prompt": "Summarize recent changes",
+  "schedule": { "type": "interval", "every": "1h" }
+}

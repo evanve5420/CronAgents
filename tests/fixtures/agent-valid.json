@@ -1,0 +1,6 @@
+{
+  "name": "Test Agent",
+  "agent": "test-agent",
+  "prompt": "Run test checks",
+  "schedule": { "type": "daily", "time": "09:00" }
+}

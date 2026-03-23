@@ -1,0 +1,5 @@
+{
+  "name": "Bad Schedule",
+  "prompt": "Do something",
+  "schedule": { "type": "cron", "expression": "*/5 * * * *" }
+}

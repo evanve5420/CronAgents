@@ -1,0 +1,147 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cronagents.dev/cronagents-agent.schema.json",
+  "title": "CronAgents Per-Agent Schedule Configuration",
+  "description": "Schema for per-agent schedule configuration files.",
+  "type": "object",
+  "definitions": {
+    "scheduleInterval": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "interval"
+        },
+        "every": {
+          "type": "string",
+          "pattern": "^[0-9]+(h|m)$",
+          "description": "Interval duration (minimum 30m). Examples: '1h', '30m', '2h'."
+        }
+      },
+      "required": ["type", "every"],
+      "additionalProperties": false
+    },
+    "scheduleDaily": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "daily"
+        },
+        "time": {
+          "type": "string",
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+          "description": "Time of day in HH:MM format."
+        }
+      },
+      "required": ["type", "time"],
+      "additionalProperties": false
+    },
+    "scheduleWeekly": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "weekly"
+        },
+        "day": {
+          "type": "string",
+          "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+          "description": "Day of the week (lowercase)."
+        },
+        "time": {
+          "type": "string",
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+          "description": "Time of day in HH:MM format."
+        }
+      },
+      "required": ["type", "day", "time"],
+      "additionalProperties": false
+    },
+    "schedule": {
+      "oneOf": [
+        { "$ref": "#/definitions/scheduleInterval" },
+        { "$ref": "#/definitions/scheduleDaily" },
+        { "$ref": "#/definitions/scheduleWeekly" }
+      ],
+      "description": "When and how often the agent runs."
+    }
+  },
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path or URL to this schema file."
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name for the agent."
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The prompt to send to Copilot CLI."
+    },
+    "agent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Agent file reference passed via the --agent flag."
+    },
+    "schedule": {
+      "$ref": "#/definitions/schedule"
+    },
+    "timeout": {
+      "type": "string",
+      "default": "10m",
+      "pattern": "^[0-9]+(m|h|s)?$|^0$",
+      "description": "Maximum run duration (e.g. '10m', '1h'). Default: '10m'."
+    },
+    "skipOnBattery": {
+      "type": "boolean",
+      "default": false,
+      "description": "Skip execution when the machine is on battery power."
+    },
+    "retryCount": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Number of times to retry on failure."
+    },
+    "model": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "null" }
+      ],
+      "description": "Model override for the Copilot CLI invocation."
+    },
+    "denyTools": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "List of tool names to deny during the run."
+    },
+    "extraCliFlags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Additional CLI flags passed to the Copilot CLI invocation."
+    },
+    "envVars": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "default": {},
+      "description": "Environment variables to set for the agent run."
+    }
+  },
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "required": ["agent", "prompt", "schedule"],
+      "description": "Agent mode: runs a named agent with a prompt on a schedule."
+    },
+    {
+      "required": ["prompt", "schedule"],
+      "not": { "required": ["agent"] },
+      "description": "Prompt-only mode: runs a prompt without a specific agent on a schedule."
+    }
+  ]
+}

@@ -1,0 +1,245 @@
+# Test helper module for CronAgents tests
+# Provides setup/teardown utilities and assertion helpers
+
+$ErrorActionPreference = 'Stop'
+
+function New-TestEnvironment {
+    <#
+    .SYNOPSIS
+        Creates an isolated temp directory structure for testing.
+    .PARAMETER Name
+        Test suite name used in the temp directory path.
+    .OUTPUTS
+        PSCustomObject with Root, ConfigPath, StatePath, RunsRoot, AgentsDir, MockLogPath.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    $random = [System.IO.Path]::GetRandomFileName().Replace('.', '')
+    $root = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-Test-$Name-$random"
+
+    # Create directory structure
+    $dirs = @(
+        (Join-Path $root '.cronagents' 'agents')
+        (Join-Path $root '.cronstate' 'runs')
+        (Join-Path $root 'scheduler' 'lib')
+        (Join-Path $root 'scheduler' 'agents')
+    )
+    foreach ($d in $dirs) {
+        New-Item -ItemType Directory -Path $d -Force | Out-Null
+    }
+
+    # Copy real agent .md files into the test environment
+    $repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    # Handle case where PSScriptRoot is the tests dir directly
+    if (-not $repoRoot -or -not (Test-Path (Join-Path $repoRoot 'scheduler' 'agents'))) {
+        $repoRoot = Split-Path $PSScriptRoot -Parent
+    }
+    $realAgentsDir = Join-Path $repoRoot 'scheduler' 'agents'
+    if (Test-Path $realAgentsDir) {
+        Get-ChildItem -Path $realAgentsDir -Filter '*.agent.md' | ForEach-Object {
+            Copy-Item $_.FullName -Destination (Join-Path $root 'scheduler' 'agents' $_.Name)
+        }
+    }
+
+    # Resolve mock copilot path
+    $mockCopilotPath = Join-Path $PSScriptRoot 'mocks' 'copilot.ps1'
+
+    # Create mock invocation log path
+    $mockLogPath = Join-Path $root 'mock-invocations.jsonl'
+
+    # Create cronagents.json with mock copilotPath
+    $config = [ordered]@{
+        '$schema'      = './cronagents.schema.json'
+        autoFeedback   = $false
+        maxRunHistory  = 50
+        copilotPath    = "pwsh -NoProfile -File `"$mockCopilotPath`""
+        retentionDays  = 14
+        startupDelay   = '0'
+        logLevel       = 'debug'
+        quietHours     = $null
+        versioning     = [ordered]@{
+            syncPolicy          = 'manual'
+            userName            = 'test-user'
+            autoCommitFeedback  = $false
+            branchPrefix        = 'agents'
+        }
+    }
+    $configPath = Join-Path $root 'cronagents.json'
+    $config | ConvertTo-Json -Depth 5 | Out-File -FilePath $configPath -Encoding utf8
+
+    # Set environment variable for mock log
+    $env:CRONAGENTS_MOCK_LOG = $mockLogPath
+
+    [PSCustomObject]@{
+        Root        = $root
+        ConfigPath  = $configPath
+        StatePath   = Join-Path $root '.cronstate'
+        RunsRoot    = Join-Path $root '.cronstate' 'runs'
+        AgentsDir   = Join-Path $root '.cronagents' 'agents'
+        MockLogPath = $mockLogPath
+    }
+}
+
+function Remove-TestEnvironment {
+    <#
+    .SYNOPSIS
+        Cleans up a test environment created by New-TestEnvironment.
+    .PARAMETER TestEnv
+        The PSCustomObject returned by New-TestEnvironment.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][PSCustomObject]$TestEnv
+    )
+
+    # Clear the mock log env var
+    if ($env:CRONAGENTS_MOCK_LOG -eq $TestEnv.MockLogPath) {
+        Remove-Item Env:\CRONAGENTS_MOCK_LOG -ErrorAction SilentlyContinue
+    }
+
+    # Remove temp directory tree
+    if ($TestEnv.Root -and (Test-Path $TestEnv.Root)) {
+        Remove-Item -Path $TestEnv.Root -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-MockInvocations {
+    <#
+    .SYNOPSIS
+        Parses the JSONL mock invocation log.
+    .PARAMETER LogPath
+        Path to the mock-invocations.jsonl file.
+    .OUTPUTS
+        Array of parsed invocation objects.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$LogPath
+    )
+
+    if (-not (Test-Path $LogPath)) { return @() }
+
+    Get-Content -Path $LogPath -Encoding utf8 |
+        Where-Object { $_.Trim() -ne '' } |
+        ForEach-Object { $_ | ConvertFrom-Json }
+}
+
+function New-TestAgentConfig {
+    <#
+    .SYNOPSIS
+        Creates a per-agent config file in the test environment's agents dir.
+    .PARAMETER TestEnv
+        The PSCustomObject returned by New-TestEnvironment.
+    .PARAMETER AgentId
+        Identifier used as the config filename (without extension).
+    .PARAMETER Schedule
+        Hashtable describing the schedule (e.g. @{ type='daily'; time='09:00' }).
+    .PARAMETER Prompt
+        The prompt string for the agent.
+    .PARAMETER Agent
+        Optional agent name passed via --agent flag.
+    .PARAMETER Timeout
+        Optional timeout string (e.g. '10m').
+    .PARAMETER Name
+        Optional display name. Defaults to AgentId.
+    .OUTPUTS
+        PSCustomObject with the agent config.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][PSCustomObject]$TestEnv,
+        [Parameter(Mandatory)][string]$AgentId,
+        [Parameter(Mandatory)][hashtable]$Schedule,
+        [Parameter(Mandatory)][string]$Prompt,
+        [string]$Agent,
+        [string]$Timeout,
+        [string]$Name
+    )
+
+    $agentConfig = [ordered]@{
+        name     = if ($Name) { $Name } else { $AgentId }
+        prompt   = $Prompt
+        schedule = $Schedule
+    }
+
+    if ($Agent) { $agentConfig['agent'] = $Agent }
+    if ($Timeout) { $agentConfig['timeout'] = $Timeout }
+
+    $filePath = Join-Path $TestEnv.AgentsDir "$AgentId.json"
+    $agentConfig | ConvertTo-Json -Depth 5 | Out-File -FilePath $filePath -Encoding utf8
+
+    [PSCustomObject]$agentConfig
+}
+
+function New-TestRunDirectory {
+    <#
+    .SYNOPSIS
+        Creates a pre-built run directory with artifacts for testing.
+    .PARAMETER TestEnv
+        The PSCustomObject returned by New-TestEnvironment.
+    .PARAMETER AgentId
+        Agent identifier used in the run directory name.
+    .PARAMETER ExitCode
+        Simulated exit code to write to exit-code file.
+    .PARAMETER FeedbackContent
+        Optional feedback markdown content to write.
+    .PARAMETER FeedbackProcessed
+        If true, marks feedback as already processed.
+    .PARAMETER HasSummary
+        If true, writes a mock summary file.
+    .OUTPUTS
+        PSCustomObject with RunDir path and Timestamp.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][PSCustomObject]$TestEnv,
+        [Parameter(Mandatory)][string]$AgentId,
+        [int]$ExitCode = 0,
+        [string]$FeedbackContent,
+        [switch]$FeedbackProcessed,
+        [switch]$HasSummary
+    )
+
+    $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $runDir = Join-Path $TestEnv.RunsRoot $AgentId $timestamp
+    New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+
+    # Exit code
+    $ExitCode | Out-File -FilePath (Join-Path $runDir 'exit-code') -Encoding utf8 -NoNewline
+
+    # Output log
+    "Mock output for $AgentId run at $timestamp" |
+        Out-File -FilePath (Join-Path $runDir 'output.log') -Encoding utf8
+
+    # Summary
+    if ($HasSummary) {
+        "## Run Summary`n`nAgent: $AgentId`nStatus: $(if ($ExitCode -eq 0) { 'success' } else { 'failure' })" |
+            Out-File -FilePath (Join-Path $runDir 'summary.md') -Encoding utf8
+    }
+
+    # Feedback
+    if ($FeedbackContent) {
+        $FeedbackContent |
+            Out-File -FilePath (Join-Path $runDir 'feedback.md') -Encoding utf8
+
+        if ($FeedbackProcessed) {
+            'true' | Out-File -FilePath (Join-Path $runDir 'feedback-processed') -Encoding utf8 -NoNewline
+        }
+    }
+
+    [PSCustomObject]@{
+        RunDir    = $runDir
+        Timestamp = $timestamp
+    }
+}
+
+Export-ModuleMember -Function @(
+    'New-TestEnvironment'
+    'Remove-TestEnvironment'
+    'Get-MockInvocations'
+    'New-TestAgentConfig'
+    'New-TestRunDirectory'
+)
