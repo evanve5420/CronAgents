@@ -5,9 +5,8 @@
 #>
 
 BeforeAll {
-    # Dot-source Logger first (ConfigLoader depends on Write-CronAgentsLog)
-    . (Join-Path $PSScriptRoot '..\scheduler\lib\Logger.ps1')
-    . (Join-Path $PSScriptRoot '..\scheduler\lib\ConfigLoader.ps1')
+    $repoRoot = Split-Path $PSScriptRoot -Parent
+    Import-Module (Join-Path $repoRoot 'scheduler/lib/CronAgents.psd1') -Force
 }
 
 # ===== Import-CronAgentsConfig =====
@@ -18,7 +17,7 @@ Describe 'Import-CronAgentsConfig' {
         New-Item -ItemType Directory -Path $fixtureDir -Force | Out-Null
     }
 
-    It 'Loads a fully-specified config' {
+    It 'Loads a fully-specified config with all fields' {
         $json = @'
 {
     "autoFeedback": true,
@@ -83,9 +82,9 @@ Describe 'Import-CronAgentsConfig' {
         $cfg.versioning.branchPrefix       | Should -Be 'agents'
     }
 
-    It 'Throws on invalid JSON' {
+    It 'Throws on malformed JSON' {
         $path = Join-Path $fixtureDir 'bad.json'
-        Set-Content -Path $path -Value 'NOT JSON' -Encoding UTF8
+        Set-Content -Path $path -Value 'NOT JSON {{{' -Encoding UTF8
         { Import-CronAgentsConfig -ConfigPath $path } | Should -Throw '*parse*'
     }
 
@@ -107,18 +106,18 @@ Describe 'Import-CronAgentsConfig' {
         { Import-CronAgentsConfig -ConfigPath $path } | Should -Throw '*retentionDays*'
     }
 
-    It 'Throws on invalid startupDelay' {
-        $json = '{ "startupDelay": "five minutes" }'
-        $path = Join-Path $fixtureDir 'bad-delay.json'
-        Set-Content -Path $path -Value $json -Encoding UTF8
-        { Import-CronAgentsConfig -ConfigPath $path } | Should -Throw '*startupDelay*'
-    }
-
     It 'Throws on invalid syncPolicy' {
         $json = '{ "versioning": { "syncPolicy": "yolo" } }'
         $path = Join-Path $fixtureDir 'bad-sync.json'
         Set-Content -Path $path -Value $json -Encoding UTF8
         { Import-CronAgentsConfig -ConfigPath $path } | Should -Throw '*syncPolicy*'
+    }
+
+    It 'Throws on invalid startupDelay' {
+        $json = '{ "startupDelay": "five minutes" }'
+        $path = Join-Path $fixtureDir 'bad-delay.json'
+        Set-Content -Path $path -Value $json -Encoding UTF8
+        { Import-CronAgentsConfig -ConfigPath $path } | Should -Throw '*startupDelay*'
     }
 
     It 'Accepts startupDelay of "0"' {
@@ -135,6 +134,26 @@ Describe 'Import-CronAgentsConfig' {
         Set-Content -Path $path -Value $json -Encoding UTF8
         $cfg = Import-CronAgentsConfig -ConfigPath $path
         $cfg.startupDelay | Should -Be '30s'
+    }
+
+    It 'Accepts each valid logLevel value' {
+        foreach ($level in @('debug', 'info', 'warn', 'error')) {
+            $json = "{ `"logLevel`": `"$level`" }"
+            $path = Join-Path $fixtureDir "level-$level.json"
+            Set-Content -Path $path -Value $json -Encoding UTF8
+            $cfg = Import-CronAgentsConfig -ConfigPath $path
+            $cfg.logLevel | Should -Be $level
+        }
+    }
+
+    It 'Accepts each valid syncPolicy value' {
+        foreach ($policy in @('auto', 'notify', 'manual')) {
+            $json = "{ `"versioning`": { `"syncPolicy`": `"$policy`" } }"
+            $path = Join-Path $fixtureDir "sync-$policy.json"
+            Set-Content -Path $path -Value $json -Encoding UTF8
+            $cfg = Import-CronAgentsConfig -ConfigPath $path
+            $cfg.versioning.syncPolicy | Should -Be $policy
+        }
     }
 }
 
@@ -171,7 +190,46 @@ Describe 'Test-CronAgentsConfig' {
             versioning    = [PSCustomObject]@{ syncPolicy = 'auto' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
-        $errors | Should -Contain ($errors | Where-Object { $_ -match 'logLevel' })
+        ($errors | Where-Object { $_ -match 'logLevel' }) | Should -Not -BeNullOrEmpty
+    }
+
+    It 'Reports invalid syncPolicy' {
+        $cfg = [PSCustomObject]@{
+            logLevel      = 'info'
+            maxRunHistory = 0
+            retentionDays = 0
+            startupDelay  = '0'
+            quietHours    = $null
+            versioning    = [PSCustomObject]@{ syncPolicy = 'yolo' }
+        }
+        $errors = Test-CronAgentsConfig -Config $cfg
+        ($errors | Where-Object { $_ -match 'syncPolicy' }) | Should -Not -BeNullOrEmpty
+    }
+
+    It 'Reports negative retentionDays' {
+        $cfg = [PSCustomObject]@{
+            logLevel      = 'info'
+            maxRunHistory = 0
+            retentionDays = -5
+            startupDelay  = '0'
+            quietHours    = $null
+            versioning    = [PSCustomObject]@{ syncPolicy = 'notify' }
+        }
+        $errors = Test-CronAgentsConfig -Config $cfg
+        ($errors | Where-Object { $_ -match 'retentionDays' }) | Should -Not -BeNullOrEmpty
+    }
+
+    It 'Reports negative maxRunHistory' {
+        $cfg = [PSCustomObject]@{
+            logLevel      = 'info'
+            maxRunHistory = -1
+            retentionDays = 0
+            startupDelay  = '0'
+            quietHours    = $null
+            versioning    = [PSCustomObject]@{ syncPolicy = 'notify' }
+        }
+        $errors = Test-CronAgentsConfig -Config $cfg
+        ($errors | Where-Object { $_ -match 'maxRunHistory' }) | Should -Not -BeNullOrEmpty
     }
 
     It 'Reports invalid quietHours.start' {
@@ -200,7 +258,7 @@ Describe 'Test-CronAgentsConfig' {
         ($errors | Where-Object { $_ -match 'quietHours.*start and end' }) | Should -Not -BeNullOrEmpty
     }
 
-    It 'Validates valid quietHours passes' {
+    It 'Passes with valid quietHours' {
         $cfg = [PSCustomObject]@{
             logLevel      = 'info'
             maxRunHistory = 0
@@ -225,18 +283,29 @@ Describe 'Test-CronAgentsConfig' {
         $errors = Test-CronAgentsConfig -Config $cfg
         $errors.Count | Should -BeGreaterOrEqual 4
     }
+
+    It 'Reports invalid startupDelay format' {
+        $cfg = [PSCustomObject]@{
+            logLevel      = 'info'
+            maxRunHistory = 0
+            retentionDays = 0
+            startupDelay  = 'abc'
+            quietHours    = $null
+            versioning    = [PSCustomObject]@{ syncPolicy = 'notify' }
+        }
+        $errors = Test-CronAgentsConfig -Config $cfg
+        ($errors | Where-Object { $_ -match 'startupDelay' }) | Should -Not -BeNullOrEmpty
+    }
 }
 
 # ===== Get-AgentConfigs =====
 
 Describe 'Get-AgentConfigs' {
-    BeforeAll {
-        $repoRoot  = Join-Path $TestDrive 'repo'
+    It 'Discovers valid agent configs and applies defaults' {
+        $repoRoot  = Join-Path $TestDrive 'repo-discover'
         $agentDir  = Join-Path $repoRoot '.cronagents\agents'
         New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
-    }
 
-    It 'Discovers valid agent configs and applies defaults' {
         $agentJson = @'
 {
     "prompt": "Review code",
@@ -257,7 +326,23 @@ Describe 'Get-AgentConfigs' {
         $agents[0].AgentFilePath        | Should -BeNullOrEmpty
     }
 
+    It 'Derives agent ID from filename stem' {
+        $repoRoot = Join-Path $TestDrive 'repo-id'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+
+        $json = '{ "prompt": "test", "schedule": { "type": "daily", "time": "08:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'my-custom-agent.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents[0].Id | Should -Be 'my-custom-agent'
+    }
+
     It 'Resolves .agent.md sibling file' {
+        $repoRoot = Join-Path $TestDrive 'repo-sibling'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+
         $agentJson = @'
 {
     "agent": "my-agent",
@@ -266,7 +351,6 @@ Describe 'Get-AgentConfigs' {
 }
 '@
         Set-Content -Path (Join-Path $agentDir 'my-agent-sched.json') -Value $agentJson -Encoding UTF8
-        # Create sibling .agent.md
         Set-Content -Path (Join-Path $agentDir 'my-agent.agent.md') -Value '# Agent' -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
@@ -277,74 +361,75 @@ Describe 'Get-AgentConfigs' {
     }
 
     It 'Returns $null AgentFilePath when .agent.md not found' {
-        $agentJson = @'
-{
-    "agent": "nonexistent-agent",
-    "prompt": "Do stuff",
-    "schedule": { "type": "daily", "time": "12:00" }
-}
-'@
-        $dir2 = Join-Path $TestDrive 'repo2\.cronagents\agents'
-        New-Item -ItemType Directory -Path $dir2 -Force | Out-Null
-        Set-Content -Path (Join-Path $dir2 'ghost.json') -Value $agentJson -Encoding UTF8
+        $repoRoot = Join-Path $TestDrive 'repo-noagentmd'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
 
-        $agents = Get-AgentConfigs -RepoRoot (Join-Path $TestDrive 'repo2')
+        $json = '{ "agent": "nonexistent-agent", "prompt": "Do stuff", "schedule": { "type": "daily", "time": "12:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'ghost.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $match = $agents | Where-Object { $_.Id -eq 'ghost' }
         $match.AgentFilePath | Should -BeNullOrEmpty
     }
 
-    It 'Skips configs missing prompt' {
-        $dir3 = Join-Path $TestDrive 'repo3\.cronagents\agents'
-        New-Item -ItemType Directory -Path $dir3 -Force | Out-Null
-        Set-Content -Path (Join-Path $dir3 'no-prompt.json') -Value '{ "schedule": { "type": "daily", "time": "09:00" } }' -Encoding UTF8
+    It 'Skips configs missing prompt (returns null)' {
+        $repoRoot = Join-Path $TestDrive 'repo-noprompt'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        Set-Content -Path (Join-Path $agentDir 'no-prompt.json') -Value '{ "schedule": { "type": "daily", "time": "09:00" } }' -Encoding UTF8
 
-        $agents = Get-AgentConfigs -RepoRoot (Join-Path $TestDrive 'repo3')
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents | Should -HaveCount 0
     }
 
     It 'Skips configs missing schedule' {
-        $dir4 = Join-Path $TestDrive 'repo4\.cronagents\agents'
-        New-Item -ItemType Directory -Path $dir4 -Force | Out-Null
-        Set-Content -Path (Join-Path $dir4 'no-sched.json') -Value '{ "prompt": "hello" }' -Encoding UTF8
+        $repoRoot = Join-Path $TestDrive 'repo-nosched'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        Set-Content -Path (Join-Path $agentDir 'no-sched.json') -Value '{ "prompt": "hello" }' -Encoding UTF8
 
-        $agents = Get-AgentConfigs -RepoRoot (Join-Path $TestDrive 'repo4')
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents | Should -HaveCount 0
     }
 
-    It 'Skips configs with invalid schedule type' {
-        $dir5 = Join-Path $TestDrive 'repo5\.cronagents\agents'
-        New-Item -ItemType Directory -Path $dir5 -Force | Out-Null
+    It 'Skips configs with unknown schedule type' {
+        $repoRoot = Join-Path $TestDrive 'repo-badtype'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
         $json = '{ "prompt": "test", "schedule": { "type": "cron", "expr": "* * * * *" } }'
-        Set-Content -Path (Join-Path $dir5 'bad-type.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'bad-type.json') -Value $json -Encoding UTF8
 
-        $agents = Get-AgentConfigs -RepoRoot (Join-Path $TestDrive 'repo5')
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents | Should -HaveCount 0
     }
 
-    It 'Detects duplicate agent IDs across scan paths' {
-        $dir6a = Join-Path $TestDrive 'repo6\.cronagents\agents'
-        $dir6b = Join-Path $TestDrive 'repo6-extra'
-        New-Item -ItemType Directory -Path $dir6a -Force | Out-Null
-        New-Item -ItemType Directory -Path $dir6b -Force | Out-Null
+    It 'Deduplicates agent IDs across scan paths' {
+        $repoRoot = Join-Path $TestDrive 'repo-dupe'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        $extraDir = Join-Path $TestDrive 'dupe-extra'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $extraDir -Force | Out-Null
 
         $json = '{ "prompt": "test", "schedule": { "type": "daily", "time": "08:00" } }'
-        Set-Content -Path (Join-Path $dir6a 'dupe.json') -Value $json -Encoding UTF8
-        Set-Content -Path (Join-Path $dir6b 'dupe.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'dupe.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $extraDir 'dupe.json') -Value $json -Encoding UTF8
 
-        $agents = Get-AgentConfigs -RepoRoot (Join-Path $TestDrive 'repo6') -AdditionalPaths @($dir6b)
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot -AdditionalPaths @($extraDir)
         $agents | Should -HaveCount 1
     }
 
     It 'Returns agents sorted by ID' {
-        $dir7 = Join-Path $TestDrive 'repo7\.cronagents\agents'
-        New-Item -ItemType Directory -Path $dir7 -Force | Out-Null
+        $repoRoot = Join-Path $TestDrive 'repo-sort'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
 
         $json = '{ "prompt": "test", "schedule": { "type": "daily", "time": "08:00" } }'
-        Set-Content -Path (Join-Path $dir7 'zeta.json')  -Value $json -Encoding UTF8
-        Set-Content -Path (Join-Path $dir7 'alpha.json') -Value $json -Encoding UTF8
-        Set-Content -Path (Join-Path $dir7 'mid.json')   -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'zeta.json')  -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'alpha.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'mid.json')   -Value $json -Encoding UTF8
 
-        $agents = Get-AgentConfigs -RepoRoot (Join-Path $TestDrive 'repo7')
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents | Should -HaveCount 3
         $agents[0].Id | Should -Be 'alpha'
         $agents[1].Id | Should -Be 'mid'
@@ -357,37 +442,82 @@ Describe 'Get-AgentConfigs' {
     }
 
     It 'Scans additional paths' {
-        $extraDir = Join-Path $TestDrive 'extra-agents'
+        $extraDir = Join-Path $TestDrive 'extra-agents2'
         New-Item -ItemType Directory -Path $extraDir -Force | Out-Null
         $json = '{ "prompt": "extra", "schedule": { "type": "weekly", "day": "monday", "time": "10:00" } }'
         Set-Content -Path (Join-Path $extraDir 'bonus.json') -Value $json -Encoding UTF8
 
-        $agents = Get-AgentConfigs -RepoRoot (Join-Path $TestDrive 'empty-repo') -AdditionalPaths @($extraDir)
+        $agents = Get-AgentConfigs -RepoRoot (Join-Path $TestDrive 'empty-repo2') -AdditionalPaths @($extraDir)
         $agents | Should -HaveCount 1
         $agents[0].Id | Should -Be 'bonus'
         $agents[0].Config.schedule.type | Should -Be 'weekly'
     }
 
     It 'Uses agent name from JSON when provided' {
-        $dir8 = Join-Path $TestDrive 'repo8\.cronagents\agents'
-        New-Item -ItemType Directory -Path $dir8 -Force | Out-Null
+        $repoRoot = Join-Path $TestDrive 'repo-name'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
         $json = '{ "name": "Custom Name", "prompt": "go", "schedule": { "type": "daily", "time": "07:00" } }'
-        Set-Content -Path (Join-Path $dir8 'my-agent.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'my-agent.json') -Value $json -Encoding UTF8
 
-        $agents = Get-AgentConfigs -RepoRoot (Join-Path $TestDrive 'repo8')
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents[0].Config.name | Should -Be 'Custom Name'
         $agents[0].Id          | Should -Be 'my-agent'
     }
 
-    It 'Applies custom timeout and retryCount' {
-        $dir9 = Join-Path $TestDrive 'repo9\.cronagents\agents'
-        New-Item -ItemType Directory -Path $dir9 -Force | Out-Null
+    It 'Applies custom timeout, retryCount, and skipOnBattery' {
+        $repoRoot = Join-Path $TestDrive 'repo-custom'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
         $json = '{ "prompt": "go", "schedule": { "type": "daily", "time": "07:00" }, "timeout": "30m", "retryCount": 3, "skipOnBattery": true }'
-        Set-Content -Path (Join-Path $dir9 'custom.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'custom.json') -Value $json -Encoding UTF8
 
-        $agents = Get-AgentConfigs -RepoRoot (Join-Path $TestDrive 'repo9')
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents[0].Config.timeout       | Should -Be '30m'
         $agents[0].Config.retryCount    | Should -Be 3
         $agents[0].Config.skipOnBattery | Should -Be $true
+    }
+
+    It 'Validates prompt-only mode (no agent field)' {
+        $repoRoot = Join-Path $TestDrive 'repo-promptonly'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "Just a prompt", "schedule": { "type": "interval", "every": "2h" } }'
+        Set-Content -Path (Join-Path $agentDir 'prompt-only.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 1
+        $agents[0].Config.PSObject.Properties['agent'] | Should -BeNullOrEmpty
+    }
+
+    It 'Validates agent mode (agent + prompt)' {
+        $repoRoot = Join-Path $TestDrive 'repo-agentmode'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "agent": "code-reviewer", "prompt": "Review code", "schedule": { "type": "daily", "time": "09:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'with-agent.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 1
+        $agents[0].Config.agent | Should -Be 'code-reviewer'
+        $agents[0].Config.prompt | Should -Be 'Review code'
+    }
+}
+
+# ===== JSON Schema Files =====
+
+Describe 'JSON Schema Files' {
+    BeforeAll {
+        $repoRoot = Split-Path $PSScriptRoot -Parent
+    }
+
+    It 'cronagents.schema.json parses as valid JSON' {
+        $schemaPath = Join-Path $repoRoot 'cronagents.schema.json'
+        { Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8 | ConvertFrom-Json } | Should -Not -Throw
+    }
+
+    It 'cronagents-agent.schema.json parses as valid JSON' {
+        $schemaPath = Join-Path $repoRoot 'cronagents-agent.schema.json'
+        { Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8 | ConvertFrom-Json } | Should -Not -Throw
     }
 }
