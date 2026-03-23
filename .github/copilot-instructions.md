@@ -6,6 +6,10 @@
 
 2. **No duplicated logic.** Make use of the shared PowerShell module (`scheduler/lib/CronAgents.psd1`) and its nested modules. If a function is needed in more than one script, it belongs in `lib/`. The CLI wrapper, scheduler, health check, and tests must all call the same functions — never reimplement.
 
+## Keep in sync
+
+When changing the config schema (`chronagents.json`, `chronagents.schema.json`) or `.agent.md` structure, update `.github/skills/agent-creator/SKILL.md` to match. That skill is how users create new agents — if it falls out of date, they'll get bad scaffolding.
+
 ## Before committing
 
 Run all non-E2E tests and verify they pass:

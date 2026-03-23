@@ -22,6 +22,9 @@ A reusable scaffolding that runs Copilot CLI agents on configurable schedules, r
 CronAgents/
 ├── .github/
 │   ├── copilot-instructions.md               ← workspace instructions for repo development
+│   ├── skills/
+│   │   └── agent-creator/
+│   │       └── SKILL.md                      ← interactive skill: create a new scheduled agent
 │   └── prompts/
 │       └── run-feedback.prompt.md
 ├── templates/
@@ -378,6 +381,8 @@ Three tiers, three audiences:
 **Step 13a** — `README.md` — project overview, feature bullets, quick-start teaser (link to `guide/getting-started.md`), docs map table linking every `guide/` page, badges, license.
 
 **Step 14** — `.github/copilot-instructions.md` — Workspace instructions for extending the project (core principles, no-duplication rule, project structure, test enforcement).
+
+**Step 14a** — `.github/skills/agent-creator/SKILL.md` — Interactive skill that walks users through creating a new scheduled agent. Interviews the user, reads `guide/writing-agents.md` and `guide/configuration.md` for current structure/options, then scaffolds the `.agent.md` file and `chronagents.json` config entry. This is a development-time Copilot skill, not a runtime component.
 
 **Step 15** — Example agent files (`.example` suffix) — kept as templates under `templates/agents/`. Users copy them into `.chronagents/agents/` or a user-global Copilot directory to activate. Each example includes inline comments explaining every frontmatter field and prompt pattern.
 
