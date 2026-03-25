@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    CronAgents test runner ΓÇö runs all Pester tests with process isolation.
+    CronAgents test runner - runs all Pester tests with process isolation.
 .DESCRIPTION
     Pester 5 can hang when 15+ test containers import the same module in a single
     process (FileStream exclusive locks + module reimport contention). This runner
@@ -22,7 +22,7 @@ param(
     [string[]]$ExcludeTag = @('E2E'),
     [string]$Filter = '*',
     [ValidateRange(1, 64)]
-    [int]$MaxWorkers = 2
+    [int]$MaxWorkers = 4
 )
 
 $ErrorActionPreference = 'Stop'
