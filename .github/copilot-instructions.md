@@ -20,4 +20,5 @@ Run all non-E2E tests and verify they pass:
 
 > **Note:** `Invoke-Pester ./tests/ -ExcludeTag 'E2E'` hangs when all 15 test
 > containers import `CronAgents.psd1` in a single process. `Invoke-Tests.ps1`
-> runs each file in its own `pwsh` subprocess for reliable, isolated execution.
+> runs each file in its own `pwsh` subprocess with a default maximum of 8
+> concurrent workers for reliable, isolated execution.

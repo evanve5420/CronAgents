@@ -54,7 +54,7 @@ PowerShell Core runs on macOS/Linux, but initial target is Windows only. macOS w
 
 ### 11. PR Gate Enforcement
 
-The test suite is already structured for CI (`Invoke-Pester ./tests/ -ExcludeTag 'E2E'`). A future GitHub Actions workflow can run this as a required status check on PRs. Currently enforced via `copilot-instructions.md` only.
+The test suite is already structured for CI (`./tests/Invoke-Tests.ps1`). A future GitHub Actions workflow can run this as a required status check on PRs. Currently enforced via `copilot-instructions.md` only.
 
 ### 12. Agent Pipelines
 

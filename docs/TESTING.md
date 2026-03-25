@@ -8,7 +8,7 @@ Referenced from [PLAN.md](PLAN.md) Phase 6.
 
 ## Test enforcement
 
-The `copilot-instructions.md` for this repository instructs agents to run all non-E2E tests before committing changes: `Invoke-Pester ./tests/ -ExcludeTag 'E2E'`. The test suite is structured so it can also be wired into PR gates or CI if that's ever desired.
+The `copilot-instructions.md` for this repository instructs agents to run all non-E2E tests before committing changes with `./tests/Invoke-Tests.ps1`. That runner keeps Pester process isolation by executing each `*.Tests.ps1` file in its own `pwsh` subprocess, with a default maximum of 8 concurrent workers.
 
 ---
 
@@ -293,7 +293,8 @@ Test `Test-CronAgentsHealth.ps1` / `cronagents.ps1 doctor`:
 
 ## Running tests
 
-- **Default (all except E2E)**: `Invoke-Pester ./tests/ -ExcludeTag 'E2E'`
+- **Default (all except E2E)**: `./tests/Invoke-Tests.ps1`
+- **Custom worker limit**: `./tests/Invoke-Tests.ps1 -MaxWorkers 4`
 - **E2E only**: `Invoke-Pester ./tests/ -Tag 'E2E'`
 - **All**: `Invoke-Pester ./tests/`
 

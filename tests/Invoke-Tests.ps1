@@ -15,14 +15,14 @@
     ./tests/Invoke-Tests.ps1
     ./tests/Invoke-Tests.ps1 -Filter 'Schedule*'
     ./tests/Invoke-Tests.ps1 -ExcludeTag 'E2E','Slow'
-    ./tests/Invoke-Tests.ps1 -MaxWorkers 4
+    ./tests/Invoke-Tests.ps1 -MaxWorkers 8
 #>
 [CmdletBinding()]
 param(
     [string[]]$ExcludeTag = @('E2E'),
     [string]$Filter = '*',
     [ValidateRange(1, 64)]
-    [int]$MaxWorkers = 4
+    [int]$MaxWorkers = 8
 )
 
 $ErrorActionPreference = 'Stop'
