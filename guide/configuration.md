@@ -23,6 +23,7 @@ Located at the repository root. Controls scheduler-wide behavior.
   "logLevel": "info",
   "quietHours": null,
   "versioning": {
+    "enabled": true,
     "syncPolicy": "notify",
     "userName": null,
     "autoCommitFeedback": true,
@@ -139,10 +140,11 @@ Controls the git branching and sync behavior.
 
 | Sub-field | Type | Default | Description |
 |-----------|------|---------|-------------|
+| `enabled` | `boolean` | `true` | Turns git-backed branch management, sync, and feedback commits on or off. |
 | `syncPolicy` | `string` | `"notify"` | How the scheduler handles divergence from master. See values below. |
 | `userName` | `string` or `null` | `null` | Override username for the user branch. `null` = auto-detect from `git config github.user`, `gh auth status`, `git config user.name`, or `$env:USERNAME`. |
 | `autoCommitFeedback` | `boolean` | `true` | Automatically `git commit` after the feedback evaluator edits agent files. |
-| `branchPrefix` | `string` | `"agents"` | Prefix for user branches. The full branch name is `<prefix>/<username>`. |
+| `branchPrefix` | `string` | `"personal-agents"` | Prefix for user branches. The full branch name is `<prefix>/<username>`. |
 
 **`syncPolicy` values:**
 
@@ -154,10 +156,19 @@ Controls the git branching and sync behavior.
 
 ```json
 "versioning": {
+  "enabled": true,
   "syncPolicy": "auto",
   "userName": "alice",
   "autoCommitFeedback": true,
   "branchPrefix": "personal-agents"
+}
+```
+
+Set `versioning.enabled` to `false` if you want to keep using CronAgents without any automatic branch bootstrap, sync checks, or feedback commits:
+
+```json
+"versioning": {
+  "enabled": false
 }
 ```
 

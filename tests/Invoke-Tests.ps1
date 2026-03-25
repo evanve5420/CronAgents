@@ -9,21 +9,25 @@
     Tags to exclude. Defaults to 'E2E'.
 .PARAMETER Filter
     Optional wildcard filter for test file names (e.g. 'Config*').
+.PARAMETER MaxWorkers
+    Maximum number of test-file subprocesses to run at once.
 .EXAMPLE
     ./tests/Invoke-Tests.ps1
     ./tests/Invoke-Tests.ps1 -Filter 'Schedule*'
     ./tests/Invoke-Tests.ps1 -ExcludeTag 'E2E','Slow'
+    ./tests/Invoke-Tests.ps1 -MaxWorkers 4
 #>
 [CmdletBinding()]
 param(
     [string[]]$ExcludeTag = @('E2E'),
-    [string]$Filter = '*'
+    [string]$Filter = '*',
+    [ValidateRange(1, 64)]
+    [int]$MaxWorkers = 2
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $testDir = $PSScriptRoot
-$resultFile = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-test-$([guid]::NewGuid().ToString('N').Substring(0,8)).txt"
 
 $files = Get-ChildItem -Path $testDir -Filter "$Filter.Tests.ps1" | Sort-Object Name
 if ($files.Count -eq 0) {
@@ -36,49 +40,112 @@ $totalPassed = 0; $totalFailed = 0; $totalSkipped = 0
 $failures = @()
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
-Write-Host "CronAgents Test Runner" -ForegroundColor Cyan
-Write-Host ("=" * 50) -ForegroundColor Cyan
-Write-Host "Files: $($files.Count)  Exclude: $($ExcludeTag -join ', ')`n"
+function Start-TestProcess {
+    param(
+        [Parameter(Mandatory)][System.IO.FileInfo]$File,
+        [Parameter(Mandatory)][string]$RepoRoot,
+        [Parameter(Mandatory)][string]$ExcludeArg
+    )
 
-foreach ($file in $files) {
-    $label = $file.Name.Replace('.Tests.ps1', '')
+    $resultFile = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-test-$([guid]::NewGuid().ToString('N')).txt"
+    $cmd = @"
+Set-Location '$RepoRoot'
+`$r = Invoke-Pester '$($File.FullName)' -ExcludeTag $ExcludeArg -Output None -PassThru 2>`$null
+"`$(`$r.PassedCount)|`$(`$r.FailedCount)|`$(`$r.SkippedCount)" | Set-Content '$resultFile'
+if (`$r.FailedCount -gt 0) {
+    `$r.Failed | ForEach-Object { `$_.Name } | Add-Content '$resultFile'
+}
+"@
+    $encodedCommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($cmd))
+
+    [PSCustomObject]@{
+        File       = $File
+        Label      = $File.Name.Replace('.Tests.ps1', '')
+        ResultFile = $resultFile
+        Process    = Start-Process pwsh -ArgumentList @('-NoProfile', '-EncodedCommand', $encodedCommand) -PassThru -WindowStyle Hidden
+    }
+}
+
+function Complete-TestProcess {
+    param(
+        [Parameter(Mandatory)][pscustomobject]$RunningTest
+    )
+
+    $label = $RunningTest.Label
     Write-Host -NoNewline "  $($label.PadRight(30))"
 
-    # Run in subprocess and write results to temp file
-    $cmd = @"
-        Set-Location '$repoRoot'
-        `$r = Invoke-Pester '$($file.FullName)' -ExcludeTag $excludeArg -Output None -PassThru 2>`$null
-        "`$(`$r.PassedCount)|`$(`$r.FailedCount)|`$(`$r.SkippedCount)" | Set-Content '$resultFile'
-        if (`$r.FailedCount -gt 0) {
-            `$r.Failed | ForEach-Object { `$_.Name } | Add-Content '$resultFile'
-        }
-"@
-    pwsh -NoProfile -Command $cmd 2>$null | Out-Null
-
-    if (Test-Path $resultFile) {
-        $lines = @(Get-Content $resultFile)
+    if (Test-Path $RunningTest.ResultFile) {
+        $lines = @(Get-Content $RunningTest.ResultFile)
         $parts = $lines[0].Split('|')
-        $p = [int]$parts[0]; $f = [int]$parts[1]; $s = [int]$parts[2]
-        $totalPassed += $p; $totalFailed += $f; $totalSkipped += $s
+        $passed = [int]$parts[0]
+        $failed = [int]$parts[1]
+        $skipped = [int]$parts[2]
+        $failedNames = if ($lines.Count -gt 1) { $lines[1..($lines.Count - 1)] } else { @() }
+        Remove-Item $RunningTest.ResultFile -Force -ErrorAction SilentlyContinue
 
-        if ($f -gt 0) {
-            Write-Host "FAIL  ($p passed, $f failed)" -ForegroundColor Red
-            $failedNames = $lines[1..($lines.Count - 1)]
-            $failures += @{ File = $label; Names = $failedNames }
-            $failedNames | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+        return [PSCustomObject]@{
+            Label       = $label
+            PassedCount = $passed
+            FailedCount = $failed
+            SkippedCount = $skipped
+            FailedNames = $failedNames
+            HadResult   = $true
         }
-        elseif ($p -eq 0 -and $s -eq 0) {
+    }
+
+    return [PSCustomObject]@{
+        Label        = $label
+        PassedCount  = 0
+        FailedCount  = 1
+        SkippedCount = 0
+        FailedNames  = @('Subprocess produced no result')
+        HadResult    = $false
+    }
+}
+
+Write-Host "CronAgents Test Runner" -ForegroundColor Cyan
+Write-Host ("=" * 50) -ForegroundColor Cyan
+Write-Host "Files: $($files.Count)  Exclude: $($ExcludeTag -join ', ')  Workers: $MaxWorkers"
+Write-Host
+
+$pendingFiles = [System.Collections.Generic.Queue[System.IO.FileInfo]]::new()
+foreach ($file in $files) {
+    $pendingFiles.Enqueue($file)
+}
+
+$runningTests = [System.Collections.ArrayList]::new()
+
+while ($pendingFiles.Count -gt 0 -or $runningTests.Count -gt 0) {
+    while ($pendingFiles.Count -gt 0 -and $runningTests.Count -lt $MaxWorkers) {
+        $null = $runningTests.Add((Start-TestProcess -File $pendingFiles.Dequeue() -RepoRoot $repoRoot -ExcludeArg $excludeArg))
+    }
+
+    $completedTests = @($runningTests | Where-Object { $_.Process.HasExited })
+    if ($completedTests.Count -eq 0) {
+        Start-Sleep -Milliseconds 200
+        continue
+    }
+
+    foreach ($completedTest in $completedTests) {
+        $null = $completedTest.Process.WaitForExit()
+        $result = Complete-TestProcess -RunningTest $completedTest
+        $totalPassed += $result.PassedCount
+        $totalFailed += $result.FailedCount
+        $totalSkipped += $result.SkippedCount
+
+        if ($result.FailedCount -gt 0) {
+            Write-Host "FAIL  ($($result.PassedCount) passed, $($result.FailedCount) failed)" -ForegroundColor Red
+            $failures += @{ File = $result.Label; Names = $result.FailedNames }
+            $result.FailedNames | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+        }
+        elseif ($result.PassedCount -eq 0 -and $result.SkippedCount -eq 0) {
             Write-Host "SKIP  (excluded)" -ForegroundColor DarkGray
         }
         else {
-            Write-Host "OK    ($p passed$(if ($s) { ", $s skipped" }))" -ForegroundColor Green
+            Write-Host "OK    ($($result.PassedCount) passed$(if ($result.SkippedCount) { ", $($result.SkippedCount) skipped" }))" -ForegroundColor Green
         }
-        Remove-Item $resultFile -Force -ErrorAction SilentlyContinue
-    }
-    else {
-        Write-Host "ERROR (no result)" -ForegroundColor Red
-        $totalFailed++
-        $failures += @{ File = $label; Names = @('Subprocess produced no result') }
+
+        [void]$runningTests.Remove($completedTest)
     }
 }
 

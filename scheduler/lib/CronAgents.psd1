@@ -24,6 +24,7 @@
         # ConfigLoader
         'Import-CronAgentsConfig',
         'Test-CronAgentsConfig',
+        'Test-CronAgentsVersioningEnabled',
         'Get-AgentConfigs',
         # StateManager
         'Get-AgentState',
