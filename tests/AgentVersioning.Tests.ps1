@@ -131,12 +131,13 @@ Describe 'Branch detection in temp git repos' {
 # ===== Config defaults for versioning =====
 
 Describe 'Versioning config defaults' {
-    It 'Missing versioning block yields notify/null/true/personal-agents defaults' {
+    It 'Missing versioning block yields true/notify/null/true/personal-agents defaults' {
         $configDir = Join-Path $TestDrive 'ver-defaults-test'
         New-Item -ItemType Directory -Path $configDir -Force | Out-Null
         Set-Content -Path (Join-Path $configDir 'cronagents.json') -Value '{}' -Encoding UTF8
 
         $cfg = Import-CronAgentsConfig -ConfigPath (Join-Path $configDir 'cronagents.json')
+        $cfg.versioning.enabled            | Should -Be $true
         $cfg.versioning.syncPolicy         | Should -Be 'notify'
         $cfg.versioning.userName           | Should -BeNullOrEmpty
         $cfg.versioning.autoCommitFeedback | Should -Be $true
@@ -150,6 +151,7 @@ Describe 'Versioning config defaults' {
         Set-Content -Path (Join-Path $configDir 'cronagents.json') -Value $json -Encoding UTF8
 
         $cfg = Import-CronAgentsConfig -ConfigPath (Join-Path $configDir 'cronagents.json')
+        $cfg.versioning.enabled            | Should -Be $true
         $cfg.versioning.syncPolicy         | Should -Be 'auto'
         $cfg.versioning.autoCommitFeedback | Should -Be $true
         $cfg.versioning.branchPrefix       | Should -Be 'personal-agents'
@@ -161,6 +163,7 @@ Describe 'Versioning config defaults' {
         $json = @'
 {
     "versioning": {
+        "enabled": false,
         "syncPolicy": "manual",
         "userName": "custom-user",
         "autoCommitFeedback": false,
@@ -171,10 +174,40 @@ Describe 'Versioning config defaults' {
         Set-Content -Path (Join-Path $configDir 'cronagents.json') -Value $json -Encoding UTF8
 
         $cfg = Import-CronAgentsConfig -ConfigPath (Join-Path $configDir 'cronagents.json')
+        $cfg.versioning.enabled            | Should -Be $false
         $cfg.versioning.syncPolicy         | Should -Be 'manual'
         $cfg.versioning.userName           | Should -Be 'custom-user'
         $cfg.versioning.autoCommitFeedback | Should -Be $false
         $cfg.versioning.branchPrefix       | Should -Be 'custom'
+    }
+}
+
+Describe 'Test-CronAgentsVersioningEnabled' {
+    It 'Returns true when versioning.enabled is omitted' {
+        $cfg = [PSCustomObject]@{
+            versioning = [PSCustomObject]@{
+                syncPolicy         = 'notify'
+                userName           = $null
+                autoCommitFeedback = $true
+                branchPrefix       = 'personal-agents'
+            }
+        }
+
+        Test-CronAgentsVersioningEnabled -Config $cfg | Should -Be $true
+    }
+
+    It 'Returns false when versioning.enabled is false' {
+        $cfg = [PSCustomObject]@{
+            versioning = [PSCustomObject]@{
+                enabled            = $false
+                syncPolicy         = 'notify'
+                userName           = $null
+                autoCommitFeedback = $true
+                branchPrefix       = 'personal-agents'
+            }
+        }
+
+        Test-CronAgentsVersioningEnabled -Config $cfg | Should -Be $false
     }
 }
 
