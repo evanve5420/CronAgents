@@ -8,11 +8,9 @@
   "logLevel": "info",
   "quietHours": null,
   "versioning": {
-    "enabled": true,
     "syncPolicy": "notify",
     "userName": null,
     "autoCommitFeedback": true,
     "branchPrefix": "personal-agents"
   }
 }
-

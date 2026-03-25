@@ -49,8 +49,6 @@ if ($errors.Count -gt 0) {
     exit 1
 }
 
-$versioningEnabled = Test-CronAgentsVersioningEnabled -Config $config
-
 # -----------------------------------------------------------------------
 # 5. Initialize logging
 # -----------------------------------------------------------------------
@@ -71,9 +69,6 @@ if (-not (Test-Path $runsRoot)) {
 # 7. Log startup
 # -----------------------------------------------------------------------
 Write-CronAgentsLog -Level 'info' -Message 'CronAgents scheduler starting'
-if (-not $versioningEnabled) {
-    Write-CronAgentsLog -Level 'info' -Message 'Git versioning is disabled; sync checks and feedback commits will be skipped.'
-}
 
 # -----------------------------------------------------------------------
 # Ctrl+C handling
@@ -237,7 +232,7 @@ try {
                 Invoke-FeedbackSweep -RunsRoot $runsRoot `
                     -CopilotPath $config.copilotPath `
                     -RepoRoot $RepoRoot `
-                    -AutoCommitFeedback ($versioningEnabled -and $config.versioning.autoCommitFeedback)
+                    -AutoCommitFeedback $config.versioning.autoCommitFeedback
             }
             catch {
                 Write-CronAgentsLog -Level 'warn' -Message "Feedback sweep error: $_"
@@ -259,21 +254,19 @@ try {
             # -----------------------------------------------------------
             # Step 4: Sync check (notify / auto)
             # -----------------------------------------------------------
-            if ($versioningEnabled) {
-                try {
-                    if ($config.versioning.syncPolicy -eq 'notify') {
-                        $divergence = Get-BranchDivergence -RepoRoot $RepoRoot
-                        if ($divergence.Behind -gt 0) {
-                            Write-CronAgentsLog -Level 'info' -Message "Branch is $($divergence.Behind) commits behind master"
-                        }
-                    }
-                    elseif ($config.versioning.syncPolicy -eq 'auto') {
-                        Invoke-BranchSync -RepoRoot $RepoRoot
+            try {
+                if ($config.versioning.syncPolicy -eq 'notify') {
+                    $divergence = Get-BranchDivergence -RepoRoot $RepoRoot
+                    if ($divergence.Behind -gt 0) {
+                        Write-CronAgentsLog -Level 'info' -Message "Branch is $($divergence.Behind) commits behind master"
                     }
                 }
-                catch {
-                    Write-CronAgentsLog -Level 'warn' -Message "Sync check error: $_"
+                elseif ($config.versioning.syncPolicy -eq 'auto') {
+                    Invoke-BranchSync -RepoRoot $RepoRoot
                 }
+            }
+            catch {
+                Write-CronAgentsLog -Level 'warn' -Message "Sync check error: $_"
             }
 
             # -----------------------------------------------------------

@@ -2,9 +2,8 @@
 # ConfigLoader.ps1 — Config loading, validation, and agent discovery
 #
 # Provides Import-CronAgentsConfig (global config), Test-CronAgentsConfig
-# (validation), Test-CronAgentsVersioningEnabled, and Get-AgentConfigs
-# (per-agent discovery). Designed to be dot-sourced as a nested module via
-# CronAgents.psd1.
+# (validation), and Get-AgentConfigs (per-agent discovery). Designed to be
+# dot-sourced as a nested module via CronAgents.psd1.
 # -----------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
@@ -99,10 +98,6 @@ function Import-CronAgentsConfig {
     $versioningRaw = ConvertTo-OrderedPSObject -InputObject $versioningRaw
 
     $versioning = [PSCustomObject]@{
-        enabled            = if ($null -ne $versioningRaw -and
-                                 $null -ne $versioningRaw.PSObject.Properties['enabled'] -and
-                                 $null -ne $versioningRaw.enabled)
-                             { [bool]$versioningRaw.enabled } else { $true }
         syncPolicy         = if ($null -ne $versioningRaw -and
                                  $null -ne $versioningRaw.PSObject.Properties['syncPolicy'] -and
                                  $null -ne $versioningRaw.syncPolicy)
@@ -216,28 +211,6 @@ function Test-CronAgentsConfig {
     }
 
     return ,$errors.ToArray()
-}
-
-# -------------------------------------------------------------------
-# Test-CronAgentsVersioningEnabled
-# -------------------------------------------------------------------
-function Test-CronAgentsVersioningEnabled {
-    [CmdletBinding()]
-    [OutputType([bool])]
-    param(
-        [Parameter(Mandatory)]
-        [PSCustomObject]$Config
-    )
-
-    if (-not $Config.PSObject.Properties['versioning'] -or $null -eq $Config.versioning) {
-        return $true
-    }
-
-    if (-not $Config.versioning.PSObject.Properties['enabled'] -or $null -eq $Config.versioning.enabled) {
-        return $true
-    }
-
-    return [bool]$Config.versioning.enabled
 }
 
 # -------------------------------------------------------------------

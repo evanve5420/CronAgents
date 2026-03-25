@@ -2,8 +2,6 @@
 
 CronAgents uses a branch-per-user model so multiple people can share the same repository while keeping their agent customizations separate.
 
-If you do not want CronAgents to manage branches or create git commits for agent history, set `versioning.enabled` to `false` in `cronagents.json`. With versioning disabled, install leaves your current branch alone, the scheduler skips sync checks, and `sync` / `branch` commands become unavailable.
-
 ## The branch model
 
 ```
@@ -28,7 +26,7 @@ master                    ← Scaffold: scheduler code, templates, schemas
 
 ## Auto-bootstrap on install
 
-When you run `cronagents.ps1 install`, the installer automatically creates your user branch if `versioning.enabled` is `true`:
+When you run `cronagents.ps1 install`, the installer automatically creates your user branch:
 
 ```powershell
 .\cronagents.ps1 install
@@ -42,16 +40,6 @@ This calls `Initialize-UserBranch` which:
 4. If it exists, checks it out: `git checkout personal-agents/<username>`
 
 The operation is non-destructive — if your working tree has uncommitted changes, it warns and aborts rather than risk losing work.
-
-To opt out entirely:
-
-```json
-{
-  "versioning": {
-    "enabled": false
-  }
-}
-```
 
 ---
 
@@ -184,7 +172,7 @@ If "Behind" is greater than 0, consider running `cronagents.ps1 sync`.
 
 ## Feedback commits
 
-When the feedback evaluator edits agent files, those changes are automatically committed if `versioning.enabled` and `versioning.autoCommitFeedback` are both `true`:
+When the feedback evaluator edits agent files, those changes are automatically committed if `versioning.autoCommitFeedback` is `true` (the default):
 
 ```
 feedback: daily-review — Focused security scanning on high-priority areas
@@ -199,7 +187,7 @@ This creates a clean git history of how your agents evolve based on feedback:
 * Initial agent setup
 ```
 
-To disable just the feedback commit step while keeping branch sync enabled:
+To disable:
 
 ```json
 {
@@ -210,8 +198,6 @@ To disable just the feedback commit step while keeping branch sync enabled:
 ```
 
 When disabled, the evaluator still edits files but doesn't commit. You commit manually when ready.
-
-If `versioning.enabled` is `false`, feedback edits are never committed automatically.
 
 ---
 

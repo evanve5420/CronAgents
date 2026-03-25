@@ -8,7 +8,6 @@
   "logLevel": "debug",
   "quietHours": { "start": "22:00", "end": "06:00" },
   "versioning": {
-    "enabled": true,
     "syncPolicy": "auto",
     "userName": "testuser",
     "autoCommitFeedback": true,
