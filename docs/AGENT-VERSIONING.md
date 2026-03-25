@@ -24,13 +24,13 @@ CronAgents is intended for sharing with coworkers and potentially open-sourcing.
 
 ```
 master                    ← scaffold code, templates, scaffold agents. Shared/public-safe.
-├── agents/evan           ← Evan's customizations layered on top of master
-├── agents/alice          ← Alice's customizations layered on top of master
-└── agents/bob            ← Bob's customizations layered on top of master
+├── personal-agents/evanve5420      ← Evan's customizations layered on top of master
+├── personal-agents/alice          ← Alice's customizations layered on top of master
+└── personal-agents/bob            ← Bob's customizations layered on top of master
 ```
 
 - `master` contains all scaffold runtime code (`scheduler/`, `cronagents.ps1`, configs, templates, tests, docs) plus scaffold-internal agents (`scheduler/agents/`). No user-specific agent definitions.
-- `agents/<username>` branches are **supersets** of master: they contain everything on master plus the user's personal agent/skill/instruction files under `.cronagents/agents/` and related directories.
+- `personal-agents/<username>` branches are **supersets** of master: they contain everything on master plus the user's personal agent/skill/instruction files under `.cronagents/agents/` and related directories.
 - sser branches diverge from master **only** in the customization directories. Scaffold code is never edited on user branches (unless intentionally, which creates a legitimate merge conflict).
 
 ### What lives where
@@ -42,8 +42,8 @@ master                    ← scaffold code, templates, scaffold agents. Shared/
 | Scaffold agents (feedback-evaluator, run-summarizer) | `master` (in `scheduler/agents/`) | Yes |
 | Templates/examples | `master` (in `templates/`) | Yes |
 | Tests, docs, config schemas | `master` | Yes |
-| sser workload agents + schedule configs (`.cronagents/agents/`) | `agents/<user>` | Yes (on user branch) |
-| sser skill/instruction overrides | `agents/<user>` | Yes (on user branch) |
+| sser workload agents + schedule configs (`.cronagents/agents/`) | `personal-agents/<user>` | Yes (on user branch) |
+| sser skill/instruction overrides | `personal-agents/<user>` | Yes (on user branch) |
 | Runtime data (`.cronstate/` — runs, state, logs) | Neither | Gitignored on all branches |
 
 ### Why supersets, not separate trees
@@ -62,9 +62,9 @@ On first run (or `cronagents.ps1 install`), the scheduler detects branch state a
 
 ```
 Start-CronAgents.ps1 / cronagents.ps1 install
-  → Does agents/<user> branch exist?
-    → No:  git checkout -b agents/<user> from master
-    → Yes: git checkout agents/<user>
+  → Does personal-agents/<user> branch exist?
+    → No:  git checkout -b personal-agents/<user> from master
+    → Yes: git checkout personal-agents/<user>
   → Continue with normal startup
 ```
 
@@ -97,7 +97,7 @@ The evaluator doesn't need git awareness. It edits files as it does today. The s
 
 ## Sync: Merging Scaffold spdates from Master
 
-A **sync** operation merges `master → agents/<user>` to bring scaffold improvements into the user's branch.
+A **sync** operation merges `master → personal-agents/<user>` to bring scaffold improvements into the user's branch.
 
 ### Sync policies
 
@@ -187,14 +187,14 @@ The `backup/` subdirectory mirrors the relative paths of edited files.
 | Command | Change |
 |---------|--------|
 | `status` | Shows current branch, commits behind master (if `notify` or `auto` policy) |
-| `doctor` | Verifies user is on expected `agents/<user>` branch. Warns if on master with customizations. Warns if branch is significantly behind master. |
+| `doctor` | Verifies user is on expected `personal-agents/<user>` branch. Warns if on master with customizations. Warns if branch is significantly behind master. |
 
 ### TsI integration
 
 The interactive menu gains sync awareness:
 
 ```
-CronAgents (branch: agents/<user>, 3 behind master)
+CronAgents (branch: personal-agents/<user>, 3 behind master)
 ──────────────────────────
  1) Status & upcoming runs
  2) Trigger ad-hoc run
@@ -223,7 +223,7 @@ New fields in `cronagents.json`:
     "syncPolicy": "notify",        // "auto" | "notify" | "manual"
     "userName": null,               // Override for branch name. null = auto-detect.
     "autoCommitFeedback": true,     // Commit after feedback evaluator edits. Default true.
-    "branchPrefix": "agents"       // Branch naming: <prefix>/<userName>. Default "agents".
+    "branchPrefix": "personal-agents"       // Branch naming: <prefix>/<userName>. Default "personal-agents".
   }
 }
 ```
@@ -242,9 +242,21 @@ See [TESTING.md](TESTING.md) — `AgentVersioning.Tests.ps1`, `SyncWorkflow.Test
 
 1. **Push policy**: Should the scheduler push user branches to the remote? This enables backup and multi-machine sync but raises the "personal agents visible on remote" concern. Options: never push (local only), push to a separate private remote, or push to origin but rely on branch protection to keep master clean. Day 0 recommendation: **local only** — pushing is opt-in future work.
 
-2. **Multiple machines**: If the same user runs CronAgents on two machines, their `agents/<user>` branches diverge locally. Without pushing/pulling, they're independent. This is acceptable for day 0 but worth noting.
+2. **Multiple machines**: If the same user runs CronAgents on two machines, their `personal-agents/<user>` branches diverge locally. Without pushing/pulling, they're independent. This is acceptable for day 0 but worth noting.
 
 3. **Agent file locations outside the repo**: User agents in `~/.copilot/agents/` (user-global Copilot directory) are outside the git repo entirely. The branching model can't version those. Pre-edit snapshots (option A) are the only safety net for user-global agents.
 
-4. **Branch cleanup**: If a user is removed from the team, their `agents/<user>` branch lingers. Not a day-0 concern but worth a `cronagents.ps1 prune-branches` command eventually.
+4. **Branch cleanup**: If a user is removed from the team, their `personal-agents/<user>` branch lingers. Not a day-0 concern but worth a `cronagents.ps1 prune-branches` command eventually.
+
+
+
+
+
+
+
+
+
+
+
+
 

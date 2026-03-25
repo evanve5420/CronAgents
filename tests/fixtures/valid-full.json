@@ -11,6 +11,6 @@
     "syncPolicy": "auto",
     "userName": "testuser",
     "autoCommitFeedback": true,
-    "branchPrefix": "agents"
+    "branchPrefix": "personal-agents"
   }
 }

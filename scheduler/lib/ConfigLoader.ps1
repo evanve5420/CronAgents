@@ -112,7 +112,7 @@ function Import-CronAgentsConfig {
         branchPrefix       = if ($null -ne $versioningRaw -and
                                  $null -ne $versioningRaw.PSObject.Properties['branchPrefix'] -and
                                  $null -ne $versioningRaw.branchPrefix)
-                             { $versioningRaw.branchPrefix } else { 'agents' }
+                             { $versioningRaw.branchPrefix } else { 'personal-agents' }
     }
 
     # Build top-level config with defaults

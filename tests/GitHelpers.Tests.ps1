@@ -71,10 +71,36 @@ Describe 'Resolve-CronAgentsUserName' {
         $result | Should -Be 'jane-o-smith'
     }
 
-    It 'Reads git config user.name when given a RepoRoot' {
-        $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-username-$(Get-Random)"
+    It 'Prefers git config github.user when given a RepoRoot' {
+        $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-ghuser-$(Get-Random)"
         New-Item $tempDir -ItemType Directory -Force | Out-Null
         try {
+            & git -C $tempDir init 2>&1 | Out-Null
+            & git -C $tempDir config user.email 'test@test.com' 2>&1 | Out-Null
+            & git -C $tempDir config user.name 'Git Config User' 2>&1 | Out-Null
+            & git -C $tempDir config github.user 'octocat-user' 2>&1 | Out-Null
+            Set-Content -Path (Join-Path $tempDir 'f.txt') -Value 'x'
+            & git -C $tempDir add . 2>&1 | Out-Null
+            & git -C $tempDir commit -m 'init' 2>&1 | Out-Null
+
+            $result = Resolve-CronAgentsUserName -RepoRoot $tempDir
+            $result | Should -Be 'octocat-user'
+        }
+        finally {
+            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'Reads git config user.name when no GitHub handle is available' {
+        $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-username-$(Get-Random)"
+        New-Item $tempDir -ItemType Directory -Force | Out-Null
+        $stubDir = Join-Path $tempDir 'bin'
+        $originalPath = $env:PATH
+        try {
+            New-Item $stubDir -ItemType Directory -Force | Out-Null
+            Set-Content -Path (Join-Path $stubDir 'gh.cmd') -Value "@echo off`r`nexit /b 1" -Encoding ASCII
+            $env:PATH = "$stubDir;$originalPath"
+
             & git -C $tempDir init 2>&1 | Out-Null
             & git -C $tempDir config user.email 'test@test.com' 2>&1 | Out-Null
             & git -C $tempDir config user.name 'Git Config User' 2>&1 | Out-Null
@@ -86,6 +112,7 @@ Describe 'Resolve-CronAgentsUserName' {
             $result | Should -Be 'git-config-user'
         }
         finally {
+            $env:PATH = $originalPath
             Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
@@ -145,20 +172,20 @@ Describe 'Get-CronAgentsBranch' {
     }
 
     It 'Detects when on user branch' {
-        & git -C $script:branchRepoDir checkout -b 'agents/test-user' 2>&1 | Out-Null
+        & git -C $script:branchRepoDir checkout -b 'personal-agents/test-user' 2>&1 | Out-Null
         try {
             $result = Get-CronAgentsBranch -RepoRoot $script:branchRepoDir -UserName 'test-user'
             $result.IsUserBranch | Should -Be $true
-            $result.CurrentBranch | Should -Be 'agents/test-user'
+            $result.CurrentBranch | Should -Be 'personal-agents/test-user'
         }
         finally {
             & git -C $script:branchRepoDir checkout main 2>&1 | Out-Null
         }
     }
 
-    It 'Uses default BranchPrefix of agents' {
+    It 'Uses default BranchPrefix of personal-agents' {
         $result = Get-CronAgentsBranch -RepoRoot $script:branchRepoDir -UserName 'bob'
-        $result.ExpectedBranch | Should -Be 'agents/bob'
+        $result.ExpectedBranch | Should -Be 'personal-agents/bob'
     }
 }
 
@@ -236,18 +263,18 @@ Describe 'Initialize-UserBranch' {
 
     It 'Creates a new branch when it does not exist' {
         $result = Initialize-UserBranch -RepoRoot $script:initBranchDir -UserName 'newuser'
-        $result.BranchName | Should -Be 'agents/newuser'
+        $result.BranchName | Should -Be 'personal-agents/newuser'
         $result.Created | Should -Be $true
         $result.Message | Should -BeLike '*Created*'
 
         $current = & git -C $script:initBranchDir rev-parse --abbrev-ref HEAD
-        $current | Should -Be 'agents/newuser'
+        $current | Should -Be 'personal-agents/newuser'
     }
 
     It 'Checks out existing branch without creating' {
         & git -C $script:initBranchDir checkout main 2>&1 | Out-Null
         $result = Initialize-UserBranch -RepoRoot $script:initBranchDir -UserName 'newuser'
-        $result.BranchName | Should -Be 'agents/newuser'
+        $result.BranchName | Should -Be 'personal-agents/newuser'
         $result.Created | Should -Be $false
         $result.Message | Should -BeLike '*existing*'
     }
@@ -335,7 +362,7 @@ Describe 'Invoke-BranchSync' {
 }
 
 Describe 'Versioning config defaults' {
-    It 'Missing versioning block yields notify/null/true/agents' {
+    It 'Missing versioning block yields notify/null/true/personal-agents' {
         $configDir = Join-Path $TestDrive 'ver-defaults'
         New-Item -ItemType Directory -Path $configDir -Force | Out-Null
         $json = '{}'
@@ -346,6 +373,6 @@ Describe 'Versioning config defaults' {
         $cfg.versioning.syncPolicy         | Should -Be 'notify'
         $cfg.versioning.userName           | Should -BeNullOrEmpty
         $cfg.versioning.autoCommitFeedback | Should -Be $true
-        $cfg.versioning.branchPrefix       | Should -Be 'agents'
+        $cfg.versioning.branchPrefix       | Should -Be 'personal-agents'
     }
 }

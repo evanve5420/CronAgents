@@ -179,7 +179,7 @@ Register the Windows Task Scheduler entry and bootstrap the user branch.
 **What it does:**
 
 1. Registers a scheduled task (`\Cronggents\Cronggents`) that triggers at logon
-2. Creates or checks out your user branch (`agents/<username>`)
+2. Creates or checks out your user branch (`personal-agents/<username>`)
 
 The command is idempotent — running it again won't create duplicate tasks. Use this after cloning the repo for the first time or if the task was accidentally removed.
 

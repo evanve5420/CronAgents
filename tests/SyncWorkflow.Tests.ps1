@@ -51,17 +51,17 @@ Describe 'Sync Workflow — Initialize-UserBranch' {
 
     It 'Creates branch from master when none exists' {
         $result = Initialize-UserBranch -RepoRoot $script:gitRepo `
-            -BranchPrefix 'agents' -UserName 'test-user'
+            -BranchPrefix 'personal-agents' -UserName 'test-user'
 
         $result.Created    | Should -Be $true
-        $result.BranchName | Should -Be 'agents/test-user'
+        $result.BranchName | Should -Be 'personal-agents/test-user'
         $result.Message    | Should -Match 'Created new branch'
 
         # Verify we're on the new branch
         Push-Location $script:gitRepo
         try {
             $currentBranch = (git rev-parse --abbrev-ref HEAD 2>&1).Trim()
-            $currentBranch | Should -Be 'agents/test-user'
+            $currentBranch | Should -Be 'personal-agents/test-user'
         }
         finally {
             Pop-Location
@@ -72,7 +72,7 @@ Describe 'Sync Workflow — Initialize-UserBranch' {
         # Create the branch first
         Push-Location $script:gitRepo
         try {
-            git checkout -b 'agents/test-user' 2>&1 | Out-Null
+            git checkout -b 'personal-agents/test-user' 2>&1 | Out-Null
             git checkout master 2>&1 | Out-Null
         }
         finally {
@@ -80,10 +80,10 @@ Describe 'Sync Workflow — Initialize-UserBranch' {
         }
 
         $result = Initialize-UserBranch -RepoRoot $script:gitRepo `
-            -BranchPrefix 'agents' -UserName 'test-user'
+            -BranchPrefix 'personal-agents' -UserName 'test-user'
 
         $result.Created    | Should -Be $false
-        $result.BranchName | Should -Be 'agents/test-user'
+        $result.BranchName | Should -Be 'personal-agents/test-user'
         $result.Message    | Should -Match 'existing branch'
     }
 
@@ -92,7 +92,7 @@ Describe 'Sync Workflow — Initialize-UserBranch' {
         Set-Content -Path (Join-Path $script:gitRepo 'dirty.txt') -Value 'uncommitted' -Encoding UTF8
 
         $result = Initialize-UserBranch -RepoRoot $script:gitRepo `
-            -BranchPrefix 'agents' -UserName 'test-user'
+            -BranchPrefix 'personal-agents' -UserName 'test-user'
 
         $result.Created | Should -Be $false
         $result.Message | Should -Match 'uncommitted changes'
@@ -126,7 +126,7 @@ Describe 'Sync Workflow — Invoke-BranchSync' {
             git push origin master 2>&1 | Out-Null
 
             # Create user branch
-            git checkout -b 'agents/test-user' 2>&1 | Out-Null
+            git checkout -b 'personal-agents/test-user' 2>&1 | Out-Null
             Set-Content -Path (Join-Path $script:localRepo 'agent.txt') -Value 'agent work' -Encoding UTF8
             git add . 2>&1 | Out-Null
             git commit -m 'Agent work' 2>&1 | Out-Null
@@ -148,7 +148,7 @@ Describe 'Sync Workflow — Invoke-BranchSync' {
             git add . 2>&1 | Out-Null
             git commit -m 'Master update' 2>&1 | Out-Null
             git push origin master 2>&1 | Out-Null
-            git checkout 'agents/test-user' 2>&1 | Out-Null
+            git checkout 'personal-agents/test-user' 2>&1 | Out-Null
         }
         finally { Pop-Location }
 

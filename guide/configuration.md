@@ -26,7 +26,7 @@ Located at the repository root. Controls scheduler-wide behavior.
     "syncPolicy": "notify",
     "userName": null,
     "autoCommitFeedback": true,
-    "branchPrefix": "agents"
+    "branchPrefix": "personal-agents"
   }
 }
 ```
@@ -140,7 +140,7 @@ Controls the git branching and sync behavior.
 | Sub-field | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `syncPolicy` | `string` | `"notify"` | How the scheduler handles divergence from master. See values below. |
-| `userName` | `string` or `null` | `null` | Override username for the user branch. `null` = auto-detect from `git config user.name` or `$env:USERNAME`. |
+| `userName` | `string` or `null` | `null` | Override username for the user branch. `null` = auto-detect from `git config github.user`, `gh auth status`, `git config user.name`, or `$env:USERNAME`. |
 | `autoCommitFeedback` | `boolean` | `true` | Automatically `git commit` after the feedback evaluator edits agent files. |
 | `branchPrefix` | `string` | `"agents"` | Prefix for user branches. The full branch name is `<prefix>/<username>`. |
 
@@ -157,7 +157,7 @@ Controls the git branching and sync behavior.
   "syncPolicy": "auto",
   "userName": "alice",
   "autoCommitFeedback": true,
-  "branchPrefix": "agents"
+  "branchPrefix": "personal-agents"
 }
 ```
 

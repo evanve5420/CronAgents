@@ -68,7 +68,7 @@ Describe 'Import-CronAgentsConfig' {
         $cfg.versioning.syncPolicy         | Should -Be 'notify'
         $cfg.versioning.userName           | Should -BeNullOrEmpty
         $cfg.versioning.autoCommitFeedback | Should -Be $true
-        $cfg.versioning.branchPrefix       | Should -Be 'agents'
+        $cfg.versioning.branchPrefix       | Should -Be 'personal-agents'
     }
 
     It 'Applies versioning defaults when versioning block is partial' {
@@ -79,7 +79,7 @@ Describe 'Import-CronAgentsConfig' {
         $cfg = Import-CronAgentsConfig -ConfigPath $path
         $cfg.versioning.syncPolicy         | Should -Be 'manual'
         $cfg.versioning.autoCommitFeedback | Should -Be $true
-        $cfg.versioning.branchPrefix       | Should -Be 'agents'
+        $cfg.versioning.branchPrefix       | Should -Be 'personal-agents'
     }
 
     It 'Throws on malformed JSON' {
@@ -173,7 +173,7 @@ Describe 'Test-CronAgentsConfig' {
                 syncPolicy         = 'notify'
                 userName           = $null
                 autoCommitFeedback = $true
-                branchPrefix       = 'agents'
+                branchPrefix       = 'personal-agents'
             }
         }
         $errors = Test-CronAgentsConfig -Config $cfg

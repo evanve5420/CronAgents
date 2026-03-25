@@ -93,12 +93,12 @@ Describe 'Branch detection in temp git repos' {
         $result.IsUserBranch | Should -Be $false
     }
 
-    It 'Reports IsUserBranch as true when on agents/test-user' {
-        & git -C $script:tempDir checkout -b 'agents/test-user' 2>&1 | Out-Null
+    It 'Reports IsUserBranch as true when on personal-agents/test-user' {
+        & git -C $script:tempDir checkout -b 'personal-agents/test-user' 2>&1 | Out-Null
         try {
             $result = Get-CronAgentsBranch -RepoRoot $script:tempDir -UserName 'test-user'
             $result.IsUserBranch | Should -Be $true
-            $result.CurrentBranch | Should -Be 'agents/test-user'
+            $result.CurrentBranch | Should -Be 'personal-agents/test-user'
         }
         finally {
             & git -C $script:tempDir checkout main 2>&1 | Out-Null
@@ -112,15 +112,26 @@ Describe 'Branch detection in temp git repos' {
     }
 
     It 'Resolves username from git config when no ConfigUserName' {
-        $result = Resolve-CronAgentsUserName -RepoRoot $script:tempDir
-        $result | Should -Be 'test-user'
+        $stubDir = Join-Path $script:tempDir 'bin'
+        $originalPath = $env:PATH
+        try {
+            New-Item -ItemType Directory -Path $stubDir -Force | Out-Null
+            Set-Content -Path (Join-Path $stubDir 'gh.cmd') -Value "@echo off`r`nexit /b 1" -Encoding ASCII
+            $env:PATH = "$stubDir;$originalPath"
+
+            $result = Resolve-CronAgentsUserName -RepoRoot $script:tempDir
+            $result | Should -Be 'test-user'
+        }
+        finally {
+            $env:PATH = $originalPath
+        }
     }
 }
 
 # ===== Config defaults for versioning =====
 
 Describe 'Versioning config defaults' {
-    It 'Missing versioning block yields notify/null/true/agents defaults' {
+    It 'Missing versioning block yields notify/null/true/personal-agents defaults' {
         $configDir = Join-Path $TestDrive 'ver-defaults-test'
         New-Item -ItemType Directory -Path $configDir -Force | Out-Null
         Set-Content -Path (Join-Path $configDir 'cronagents.json') -Value '{}' -Encoding UTF8
@@ -129,7 +140,7 @@ Describe 'Versioning config defaults' {
         $cfg.versioning.syncPolicy         | Should -Be 'notify'
         $cfg.versioning.userName           | Should -BeNullOrEmpty
         $cfg.versioning.autoCommitFeedback | Should -Be $true
-        $cfg.versioning.branchPrefix       | Should -Be 'agents'
+        $cfg.versioning.branchPrefix       | Should -Be 'personal-agents'
     }
 
     It 'Partial versioning block inherits other defaults' {
@@ -141,7 +152,7 @@ Describe 'Versioning config defaults' {
         $cfg = Import-CronAgentsConfig -ConfigPath (Join-Path $configDir 'cronagents.json')
         $cfg.versioning.syncPolicy         | Should -Be 'auto'
         $cfg.versioning.autoCommitFeedback | Should -Be $true
-        $cfg.versioning.branchPrefix       | Should -Be 'agents'
+        $cfg.versioning.branchPrefix       | Should -Be 'personal-agents'
     }
 
     It 'Full versioning block overrides all defaults' {
@@ -187,7 +198,7 @@ Describe 'Initialize-UserBranch in temp repo' {
 
     It 'Creates user branch with default prefix' {
         $result = Initialize-UserBranch -RepoRoot $script:initDir -UserName 'alice'
-        $result.BranchName | Should -Be 'agents/alice'
+        $result.BranchName | Should -Be 'personal-agents/alice'
         $result.Created | Should -Be $true
     }
 
@@ -195,7 +206,7 @@ Describe 'Initialize-UserBranch in temp repo' {
         & git -C $script:initDir checkout main 2>&1 | Out-Null
         $result = Initialize-UserBranch -RepoRoot $script:initDir -UserName 'alice'
         $result.Created | Should -Be $false
-        $result.BranchName | Should -Be 'agents/alice'
+        $result.BranchName | Should -Be 'personal-agents/alice'
     }
 
     It 'Creates branch with custom prefix' {

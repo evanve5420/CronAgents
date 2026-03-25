@@ -117,8 +117,8 @@ Test `.cronstate/state.json` read/write/recovery:
 
 Test the versioning helper functions in isolation using temp git repos. No Copilot CLI needed.
 
-- **Branch detection**: Given a temp repo with various branch states, verify `Get-CronAgentsBranch` correctly identifies current branch and whether it matches the expected `agents/<user>` pattern
-- **Username resolution**: Test priority chain — explicit config → `git config user.name` (with slugification edge cases: spaces, special chars, unicode) → `$env:USERNAME` fallback
+- **Branch detection**: Given a temp repo with various branch states, verify `Get-CronAgentsBranch` correctly identifies current branch and whether it matches the expected `personal-agents/<user>` pattern
+- **Username resolution**: Test priority chain — explicit config → `git config github.user` → `gh auth status` active account → `git config user.name` (with slugification edge cases: spaces, special chars, unicode) → `$env:USERNAME` fallback
 - **Divergence calculation**: Given a temp repo where master is N commits ahead, verify `Get-BranchDivergence` returns correct ahead/behind counts
 - **Commit message formatting**: Verify feedback commits produce structured messages from changelog input
 - **Config defaults**: Verify missing `versioning` block defaults to `notify` / auto-detect / `true` / `agents`
@@ -223,8 +223,8 @@ Test the run directory cleanup mechanism:
 
 Test full sync and bootstrap workflows against temp git repos with mock Copilot CLI.
 
-- **Auto-bootstrap (no branch exists)**: Init temp repo with only master. Run bootstrap. Verify `agents/<user>` branch created from master HEAD, working tree on new branch.
-- **Auto-bootstrap (branch exists)**: Init temp repo with existing `agents/<user>` branch. Run bootstrap. Verify checkout to existing branch, no duplicate branch created.
+- **Auto-bootstrap (no branch exists)**: Init temp repo with only master. Run bootstrap. Verify `personal-agents/<user>` branch created from master HEAD, working tree on new branch.
+- **Auto-bootstrap (branch exists)**: Init temp repo with existing `personal-agents/<user>` branch. Run bootstrap. Verify checkout to existing branch, no duplicate branch created.
 - **Auto-bootstrap (dirty working tree)**: Init temp repo with uncommitted changes. Run bootstrap. Verify it warns and aborts, no data loss.
 - **Clean merge**: Create temp repo. Add commits to master after user branch diverges. Run sync. Verify merge succeeds, user customization files preserved, scaffold files updated.
 - **Conflict merge (agent-assisted)**: Create temp repo where master and user branch both edit the same file. Run sync with mock copilot that "resolves" conflicts. Verify merge completes with agent's resolution.

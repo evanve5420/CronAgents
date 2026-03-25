@@ -1,6 +1,6 @@
 # CronAgents — Scheduled Copilot Agent Scaffolding
 
-A lightweight, repo-local scheduler for GitHub Copilot agents that runs recurring workflows, writes markdown dashboards, and uses human feedback to improve agent definitions over time.
+A lightweight, agent scheduler for GitHub Copilot agents that runs recurring workflows, writes markdown dashboards, and uses human feedback to improve agent definitions over time.
 
 ## Feature highlights
 
@@ -8,7 +8,7 @@ A lightweight, repo-local scheduler for GitHub Copilot agents that runs recurrin
 - **Agent + prompt-only modes** — full `.agent.md` agents or simple prompt-only invocations
 - **Live markdown dashboard** — auto-generated `dashboard.md` with run summaries, status, and links
 - **Human feedback loop** — write feedback on any run, an evaluator agent edits agent definitions accordingly
-- **Git branch versioning** — personal `agents/<user>` branches keep customizations separate from scaffold
+- **Git branch versioning** — personal `personal-agents/<handle>` branches keep customizations separate from scaffold
 - **CLI + interactive TUI** — `cronagents.ps1` with subcommands and a numbered menu
 - **Health checks** — `cronagents.ps1 doctor` verifies task registration, config, state integrity
 - **Copilot-native** — built on `.agent.md`, `SKILL.md`, and Copilot CLI primitives

@@ -6,8 +6,8 @@ CronAgents uses a branch-per-user model so multiple people can share the same re
 
 ```
 master                    ← Scaffold: scheduler code, templates, schemas
-├── agents/alice          ← Alice's agents and customizations
-├── agents/bob            ← Bob's agents and customizations
+├── personal-agents/alice          ← Alice's agents and customizations
+├── personal-agents/bob            ← Bob's agents and customizations
 └── agents/evan           ← Evan's agents and customizations
 ```
 
@@ -17,7 +17,7 @@ master                    ← Scaffold: scheduler code, templates, schemas
 | Global config (`cronagents.json`) | `master` | Yes |
 | Schemas (`cronagents.schema.json`, etc.) | `master` | Yes |
 | Scaffold agents (feedback-evaluator, run-summarizer) | `master` (`scheduler/agents/`) | Yes |
-| Your workload agents (`.cronagents/agents/`) | `agents/<you>` | Yes |
+| Your workload agents (`.cronagents/agents/`) | `personal-agents/<you>` | Yes |
 | Runtime data (`.cronstate/`) | Neither | Gitignored |
 
 **Key idea:** `master` holds the shared infrastructure. Your user branch is a superset of `master` that adds your personal agents and customizations. When `master` gets updated (new scheduler features, bug fixes), you merge those changes into your branch.
@@ -35,9 +35,9 @@ When you run `cronagents.ps1 install`, the installer automatically creates your 
 This calls `Initialize-UserBranch` which:
 
 1. Resolves your username (see [username resolution](#username-resolution) below)
-2. Checks if `agents/<username>` branch exists
-3. If not, creates it from the current position: `git checkout -b agents/<username>`
-4. If it exists, checks it out: `git checkout agents/<username>`
+2. Checks if `personal-agents/<username>` branch exists
+3. If not, creates it from the current position: `git checkout -b personal-agents/<username>`
+4. If it exists, checks it out: `git checkout personal-agents/<username>`
 
 The operation is non-destructive — if your working tree has uncommitted changes, it warns and aborts rather than risk losing work.
 
@@ -50,8 +50,10 @@ CronAgents determines your username using this priority order:
 | Priority | Source | Example |
 |----------|--------|---------|
 | 1 (highest) | `cronagents.json` → `versioning.userName` | `"userName": "alice"` |
-| 2 | `git config user.name` (slugified) | `"Alice Smith"` → `alice-smith` |
-| 3 (fallback) | `$env:USERNAME` (Windows) | `ALICE` → `alice` |
+| 2 | `git config github.user` | `evanve5420` → `evanve5420` |
+| 3 | `gh auth status` active account | `evanve5420` → `evanve5420` |
+| 4 | `git config user.name` (slugified) | `"Alice Smith"` → `alice-smith` |
+| 5 (fallback) | `$env:USERNAME` (Windows) | `ALICE` → `alice` |
 
 **Slugification rules:** lowercase, spaces become hyphens, non-alphanumeric characters stripped, consecutive hyphens collapsed, leading/trailing hyphens trimmed.
 
@@ -145,8 +147,8 @@ Check your branch status at any time:
 Output:
 
 ```
-Current branch:    agents/alice
-Expected branch:   agents/alice
+Current branch:    personal-agents/alice
+Expected branch:   personal-agents/alice
 Is user branch:    Yes
 
 Divergence from master:
@@ -206,7 +208,7 @@ When disabled, the evaluator still edits files but doesn't commit. You commit ma
 ```powershell
 git clone <repo-url> CronAgents
 cd CronAgents
-.\cronagents.ps1 install     # Creates agents/<you> branch + Task Scheduler
+.\cronagents.ps1 install     # Creates personal-agents/<you> branch + Task Scheduler
 ```
 
 ### Staying up to date
@@ -228,7 +230,7 @@ Your user branch is pushed to the remote. On a new machine:
 ```powershell
 git clone <repo-url> CronAgents
 cd CronAgents
-git checkout agents/alice     # Your branch already exists remotely
+git checkout personal-agents/alice     # Your branch already exists remotely
 .\cronagents.ps1 install      # Register Task Scheduler on this machine
 ```
 
@@ -236,7 +238,7 @@ git checkout agents/alice     # Your branch already exists remotely
 
 ## Tips
 
-- **Don't work on `master` directly.** Always be on your `agents/<username>` branch. The installer puts you there automatically.
+- **Don't work on `master` directly.** Always be on your `personal-agents/<username>` branch. The installer puts you there automatically.
 - **Sync regularly.** Especially after the team pushes scheduler updates to `master`.
 - **Review merge results.** Even with auto-sync, check that your agents still work after a merge. Run `cronagents.ps1 doctor` to verify.
 - **Feedback commits are safe to push.** They only touch your `.cronagents/agents/` files, which live on your branch.

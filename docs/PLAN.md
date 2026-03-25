@@ -134,7 +134,7 @@ CronAgents/
 
 The top-level scripts (`Start-CronAgents.ps1`, `Invoke-ScheduledAgent.ps1`, `Update-Dashboard.ps1`, `cronagents.ps1`, `Test-CronAgentsHealth.ps1`) are thin orchestrators that import the module and call its functions. `tests/TestHelpers.psm1` also imports `CronAgents.psd1`, ensuring tests exercise the same code paths as production.
 
-**Step 2** — `.gitignore` should ignore the entire `.cronstate/` directory on all branches (runtime data). The `.cronagents/` directory is **tracked on user branches** (`agents/<username>`) — this is where user agent definitions and scheduling configs live. On `master`, `.cronagents/` can be empty or absent. Scaffold-internal agents under `scheduler/agents/` are committed on `master`. Examples and templates remain committed on `master`. The per-user branch model, sync policies, auto-bootstrap, and pre-edit snapshot design are detailed in [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
+**Step 2** — `.gitignore` should ignore the entire `.cronstate/` directory on all branches (runtime data). The `.cronagents/` directory is **tracked on user branches** (`personal-agents/<username>`) — this is where user agent definitions and scheduling configs live. On `master`, `.cronagents/` can be empty or absent. Scaffold-internal agents under `scheduler/agents/` are committed on `master`. Examples and templates remain committed on `master`. The per-user branch model, sync policies, auto-bootstrap, and pre-edit snapshot design are detailed in [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
 
 ---
 
@@ -156,9 +156,9 @@ Settings include `autoFeedback` toggle, `maxRunHistory`, `copilotPath` (defaults
 
 Agent versioning settings (in a `versioning` block):
 - `syncPolicy` — `"notify"` (default), `"auto"`, or `"manual"`. Controls how scaffold updates from master are handled. See [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
-- `userName` — explicit override for branch name (`agents/<userName>`). When omitted, auto-detected from `git config user.name` (slugified) or `$env:USERNAME`.
+- `userName` — explicit override for branch name (`personal-agents/<userName>`). When omitted, auto-detected from `git config github.user`, `gh auth status`, `git config user.name` (slugified), or `$env:USERNAME`.
 - `autoCommitFeedback` — when `true` (default), the scheduler commits evaluator edits to the user branch automatically.
-- `branchPrefix` — branch naming prefix. Default `"agents"` → branches named `agents/<userName>`.
+- `branchPrefix` — branch naming prefix. Default `"personal-agents"` → branches named `personal-agents/<userName>`.
 
 #### Global config example
 
@@ -177,7 +177,7 @@ Agent versioning settings (in a `versioning` block):
     "syncPolicy": "notify",
     "userName": null,
     "autoCommitFeedback": true,
-    "branchPrefix": "agents"
+    "branchPrefix": "personal-agents"
   }
 }
 ```
@@ -370,7 +370,7 @@ Simplified, leveraging native Copilot CLI resolution:
   - `feedback [agent-id]` — open the most recent unprocessed `feedback.md` in `$EDITOR` / VS Code
   - `evaluate` — manually trigger feedback evaluator for all pending feedback
   - `doctor` — health check: verify exactly one Task Scheduler entry under `\CronAgents\`, config is valid, `.cronstate/state.json` is not corrupted, scheduler process is running, and no orphaned run directories exist
-  - `install` — register (or update) the at-logon Task Scheduler entry. Auto-bootstrap the `agents/<username>` branch if it doesn't exist. Idempotent.
+  - `install` — register (or update) the at-logon Task Scheduler entry. Auto-bootstrap the `personal-agents/<username>` branch if it doesn't exist. Idempotent.
   - `uninstall` — remove the Task Scheduler entry cleanly
   - `sync` — manually trigger merge from `master` into user branch. Reports clean merge or conflict status.
   - `branch` — show current branch, commits ahead/behind master, last sync date
@@ -380,7 +380,7 @@ Simplified, leveraging native Copilot CLI resolution:
   When invoked with **no subcommand** (`cronagents.ps1`), launch an interactive text menu. The menu is a numbered-option loop that calls the same subcommands above:
 
   ```
-  CronAgents (branch: agents/<user>, N behind master)
+  CronAgents (branch: personal-agents/<user>, N behind master)
   ──────────────────────────
    1) Status & upcoming runs
    2) Trigger ad-hoc run
@@ -424,7 +424,7 @@ Simplified, leveraging native Copilot CLI resolution:
 
 Feedback is always a **separate file per run**, never part of the dashboard.
 
-**Step 9a** — Feedback-commit hook — after the evaluator edits files and writes `feedback-result.md`, the scheduler commits the changes to the user's `agents/<username>` branch with a structured message (`feedback: <agent-id> — <summary>`). Pre-edit snapshots are written to the run directory's `backup/` folder (in `.cronstate/runs/`) **before** edits are applied, providing immediate rollback regardless of git state. Full design in [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
+**Step 9a** — Feedback-commit hook — after the evaluator edits files and writes `feedback-result.md`, the scheduler commits the changes to the user's `personal-agents/<username>` branch with a structured message (`feedback: <agent-id> — <summary>`). Pre-edit snapshots are written to the run directory's `backup/` folder (in `.cronstate/runs/`) **before** edits are applied, providing immediate rollback regardless of git state. Full design in [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
 
 **Step 10** — `run-feedback.prompt.md` — Invokable as `/run-feedback` to trigger feedback processing for recent runs.
 
@@ -503,7 +503,7 @@ Run all tests except E2E: `Invoke-Pester ./tests/ -ExcludeTag 'E2E'`
 5. Edit a run's `feedback.md`, run `cronagents.ps1 evaluate` → verify `feedback-result.md` written
 6. Set `autoFeedback: true`, run an agent → verify auto-feedback applied
 7. `cronagents.ps1 pause <agent>` → verify scheduler skips it on next tick
-8. `git branch` → on `agents/<username>`, user agents tracked. `git log --oneline -5` → feedback commits visible
+8. `git branch` → on `personal-agents/<username>`, user agents tracked. `git log --oneline -5` → feedback commits visible
 9. `cronagents.ps1 sync` → merges master cleanly, scaffold files updated, user agents preserved
 10. Run `Invoke-Pester ./tests/` → all tests pass
 
@@ -525,4 +525,12 @@ Full details in [COPILOT-CLI.md](COPILOT-CLI.md). Key design implications:
 ## Future Considerations
 
 Items beyond day-0 scope are tracked in [FUTURE.md](FUTURE.md) — HTML dashboard, parallel execution, cloud reporting, cross-platform, PR gates, script mode, security review agent, conditional execution, agent tags, edit scope enforcement, notifications, token budgets, pipelines, config profiles, webhook triggers, rate limiting, remote config.
+
+
+
+
+
+
+
+
 

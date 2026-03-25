@@ -40,7 +40,7 @@ Tracked agent registrations belong on your personal CronAgents branch, not `mast
 Before creating or editing files in `.cronagents/agents/`:
 
 1. Check `.\cronagents.ps1 branch`
-2. If you are on `master` / `main`, switch to the expected `agents/<user>` branch first
+2. If you are on `master` / `main`, switch to the expected `personal-agents/<user>` branch first
 3. `.\cronagents.ps1 install` bootstraps the user branch during initial setup
 
 ## Agent mode

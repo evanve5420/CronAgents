@@ -370,7 +370,7 @@ During quiet hours, no agents run. Set to `null` to disable:
 If you're not on your user branch:
 
 ```powershell
-git checkout agents/<your-username>
+git checkout personal-agents/<your-github-handle>
 ```
 
 ### Merge conflicts after sync

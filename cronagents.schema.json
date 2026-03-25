@@ -82,7 +82,7 @@
             { "type": "null" }
           ],
           "default": null,
-          "description": "Git user name override. Null = detect from git config."
+          "description": "GitHub handle override for the user branch. Null = detect from git config github.user, gh auth status, git config user.name, or USERNAME."
         },
         "autoCommitFeedback": {
           "type": "boolean",
@@ -91,7 +91,7 @@
         },
         "branchPrefix": {
           "type": "string",
-          "default": "agents",
+          "default": "personal-agents",
           "description": "Prefix for branches created by versioning."
         }
       },

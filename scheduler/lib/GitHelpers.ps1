@@ -64,6 +64,55 @@ function ConvertTo-Slug {
     return $slug
 }
 
+# -------------------------------------------------------------------
+# Resolve-GitHubHandle
+# Tries GitHub-specific identity sources before falling back to a
+# display name. Prefers repo-local git config, then the active gh CLI
+# login when available.
+# -------------------------------------------------------------------
+function Resolve-GitHubHandle {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter()]
+        [string]$RepoRoot
+    )
+
+    if ($RepoRoot) {
+        try {
+            Assert-GitAvailable
+            $gitHubUser = Invoke-Git -Arguments @('-C', $RepoRoot, 'config', 'github.user')
+            if ($gitHubUser) {
+                Write-CronAgentsLog -Level 'debug' -Message "GitHub handle from git config github.user: $gitHubUser"
+                return ConvertTo-Slug -Value $gitHubUser
+            }
+        }
+        catch {
+            Write-CronAgentsLog -Level 'debug' -Message "Could not read git config github.user: $_"
+        }
+    }
+
+    $gh = Get-Command gh -ErrorAction SilentlyContinue
+    if ($gh) {
+        try {
+            $statusText = (& $gh.Source auth status 2>&1 | Out-String)
+            if ($LASTEXITCODE -eq 0) {
+                $match = [regex]::Match($statusText, 'account\s+([A-Za-z0-9][A-Za-z0-9\-]*)')
+                if ($match.Success) {
+                    $handle = $match.Groups[1].Value
+                    Write-CronAgentsLog -Level 'debug' -Message "GitHub handle from gh auth status: $handle"
+                    return ConvertTo-Slug -Value $handle
+                }
+            }
+        }
+        catch {
+            Write-CronAgentsLog -Level 'debug' -Message "Could not resolve GitHub handle from gh auth status: $_"
+        }
+    }
+
+    return $null
+}
+
 # ===================================================================
 # Resolve-CronAgentsUserName
 # ===================================================================
@@ -84,7 +133,13 @@ function Resolve-CronAgentsUserName {
         return ConvertTo-Slug -Value $ConfigUserName
     }
 
-    # 2. git config user.name
+    # 2. GitHub-specific identity sources
+    $gitHubHandle = Resolve-GitHubHandle -RepoRoot $RepoRoot
+    if ($gitHubHandle) {
+        return $gitHubHandle
+    }
+
+    # 3. git config user.name
     if ($RepoRoot) {
         try {
             Assert-GitAvailable
@@ -99,13 +154,13 @@ function Resolve-CronAgentsUserName {
         }
     }
 
-    # 3. Environment variable
+    # 4. Environment variable
     if ($env:USERNAME) {
         Write-CronAgentsLog -Level 'debug' -Message "Username from env:USERNAME: $env:USERNAME"
         return ConvertTo-Slug -Value $env:USERNAME
     }
 
-    throw 'Cannot resolve username: no config value, git config, or USERNAME environment variable available.'
+    throw 'Cannot resolve username: no config value, GitHub handle, git config, or USERNAME environment variable available.'
 }
 
 # ===================================================================
@@ -118,7 +173,7 @@ function Get-CronAgentsBranch {
         [string]$RepoRoot,
 
         [Parameter()]
-        [string]$BranchPrefix = 'agents',
+        [string]$BranchPrefix = 'personal-agents',
 
         [Parameter()]
         [string]$UserName
@@ -389,7 +444,7 @@ function Initialize-UserBranch {
         [string]$RepoRoot,
 
         [Parameter()]
-        [string]$BranchPrefix = 'agents',
+        [string]$BranchPrefix = 'personal-agents',
 
         [Parameter(Mandatory)]
         [string]$UserName

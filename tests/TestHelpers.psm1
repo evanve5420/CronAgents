@@ -65,7 +65,7 @@ function New-TestEnvironment {
             syncPolicy          = 'manual'
             userName            = 'test-user'
             autoCommitFeedback  = $false
-            branchPrefix        = 'agents'
+            branchPrefix        = 'personal-agents'
         }
     }
     $configPath = Join-Path $root 'cronagents.json'

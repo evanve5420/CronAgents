@@ -39,7 +39,7 @@ cd CronAgents
 This does two things:
 
 1. **Registers a Windows Task Scheduler entry** that starts the scheduler automatically at logon. The task runs `Start-CronAgents.ps1` in a hidden PowerShell window — no terminal pops up.
-2. **Bootstraps your user branch** (`agents/<your-username>`) so your agent customizations are tracked separately from the scaffold code on `master`.
+2. **Bootstraps your user branch** (`personal-agents/<your-handle>`) so your agent customizations are tracked separately from the scaffold code on `master`.
 
 You should see output like:
 
