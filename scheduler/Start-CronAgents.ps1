@@ -390,7 +390,10 @@ try {
         try {
             $dashboardScript = Join-Path $PSScriptRoot 'Update-Dashboard.ps1'
             if (Test-Path $dashboardScript) {
-                & $dashboardScript -RepoRoot $RepoRoot -StateFile $stateFile -RunsRoot $runsRoot -Config $config
+                & $dashboardScript -RepoRoot $RepoRoot `
+                    -RunsRoot $runsRoot `
+                    -MaxRunHistory $config.maxRunHistory `
+                    -RetentionDays $config.retentionDays
             }
             else {
                 Write-CronAgentsLog -Level 'debug' -Message 'Update-Dashboard.ps1 not found — skipping dashboard update'

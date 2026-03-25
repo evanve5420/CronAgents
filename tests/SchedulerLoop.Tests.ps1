@@ -192,4 +192,30 @@ Describe 'Scheduler startup entry script' {
 
         $script:schedulerProcess.HasExited | Should -Be $false
     }
+
+    It 'Generates dashboard.md on its first tick' {
+        $script:schedulerProcess = Start-Process pwsh -ArgumentList @(
+            '-NoProfile'
+            '-File', $script:startScript
+            '-RepoRoot', $script:testEnv.Root
+            '-ConfigPath', $script:testEnv.ConfigPath
+        ) -PassThru -WindowStyle Hidden `
+          -RedirectStandardOutput $script:stdoutPath `
+          -RedirectStandardError $script:stderrPath
+
+        $dashboardPath = Join-Path $script:testEnv.Root 'dashboard.md'
+        $deadline = (Get-Date).AddSeconds(10)
+        while ((Get-Date) -lt $deadline -and -not (Test-Path $dashboardPath)) {
+            if ($script:schedulerProcess.HasExited) { break }
+            Start-Sleep -Milliseconds 250
+        }
+
+        if (-not (Test-Path $dashboardPath)) {
+            $stdout = if (Test-Path $script:stdoutPath) { Get-Content $script:stdoutPath -Raw } else { '' }
+            $stderr = if (Test-Path $script:stderrPath) { Get-Content $script:stderrPath -Raw } else { '' }
+            throw "Dashboard was not generated. Stdout: $stdout`nStderr: $stderr"
+        }
+
+        (Get-Content $dashboardPath -Raw) | Should -Match '# CronAgents Dashboard'
+    }
 }
