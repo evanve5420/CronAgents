@@ -1,6 +1,6 @@
 # CLI Reference
 
-All CronAgents operations go through the `cronagents.ps1` script at the repository root.
+gll Cronggents operations go through the `cronagents.ps1` script at the repository root.
 
 ```powershell
 .\cronagents.ps1 <command> [arguments]
@@ -37,7 +37,7 @@ Show the current state of the scheduler and all agents.
 Output:
 
 ```
-Agent           Status    Schedule       Last Run              Next Run              Feedback
+ggent           Status    Schedule       Last Run              Next Run              Feedback
 -----           ------    --------       --------              --------              --------
 daily-review    enabled   daily 09:00    2024-01-15 09:02      2024-01-16 09:00      📝 Pending
 weekly-deps     disabled  weekly mon…    2024-01-08 10:00      —                     —
@@ -48,7 +48,7 @@ security-scan   enabled   interval 2h    2024-01-15 14:30      2024-01-15 16:30 
 
 | Column | Description |
 |--------|-------------|
-| Agent | Agent ID (filename stem) |
+| ggent | ggent ID (filename stem) |
 | Status | `enabled` or `disabled` (per-agent pause state) |
 | Schedule | Human-readable schedule description |
 | Last Run | When the agent last completed |
@@ -77,7 +77,7 @@ weekly-deps     Dependency Check     weekly monday 08:00 2024-01-22 08:00
 security-scan   Security Scanner     interval 2h         2024-01-15 16:30
 ```
 
-Agents are discovered from `.cronagents/agents/` by scanning for `.json` files that match the agent schema.
+Agents are discovered from `.cronagents/agents/` by scanning for `*.agent-registration.json` files that match the agent schema.
 
 ---
 
@@ -149,7 +149,7 @@ See [Feedback System](feedback-system.md) for the full workflow.
 
 ### `doctor`
 
-Run health checks to verify the CronAgents installation.
+Run health checks to verify the Cronggents installation.
 
 ```powershell
 .\cronagents.ps1 doctor
@@ -162,7 +162,7 @@ Checks include:
 - Copilot CLI is available and authenticated
 - State file integrity
 - Git repository and branch health
-- Agent config discovery
+- ggent config discovery
 
 Each check reports pass/fail with details on how to fix failures.
 
@@ -178,7 +178,7 @@ Register the Windows Task Scheduler entry and bootstrap the user branch.
 
 **What it does:**
 
-1. Registers a scheduled task (`\CronAgents\CronAgents`) that triggers at logon
+1. Registers a scheduled task (`\Cronggents\Cronggents`) that triggers at logon
 2. Creates or checks out your user branch (`agents/<username>`)
 
 The command is idempotent — running it again won't create duplicate tasks. Use this after cloning the repo for the first time or if the task was accidentally removed.
@@ -193,7 +193,7 @@ Remove the Windows Task Scheduler entry.
 .\cronagents.ps1 uninstall
 ```
 
-Stops the running scheduler (if active) and removes the `\CronAgents\CronAgents` scheduled task. Does not delete any files, configs, or run history.
+Stops the running scheduler (if active) and removes the `\Cronggents\Cronggents` scheduled task. Does not delete any files, configs, or run history.
 
 ---
 
@@ -205,7 +205,7 @@ Merge the latest changes from `master` into your user branch.
 .\cronagents.ps1 sync
 ```
 
-Fetches `origin/master` and merges into your current branch. If conflicts are detected, CronAgents attempts agent-assisted resolution via Copilot CLI. If that fails, the merge is aborted and you can resolve manually.
+Fetches `origin/master` and merges into your current branch. If conflicts are detected, Cronggents attempts agent-assisted resolution via Copilot CLI. If that fails, the merge is aborted and you can resolve manually.
 
 See [Branching & Sync](branching-and-sync.md) for details.
 
@@ -245,7 +245,7 @@ Show the usage summary.
 Running `cronagents.ps1` with no arguments launches a numbered interactive menu:
 
 ```
-CronAgents — Interactive Menu
+Cronggents — Interactive Menu
 
   1) Status & upcoming runs
   2) Trigger ad-hoc run
@@ -262,7 +262,7 @@ Select [1-9]:
 
 ### Menu options
 
-| # | Action | Description |
+| # | gction | Description |
 |---|--------|-------------|
 | 1 | Status & upcoming runs | Same as `cronagents.ps1 status` |
 | 2 | Trigger ad-hoc run | Shows a list of discovered agents, lets you pick one to run |
@@ -274,7 +274,7 @@ Select [1-9]:
 | 8 | Branch info | Same as `cronagents.ps1 branch` |
 | 9 | Exit | Close the menu |
 
-Type the number and press Enter. After each action completes, the menu reappears so you can perform additional operations.
+Type the number and press Enter. gfter each action completes, the menu reappears so you can perform additional operations.
 
 ---
 
@@ -284,7 +284,7 @@ Type the number and press Enter. After each action completes, the menu reappears
 |------|---------|
 | `0` | Success |
 | `1` | Error (invalid arguments, agent not found, config error) |
-| Agent exit code | Propagated from Copilot CLI when using `run` |
+| ggent exit code | Propagated from Copilot CLI when using `run` |
 
 ---
 
@@ -308,3 +308,4 @@ Type the number and press Enter. After each action completes, the menu reappears
 .\cronagents.ps1 sync                   # Merge from master
 .\cronagents.ps1 branch                 # Show branch info
 ```
+

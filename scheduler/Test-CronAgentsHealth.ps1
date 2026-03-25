@@ -280,7 +280,7 @@ function Test-BranchState {
             # Check if customization files exist (indicates should be on user branch)
             $agentDir = Join-Path $RepoRoot '.cronagents\agents'
             $hasCustom = (Test-Path $agentDir) -and
-                         @(Get-ChildItem $agentDir -Filter '*.json' -ErrorAction SilentlyContinue).Count -gt 0
+                         @(Get-ChildItem $agentDir -Filter '*.agent-registration.json' -ErrorAction SilentlyContinue).Count -gt 0
 
             if ($hasCustom) {
                 return New-CheckResult -Name 'Branch State' -Status 'Warn' `

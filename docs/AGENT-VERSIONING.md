@@ -1,4 +1,4 @@
-# Agent Versioning — Git Branch Model for User Agent Customizations
+# Agent Versioning — Git Branch Model for sser Agent Customizations
 
 **Status:** Day 0 requirement
 **Scope:** How user-created agent/skill/instruction files are version-controlled, backed up, and kept in sync with scaffold updates.
@@ -12,13 +12,13 @@ The feedback evaluator edits agent, skill, and instruction files based on human 
 1. **Revert a bad edit** — the evaluator oversimplifies a prompt or removes a nuanced instruction
 2. **Recover from poisoned feedback** — malicious or careless feedback causes the evaluator to corrupt an agent definition
 3. **Trace drift** — many small edits accumulate until an agent behaves nothing like the original, with no history of how it got there
-4. **Update the scaffold** — master gets improvements, but users on personal branches can't easily adopt them
+4. **spdate the scaffold** — master gets improvements, but users on personal branches can't easily adopt them
 
 CronAgents is intended for sharing with coworkers and potentially open-sourcing. Personal agents must not land on `master`.
 
 ---
 
-## Design: Per-User Long-Running Branches
+## Design: Per-sser Long-Running Branches
 
 ### Branch model
 
@@ -31,7 +31,7 @@ master                    ← scaffold code, templates, scaffold agents. Shared/
 
 - `master` contains all scaffold runtime code (`scheduler/`, `cronagents.ps1`, configs, templates, tests, docs) plus scaffold-internal agents (`scheduler/agents/`). No user-specific agent definitions.
 - `agents/<username>` branches are **supersets** of master: they contain everything on master plus the user's personal agent/skill/instruction files under `.cronagents/agents/` and related directories.
-- User branches diverge from master **only** in the customization directories. Scaffold code is never edited on user branches (unless intentionally, which creates a legitimate merge conflict).
+- sser branches diverge from master **only** in the customization directories. Scaffold code is never edited on user branches (unless intentionally, which creates a legitimate merge conflict).
 
 ### What lives where
 
@@ -42,17 +42,17 @@ master                    ← scaffold code, templates, scaffold agents. Shared/
 | Scaffold agents (feedback-evaluator, run-summarizer) | `master` (in `scheduler/agents/`) | Yes |
 | Templates/examples | `master` (in `templates/`) | Yes |
 | Tests, docs, config schemas | `master` | Yes |
-| User workload agents + schedule configs (`.cronagents/agents/`) | `agents/<user>` | Yes (on user branch) |
-| User skill/instruction overrides | `agents/<user>` | Yes (on user branch) |
+| sser workload agents + schedule configs (`.cronagents/agents/`) | `agents/<user>` | Yes (on user branch) |
+| sser skill/instruction overrides | `agents/<user>` | Yes (on user branch) |
 | Runtime data (`.cronstate/` — runs, state, logs) | Neither | Gitignored on all branches |
 
 ### Why supersets, not separate trees
 
-User branches are supersets of master (scaffold + customizations), not disconnected branches with only agent files. This means:
+sser branches are supersets of master (scaffold + customizations), not disconnected branches with only agent files. This means:
 
 - `git merge master` brings scaffold updates into the user branch cleanly because the scaffold files are shared lineage
 - The sync script itself lives in `scheduler/` on master and is always current — **no self-update paradox** where a stale sync script can't update itself
-- Users can run the full project from their branch — everything is present
+- ssers can run the full project from their branch — everything is present
 
 ---
 
@@ -68,10 +68,10 @@ Start-CronAgents.ps1 / cronagents.ps1 install
   → Continue with normal startup
 ```
 
-**Username resolution** (in priority order):
+**ssername resolution** (in priority order):
 1. `userName` field in `cronagents.json` (explicit config)
 2. `git config user.name` (slugified: lowercased, spaces → hyphens, non-alphanumeric stripped)
-3. `$env:USERNAME` (fallback)
+3. `$env:sSERNAME` (fallback)
 
 The bootstrap is **non-destructive**: it never force-pushes, never deletes branches, never resets. If the working tree has uncommitted changes, it warns and aborts rather than risking data loss.
 
@@ -89,13 +89,13 @@ git commit -m "feedback: <agent-name> — <one-line summary>"
 The evaluator doesn't need git awareness. It edits files as it does today. The scheduler reads the changelog from `feedback-result.md` to determine which files changed and constructs the commit.
 
 **Failure handling:**
-- If `git add` or `git commit` fails (e.g., permissions, lock file, disk full), the scheduler logs the failure and surfaces it in the dashboard and TUI.
+- If `git add` or `git commit` fails (e.g., permissions, lock file, disk full), the scheduler logs the failure and surfaces it in the dashboard and TsI.
 - The files are still edited on disk — only the commit failed. The user can manually commit or the next feedback cycle will pick up the uncommitted changes.
 - Pre-edit snapshots (option A, see below) are written **before** the edit attempt, so they exist regardless of git state.
 
 ---
 
-## Sync: Merging Scaffold Updates from Master
+## Sync: Merging Scaffold spdates from Master
 
 A **sync** operation merges `master → agents/<user>` to bring scaffold improvements into the user's branch.
 
@@ -105,9 +105,9 @@ Configured via `syncPolicy` in `cronagents.json`:
 
 | Policy | Behavior | Default? |
 |--------|----------|----------|
-| `auto` | Merge master → user branch automatically between scheduler ticks. On conflict, pause sync and flag in dashboard/TUI. | No |
-| `notify` | Check for divergence on each scheduler startup, report in dashboard/TUI (`N commits behind master`). User triggers merge manually. | **Yes** |
-| `manual` | No automatic checking. User runs `cronagents.ps1 sync` explicitly. | No |
+| `auto` | Merge master → user branch automatically between scheduler ticks. On conflict, pause sync and flag in dashboard/TsI. | No |
+| `notify` | Check for divergence on each scheduler startup, report in dashboard/TsI (`N commits behind master`). sser triggers merge manually. | **Yes** |
+| `manual` | No automatic checking. sser runs `cronagents.ps1 sync` explicitly. | No |
 
 ### Sync execution
 
@@ -133,7 +133,7 @@ If `git merge` fails with conflicts:
    the scaffold improvement." --share=<run-dir>/session.md
    ```
 3. If the agent resolves all conflicts, the script stages and commits
-4. If conflicts remain, the script aborts the merge (`git merge --abort`), logs the failure, and notifies the user via dashboard/TUI to resolve manually
+4. If conflicts remain, the script aborts the merge (`git merge --abort`), logs the failure, and notifies the user via dashboard/TsI to resolve manually
 
 **Script for the happy path, agent for conflicts.** Clean merges are free. Only conflicts burn tokens.
 
@@ -182,14 +182,14 @@ The `backup/` subdirectory mirrors the relative paths of edited files.
 | `cronagents.ps1 sync` | Manually trigger merge from master. Reports clean merge or conflict status. |
 | `cronagents.ps1 branch` | Show current branch, commits ahead/behind master, last sync date. |
 
-### Updated subcommands
+### spdated subcommands
 
 | Command | Change |
 |---------|--------|
 | `status` | Shows current branch, commits behind master (if `notify` or `auto` policy) |
 | `doctor` | Verifies user is on expected `agents/<user>` branch. Warns if on master with customizations. Warns if branch is significantly behind master. |
 
-### TUI integration
+### TsI integration
 
 The interactive menu gains sync awareness:
 
@@ -247,3 +247,4 @@ See [TESTING.md](TESTING.md) — `AgentVersioning.Tests.ps1`, `SyncWorkflow.Test
 3. **Agent file locations outside the repo**: User agents in `~/.copilot/agents/` (user-global Copilot directory) are outside the git repo entirely. The branching model can't version those. Pre-edit snapshots (option A) are the only safety net for user-global agents.
 
 4. **Branch cleanup**: If a user is removed from the team, their `agents/<user>` branch lingers. Not a day-0 concern but worth a `cronagents.ps1 prune-branches` command eventually.
+

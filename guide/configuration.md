@@ -165,9 +165,9 @@ Controls the git branching and sync behavior.
 
 ---
 
-## Per-agent config: `.cronagents/agents/<id>.json`
+## Per-agent registration: `.cronagents/agents/<id>.agent-registration.json`
 
-Each agent has a JSON config file. The filename (without extension) is the **agent ID** used in CLI commands, state tracking, and run directories.
+Each agent has a JSON config file. The filename stem (for example, `daily-review` from `daily-review.agent-registration.json`) is the **agent ID** used in CLI commands, state tracking, and run directories.
 
 **Schema:** `cronagents-agent.schema.json`
 
@@ -217,7 +217,7 @@ Each agent has a JSON config file. The filename (without extension) is the **age
 |---|---|
 | **Type** | `string` |
 | **Required** | Yes (agent mode) / Must be absent (prompt-only mode) |
-| **Description** | References the `.agent.md` file name (without extension). The scheduler looks for the file as a sibling of the config, then in `.github/agents/`, then `.github/copilot-agents/`. |
+| **Description** | References the custom agent profile name (without the `.agent.md` extension). Copilot CLI discovers these profiles from supported locations such as `.github/agents/` or `~/.copilot/agents/`. |
 
 #### `prompt`
 
@@ -354,7 +354,7 @@ CronAgents supports two modes, determined by whether the `agent` field is presen
 | | Agent mode | Prompt-only mode |
 |---|---|---|
 | **Config fields** | `agent` + `prompt` + `schedule` (required) | `prompt` + `schedule` (required) |
-| **`.agent.md` file** | Required (sibling or in `.github/agents/`) | Not used |
+| **`.agent.md` file** | Required (`.github/agents/` or `~/.copilot/agents/`) | Not used |
 | **Tool scoping** | Defined in `.agent.md` frontmatter `tools` list | All tools enabled (`--allow-all-tools`) |
 | **Tool restriction** | Via `.agent.md` frontmatter | Via `denyTools` in config |
 | **System prompt** | From `.agent.md` body | None (prompt is the only instruction) |
@@ -381,3 +381,4 @@ Both schemas support the `$schema` field for editor integration:
 ```
 
 In VS Code, this gives you autocomplete, inline validation, and hover documentation for every field.
+

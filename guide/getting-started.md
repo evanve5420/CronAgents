@@ -76,9 +76,9 @@ It will walk you through an interview to set up your agent's name, schedule, pro
 
 ### Manual setup
 
-Create two files in `.cronagents/agents/`:
+Create one registration file in `.cronagents/agents/` and one custom agent profile in `.github/agents/`:
 
-**`.cronagents/agents/daily-review.agent.md`** — the agent definition:
+**`.github/agents/daily-review.agent.md`** — the agent definition:
 
 ```markdown
 ---
@@ -98,7 +98,7 @@ in this repository and produce a summary.
 3. Summarize findings in a clear, actionable format.
 ```
 
-**`.cronagents/agents/daily-review.json`** — the schedule config:
+**`.cronagents/agents/daily-review.agent-registration.json`** — the agent registration:
 
 ```json
 {

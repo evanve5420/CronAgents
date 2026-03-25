@@ -312,7 +312,7 @@ Describe 'Get-AgentConfigs' {
     "schedule": { "type": "daily", "time": "09:00" }
 }
 '@
-        Set-Content -Path (Join-Path $agentDir 'daily-review.json') -Value $agentJson -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'daily-review.agent-registration.json') -Value $agentJson -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents | Should -HaveCount 1
@@ -332,16 +332,18 @@ Describe 'Get-AgentConfigs' {
         New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
 
         $json = '{ "prompt": "test", "schedule": { "type": "daily", "time": "08:00" } }'
-        Set-Content -Path (Join-Path $agentDir 'my-custom-agent.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'my-custom-agent.agent-registration.json') -Value $json -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents[0].Id | Should -Be 'my-custom-agent'
     }
 
-    It 'Resolves .agent.md sibling file' {
-        $repoRoot = Join-Path $TestDrive 'repo-sibling'
+    It 'Resolves .agent.md from .github/agents' {
+        $repoRoot = Join-Path $TestDrive 'repo-gh-agents'
         $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        $profileDir = Join-Path $repoRoot '.github\agents'
         New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
 
         $agentJson = @'
 {
@@ -350,8 +352,8 @@ Describe 'Get-AgentConfigs' {
     "schedule": { "type": "interval", "every": "1h" }
 }
 '@
-        Set-Content -Path (Join-Path $agentDir 'my-agent-sched.json') -Value $agentJson -Encoding UTF8
-        Set-Content -Path (Join-Path $agentDir 'my-agent.agent.md') -Value '# Agent' -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'my-agent-sched.agent-registration.json') -Value $agentJson -Encoding UTF8
+        Set-Content -Path (Join-Path $profileDir 'my-agent.agent.md') -Value '# Agent' -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $match = $agents | Where-Object { $_.Id -eq 'my-agent-sched' }
@@ -366,7 +368,7 @@ Describe 'Get-AgentConfigs' {
         New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
 
         $json = '{ "agent": "nonexistent-agent", "prompt": "Do stuff", "schedule": { "type": "daily", "time": "12:00" } }'
-        Set-Content -Path (Join-Path $agentDir 'ghost.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'ghost.agent-registration.json') -Value $json -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $match = $agents | Where-Object { $_.Id -eq 'ghost' }
@@ -377,7 +379,7 @@ Describe 'Get-AgentConfigs' {
         $repoRoot = Join-Path $TestDrive 'repo-noprompt'
         $agentDir = Join-Path $repoRoot '.cronagents\agents'
         New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
-        Set-Content -Path (Join-Path $agentDir 'no-prompt.json') -Value '{ "schedule": { "type": "daily", "time": "09:00" } }' -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'no-prompt.agent-registration.json') -Value '{ "schedule": { "type": "daily", "time": "09:00" } }' -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents | Should -HaveCount 0
@@ -387,7 +389,7 @@ Describe 'Get-AgentConfigs' {
         $repoRoot = Join-Path $TestDrive 'repo-nosched'
         $agentDir = Join-Path $repoRoot '.cronagents\agents'
         New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
-        Set-Content -Path (Join-Path $agentDir 'no-sched.json') -Value '{ "prompt": "hello" }' -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'no-sched.agent-registration.json') -Value '{ "prompt": "hello" }' -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents | Should -HaveCount 0
@@ -398,7 +400,7 @@ Describe 'Get-AgentConfigs' {
         $agentDir = Join-Path $repoRoot '.cronagents\agents'
         New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
         $json = '{ "prompt": "test", "schedule": { "type": "cron", "expr": "* * * * *" } }'
-        Set-Content -Path (Join-Path $agentDir 'bad-type.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'bad-type.agent-registration.json') -Value $json -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents | Should -HaveCount 0
@@ -412,8 +414,8 @@ Describe 'Get-AgentConfigs' {
         New-Item -ItemType Directory -Path $extraDir -Force | Out-Null
 
         $json = '{ "prompt": "test", "schedule": { "type": "daily", "time": "08:00" } }'
-        Set-Content -Path (Join-Path $agentDir 'dupe.json') -Value $json -Encoding UTF8
-        Set-Content -Path (Join-Path $extraDir 'dupe.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'dupe.agent-registration.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $extraDir 'dupe.agent-registration.json') -Value $json -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot -AdditionalPaths @($extraDir)
         $agents | Should -HaveCount 1
@@ -425,9 +427,9 @@ Describe 'Get-AgentConfigs' {
         New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
 
         $json = '{ "prompt": "test", "schedule": { "type": "daily", "time": "08:00" } }'
-        Set-Content -Path (Join-Path $agentDir 'zeta.json')  -Value $json -Encoding UTF8
-        Set-Content -Path (Join-Path $agentDir 'alpha.json') -Value $json -Encoding UTF8
-        Set-Content -Path (Join-Path $agentDir 'mid.json')   -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'zeta.agent-registration.json')  -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'alpha.agent-registration.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'mid.agent-registration.json')   -Value $json -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents | Should -HaveCount 3
@@ -445,7 +447,7 @@ Describe 'Get-AgentConfigs' {
         $extraDir = Join-Path $TestDrive 'extra-agents2'
         New-Item -ItemType Directory -Path $extraDir -Force | Out-Null
         $json = '{ "prompt": "extra", "schedule": { "type": "weekly", "day": "monday", "time": "10:00" } }'
-        Set-Content -Path (Join-Path $extraDir 'bonus.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $extraDir 'bonus.agent-registration.json') -Value $json -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot (Join-Path $TestDrive 'empty-repo2') -AdditionalPaths @($extraDir)
         $agents | Should -HaveCount 1
@@ -458,7 +460,7 @@ Describe 'Get-AgentConfigs' {
         $agentDir = Join-Path $repoRoot '.cronagents\agents'
         New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
         $json = '{ "name": "Custom Name", "prompt": "go", "schedule": { "type": "daily", "time": "07:00" } }'
-        Set-Content -Path (Join-Path $agentDir 'my-agent.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'my-agent.agent-registration.json') -Value $json -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents[0].Config.name | Should -Be 'Custom Name'
@@ -470,7 +472,7 @@ Describe 'Get-AgentConfigs' {
         $agentDir = Join-Path $repoRoot '.cronagents\agents'
         New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
         $json = '{ "prompt": "go", "schedule": { "type": "daily", "time": "07:00" }, "timeout": "30m", "retryCount": 3, "skipOnBattery": true }'
-        Set-Content -Path (Join-Path $agentDir 'custom.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'custom.agent-registration.json') -Value $json -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents[0].Config.timeout       | Should -Be '30m'
@@ -483,7 +485,7 @@ Describe 'Get-AgentConfigs' {
         $agentDir = Join-Path $repoRoot '.cronagents\agents'
         New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
         $json = '{ "prompt": "Just a prompt", "schedule": { "type": "interval", "every": "2h" } }'
-        Set-Content -Path (Join-Path $agentDir 'prompt-only.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'prompt-only.agent-registration.json') -Value $json -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents | Should -HaveCount 1
@@ -495,7 +497,7 @@ Describe 'Get-AgentConfigs' {
         $agentDir = Join-Path $repoRoot '.cronagents\agents'
         New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
         $json = '{ "agent": "code-reviewer", "prompt": "Review code", "schedule": { "type": "daily", "time": "09:00" } }'
-        Set-Content -Path (Join-Path $agentDir 'with-agent.json') -Value $json -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'with-agent.agent-registration.json') -Value $json -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
         $agents | Should -HaveCount 1

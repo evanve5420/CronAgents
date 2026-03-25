@@ -30,7 +30,7 @@ The mock should:
 
 `tests/fixtures/` should contain:
 - Several `cronagents.json` variants: valid minimal, valid full-featured, missing required fields, malformed JSON
-- Several per-agent `.json` schedule config variants: valid, missing required fields, unknown schedule type, invalid execution policies
+- Several per-agent `.agent-registration.json` variants: valid, missing required fields, unknown schedule type, invalid execution policies
 - Pre-built run directories (under a mock `.cronstate/runs/`) representing different states: successful run, failed run, run with pending feedback, run with processed feedback, run older than retention threshold, run with cached `summary.md`
 - A trivial `.agent.md` + sibling `.json` pair for testing agent invocation
 
@@ -80,7 +80,7 @@ Test config loading, agent discovery, and validation:
 - `startupDelay` validated: accepts duration strings (`"5m"`, `"0"`, `"10m"`), rejects negative or malformed values
 - `versioning` block defaults: missing block defaults to `syncPolicy: "notify"`, `userName: null`, `autoCommitFeedback: true`, `branchPrefix: "agents"`
 - `versioning.syncPolicy` rejects unknown values (only `"auto"`, `"notify"`, `"manual"` accepted)
-- Agent ID derived correctly from filename stem (e.g., `daily-review.json` → ID `daily-review`)
+- Agent ID derived correctly from filename stem (e.g., `daily-review.agent-registration.json` → ID `daily-review`)
 - Duplicate agent IDs (same filename stem in different discovery paths) produce a clear error
 - Both JSON Schema files validate against the JSON Schema meta-schema
 
@@ -306,3 +306,4 @@ Test `Test-CronAgentsHealth.ps1` / `cronagents.ps1 doctor`:
 - Every run directory artifact is verified in at least one integration test
 - Mock invocation log is checked in every integration test to verify exact CLI flags
 - E2E is a smoke test only — one run + one feedback cycle is sufficient
+

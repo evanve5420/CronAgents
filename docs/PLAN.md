@@ -59,7 +59,7 @@ CronAgents/
 ├── .cronagents/
 │   └── agents/                               ← repo-local workload agents + scheduling configs
 │       ├── daily-review.agent.md             ← Copilot agent definition
-│       ├── daily-review.json                 ← scheduling config (id = filename stem)
+│       ├── daily-review.agent-registration.json ← agent registration (id = filename stem)
 │       ├── weekly-deps.agent.md
 │       └── weekly-deps.json
 ├── .cronstate/                              ← runtime data (always gitignored, entire directory)
@@ -115,7 +115,7 @@ CronAgents/
 
 `.github` is reserved for Copilot customizations that apply when *developing this repo* (workspace instructions, prompts). Scaffold-internal agents (feedback evaluator, run summarizer) and their skills live in `scheduler/agents/` and `scheduler/skills/` because they are product components of the CronAgents runtime, not repo development tools. The scheduler passes `--add-dir=scheduler/` when invoking them so Copilot CLI can resolve them. User-defined scheduled workload agents live in `.cronagents/agents/` (tracked on user branches), user-global directories like `C:\Users\<user>\.copilot`, or both.
 
-**Config split — global settings vs. per-agent scheduling:** `cronagents.json` contains only global scheduler settings (log level, retention, quiet hours, versioning, etc.) — no agent definitions. Each user agent has a sibling `.json` scheduling config alongside its `.agent.md` file in `.cronagents/agents/`. The filename stem (e.g., `daily-review` from `daily-review.json`) serves as the **stable agent ID** used in state tracking, run directories, CLI commands, and future `dependsOn` references. The human-readable `name` field inside the file is display-only and can be changed freely without breaking history. This separation means master never touches agent definitions, user branches never touch global settings, and merge conflicts between the two are structurally impossible.
+**Config split — global settings vs. per-agent scheduling:** `cronagents.json` contains only global scheduler settings (log level, retention, quiet hours, versioning, etc.) — no agent definitions. Each user agent has a `.agent-registration.json` registration file in `.cronagents/agents/`. The filename stem (e.g., `daily-review` from `daily-review.agent-registration.json`) serves as the **stable agent ID** used in state tracking, run directories, CLI commands, and future `dependsOn` references. The human-readable `name` field inside the file is display-only and can be changed freely without breaking history. This separation means master never touches agent definitions, user branches never touch global settings, and merge conflicts between the two are structurally impossible.
 
 **Runtime data isolation:** All ephemeral runtime data lives in `.cronstate/` — a separate top-level directory that is always gitignored in its entirety. This includes `state.json`, `scheduler.log`, and all run directories under `runs/`. Clean separation from `.cronagents/` (which contains version-controlled code: agent definitions and scheduling configs on user branches) eliminates mixed git semantics within a single directory.
 
@@ -186,9 +186,9 @@ All fields are optional — sensible defaults apply.
 
 ### Step 3b — Per-agent scheduling configs
 
-Each user agent has a `.json` file alongside its `.agent.md` in `.cronagents/agents/` (or in user-global Copilot directories). The **filename stem is the stable agent ID** — used in `state.json` keys, run directory names, CLI arguments, and future `dependsOn` references. The `name` field inside the file is a human-readable display label that can be changed freely without breaking history.
+Each user agent has a `.agent-registration.json` file in `.cronagents/agents/`, plus an optional `.agent.md` custom agent profile in `.github/agents/` or `~/.copilot/agents/`. The **filename stem is the stable agent ID** — used in `state.json` keys, run directory names, CLI arguments, and future `dependsOn` references. The `name` field inside the file is a human-readable display label that can be changed freely without breaking history.
 
-Agent discovery: the scheduler scans `.cronagents/agents/*.json` (and any additional directories from config) on startup. Each `.json` file found is a scheduling config. No central registration step — drop files in the right place and they're discovered.
+Agent discovery: the scheduler scans `.cronagents/agents/*.agent-registration.json` (and any additional directories from config) on startup. Each matching file found is an agent registration. No central registration step — drop files in the right place and they're discovered.
 
 Per-agent scheduling config fields:
 - `name` — human-readable display name (mutable, display-only). Default: the agent ID (filename stem).
@@ -217,7 +217,7 @@ The `cronagents-agent.schema.json` enforces these as `oneOf` — a config specif
 #### Per-agent config example
 
 ```jsonc
-// File: .cronagents/agents/daily-review.json
+// File: .cronagents/agents/daily-review.agent-registration.json
 // Agent ID: "daily-review" (from filename)
 {
   "$schema": "../../cronagents-agent.schema.json",
@@ -236,7 +236,7 @@ The `cronagents-agent.schema.json` enforces these as `oneOf` — a config specif
 ```
 
 ```jsonc
-// File: .cronagents/agents/weekly-deps.json
+// File: .cronagents/agents/weekly-deps.agent-registration.json
 // Agent ID: "weekly-deps" (from filename)
 {
   "$schema": "../../cronagents-agent.schema.json",
@@ -251,7 +251,7 @@ The `cronagents-agent.schema.json` enforces these as `oneOf` — a config specif
 ```
 
 ```jsonc
-// File: .cronagents/agents/morning-summary.json
+// File: .cronagents/agents/morning-summary.agent-registration.json
 // Agent ID: "morning-summary" (from filename)
 // Prompt-only mode — no .agent.md needed
 {
@@ -267,7 +267,7 @@ Per-agent fields `timeout`, `skipOnBattery`, `retryCount`, `model`, `denyTools`,
 
 ### Why split config?
 
-The git branch model has master owning global settings and user branches owning agent definitions. A single `cronagents.json` containing both would cause merge conflicts every time master changes a default while the user has agents defined. With the split, master's `cronagents.json` and users' `.cronagents/agents/*.json` files are in completely separate paths — structurally impossible to conflict. The split also enables future features naturally: config profiles (#15) only overlay global settings, remote config (#17) can push agent definitions independently, and agent sharing is just copying a `.json` + `.agent.md` pair.
+The git branch model has master owning global settings and user branches owning agent definitions. A single `cronagents.json` containing both would cause merge conflicts every time master changes a default while the user has agents defined. With the split, master's `cronagents.json` and users' `.cronagents/agents/*.agent-registration.json` files are in completely separate paths — structurally impossible to conflict. The split also enables future features naturally: config profiles (#15) only overlay global settings, remote config (#17) can push agent definitions independently, and agent sharing is just copying a `.agent-registration.json` + `.agent.md` pair.
 
 ### Agent resolution model
 
@@ -276,7 +276,7 @@ Simplified, leveraging native Copilot CLI resolution:
 - The scheduler sets `COPILOT_CUSTOM_INSTRUCTIONS_DIRS` per-invocation if the user configures extra instruction directories
 - `copilotHome` config key (optional): overrides `COPILOT_HOME` env var to point Copilot CLI at a non-default config/agents root
 - scaffold agents (feedback-evaluator, run-summarizer) live in `scheduler/agents/` — the scheduler passes `--add-dir=scheduler/` when invoking them
-- user workload agents resolve from `.cronagents/agents/` (via `--add-dir`), `~/.copilot/agents/`, or explicit paths in config
+- user workload registrations live in `.cronagents/agents/`, while custom agent profiles resolve from `.github/agents/` or `~/.copilot/agents/`
 - examples remain committed as templates only
 
 **Step 4** — `cronagents.schema.json` and `cronagents-agent.schema.json` — JSON Schemas for editor autocompletion and config validation. Two schemas: one for global config, one for per-agent scheduling configs.
@@ -445,9 +445,9 @@ Three tiers, three audiences:
 
 **Step 13** — `guide/` pages:
 - `getting-started.md` — prerequisites, install, configure, first agent, first run
-- `configuration.md` — full `cronagents.json` reference (global settings) and per-agent `.json` schedule config reference (every field, type, default, example)
+- `configuration.md` — full `cronagents.json` reference (global settings) and per-agent registration file reference (every field, type, default, example)
 - `cli-reference.md` — all `cronagents.ps1` subcommands, TUI menu, `--help` examples
-- `writing-agents.md` — how to create an `.agent.md` + sibling `.json` schedule config, test it manually
+- `writing-agents.md` — how to create an `.agent.md` + `.agent-registration.json` registration file, test it manually
 - `feedback-system.md` — how the feedback loop works, editing `feedback.md`, auto-feedback
 - `branching-and-sync.md` — user branch model, sync commands, conflict resolution
 - `troubleshooting.md` — common issues, `cronagents.ps1 doctor`, reading logs
@@ -456,7 +456,7 @@ Three tiers, three audiences:
 
 **Step 14** — `.github/copilot-instructions.md` — Workspace instructions for extending the project (core principles, no-duplication rule, project structure, test enforcement).
 
-**Step 14a** — `.github/skills/agent-creator/SKILL.md` — Interactive skill that walks users through creating a new scheduled agent. Interviews the user, reads `guide/writing-agents.md` and `guide/configuration.md` for current structure/options, then scaffolds the `.agent.md` file and sibling `.json` schedule config. This is a development-time Copilot skill, not a runtime component.
+**Step 14a** — `.github/skills/agent-creator/SKILL.md` — Interactive skill that walks users through creating a new scheduled agent. Interviews the user, reads `guide/writing-agents.md` and `guide/configuration.md` for current structure/options, then scaffolds the `.agent.md` file and `.agent-registration.json` registration file. This is a development-time Copilot skill, not a runtime component.
 
 **Step 15** — Example agent files (`.example` suffix) — kept as templates under `templates/agents/`. Users copy them into `.cronagents/agents/` or a user-global Copilot directory to activate. Each example includes inline comments explaining every frontmatter field and prompt pattern.
 
@@ -525,3 +525,4 @@ Full details in [COPILOT-CLI.md](COPILOT-CLI.md). Key design implications:
 ## Future Considerations
 
 Items beyond day-0 scope are tracked in [FUTURE.md](FUTURE.md) — HTML dashboard, parallel execution, cloud reporting, cross-platform, PR gates, script mode, security review agent, conditional execution, agent tags, edit scope enforcement, notifications, token budgets, pipelines, config profiles, webhook triggers, rate limiting, remote config.
+

@@ -53,6 +53,7 @@ $startTime    = $null
 $endTime      = $null
 $retryAttempt = 0
 $runDir       = $null
+$envKeys      = @()
 
 function Invoke-CopilotRun {
     <#
@@ -148,7 +149,7 @@ function Build-CopilotArguments {
     if ($AgentConfig.PSObject.Properties['agent'] -and
         -not [string]::IsNullOrWhiteSpace($AgentConfig.agent)) {
         $args_.Add("--agent=$($AgentConfig.agent)")
-        $args_.Add('--add-dir=.cronagents/agents')
+        $args_.Add('--add-dir=.github/agents')
     }
     else {
         $args_.Add('--allow-all-tools')
@@ -165,15 +166,17 @@ function Build-CopilotArguments {
     }
 
     # Deny tools
-    if ($AgentConfig.PSObject.Properties['denyTools'] -and $AgentConfig.denyTools.Count -gt 0) {
-        foreach ($tool in $AgentConfig.denyTools) {
+    $denyTools = @($AgentConfig.denyTools)
+    if ($AgentConfig.PSObject.Properties['denyTools'] -and $denyTools.Count -gt 0) {
+        foreach ($tool in $denyTools) {
             $args_.Add("--deny-tool=$tool")
         }
     }
 
     # Extra CLI flags
-    if ($AgentConfig.PSObject.Properties['extraCliFlags'] -and $AgentConfig.extraCliFlags.Count -gt 0) {
-        foreach ($flag in $AgentConfig.extraCliFlags) {
+    $extraCliFlags = @($AgentConfig.extraCliFlags)
+    if ($AgentConfig.PSObject.Properties['extraCliFlags'] -and $extraCliFlags.Count -gt 0) {
+        foreach ($flag in $extraCliFlags) {
             $args_.Add($flag)
         }
     }

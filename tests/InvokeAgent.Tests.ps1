@@ -115,6 +115,7 @@ Describe 'Invoke-ScheduledAgent — Mock Copilot CLI Arguments' {
         $denyTools | Should -Contain 'web_fetch'
         $denyTools | Should -Contain 'file_delete'
     }
+
 }
 
 Describe 'Invoke-ScheduledAgent — Exit Code and State' {

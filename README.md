@@ -25,9 +25,9 @@ A lightweight, repo-local scheduler for GitHub Copilot agents that runs recurrin
 # Create your first agent (interactive skill)
 # /agent-creator "review PRs every morning"
 
-# Or copy a template
-Copy-Item templates\agents\daily-review.agent.md.example .cronagents\agents\daily-review.agent.md
-# Create the schedule config alongside it
+# Or copy a template on your personal branch
+Copy-Item templates\agents\daily-review.agent.md.example .github\agents\daily-review.agent.md
+# Then create .cronagents\agents\daily-review.agent-registration.json
 # (see guide/writing-agents.md)
 
 # Test it
@@ -40,7 +40,7 @@ Copy-Item templates\agents\daily-review.agent.md.example .cronagents\agents\dail
 ## How it works
 
 1. A single background scheduler process starts at logon via Task Scheduler.
-2. It reads agent configs from `.cronagents/agents/`.
+2. It reads agent registrations from `.cronagents/agents/`.
 3. On each tick it evaluates schedules and runs due agents via Copilot CLI.
 4. Output is captured, summaries are generated, and the dashboard is updated.
 5. An optional feedback loop lets humans review runs — an evaluator agent applies that feedback to improve agent definitions over time.
@@ -66,7 +66,7 @@ CronAgents/
 ├── scheduler/                  # Background scheduler + shared library
 │   ├── CronAgents-Scheduler.ps1
 │   └── lib/                    # Shared PowerShell module (CronAgents.psd1)
-├── .cronagents/                # Per-user runtime directory (git-ignored)
+├── .cronagents/                # Per-user tracked customizations (user branch)
 │   └── agents/                 # Agent definitions + schedule configs
 ├── .cronstate/                 # Run state, logs, dashboard output (git-ignored)
 ├── templates/                  # Starter agent + config templates
@@ -79,3 +79,4 @@ CronAgents/
 ## License
 
 MIT — see [LICENSE](LICENSE).
+

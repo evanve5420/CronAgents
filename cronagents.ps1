@@ -127,10 +127,11 @@ function Invoke-RunCommand {
 
     Write-Host "Running agent '$AgentId'..." -ForegroundColor Cyan
     try {
+        $globalConfig = Get-Config
         & $invokeScript -AgentId $agent.Id `
-                        -AgentConfigPath $agent.ConfigPath `
+                        -AgentConfig $agent.Config `
+                        -GlobalConfig $globalConfig `
                         -RepoRoot $RepoRoot `
-                        -StateFile $StateFile `
                         -RunsRoot $RunsRoot
         Write-Host "Agent '$AgentId' completed." -ForegroundColor Green
     }

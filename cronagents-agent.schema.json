@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://cronagents.dev/cronagents-agent.schema.json",
-  "title": "CronAgents Per-Agent Schedule Configuration",
-  "description": "Schema for per-agent schedule configuration files.",
+  "title": "CronAgents Per-Agent Registration Configuration",
+  "description": "Schema for per-agent registration files.",
   "type": "object",
   "definitions": {
     "scheduleInterval": {

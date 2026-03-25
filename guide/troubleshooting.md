@@ -75,10 +75,10 @@ You should see the task with a `Ready` or `Running` status and an "At logon" tri
 **Fix:** Make sure the agent has a `.json` config file in `.cronagents/agents/`:
 
 ```powershell
-Get-ChildItem .cronagents\agents\*.json
+Get-ChildItem .cronagents\agents\*.agent-registration.json
 ```
 
-The filename stem must match the agent ID you're using. For example, `daily-review.json` → agent ID is `daily-review`.
+The filename stem must match the agent ID you're using. For example, `daily-review.agent-registration.json` → agent ID is `daily-review`.
 
 **Common mistakes:**
 
@@ -110,7 +110,7 @@ The filename stem must match the agent ID you're using. For example, `daily-revi
    - `retentionDays`, `maxRunHistory`: must be non-negative integers
    - `quietHours.start`, `quietHours.end`: must be `HH:MM` (24-hour)
 
-**For agent configs (`.cronagents/agents/<id>.json`):**
+**For agent registrations (`.cronagents/agents/<id>.agent-registration.json`):**
 
 1. Check JSON syntax as above.
 
@@ -403,3 +403,4 @@ If none of the above resolves your issue:
 3. Check the per-run log for the failing agent
 4. Set `logLevel` to `"debug"` in `cronagents.json` for maximum detail
 5. Run the agent manually: `.\cronagents.ps1 run <id>` and observe output
+

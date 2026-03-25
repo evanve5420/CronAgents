@@ -9,6 +9,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+$script:AgentRegistrationSuffix = '.agent-registration.json'
+
 # Valid enum values
 $script:ValidLogLevels   = @('debug', 'info', 'warn', 'error')
 $script:ValidSyncPolicies = @('auto', 'notify', 'manual')
@@ -254,7 +256,13 @@ function Import-SingleAgentConfig {
         [Parameter(Mandatory)][string]$RepoRoot
     )
 
-    $fileName = [System.IO.Path]::GetFileNameWithoutExtension($FilePath)
+    $leafName = [System.IO.Path]::GetFileName($FilePath)
+    if (-not $leafName.EndsWith($script:AgentRegistrationSuffix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-CronAgentsLog -Level 'warn' -Message "Agent registration '$FilePath' does not use the required '$($script:AgentRegistrationSuffix)' suffix."
+        return $null
+    }
+
+    $fileName = $leafName.Substring(0, $leafName.Length - $script:AgentRegistrationSuffix.Length)
 
     try {
         $raw = Get-Content -LiteralPath $FilePath -Raw -Encoding UTF8
@@ -369,8 +377,8 @@ function Get-AgentConfigs {
     }
 
     foreach ($dir in $scanDirs) {
-        $jsonFiles = Get-ChildItem -LiteralPath $dir -Filter '*.json' -File -ErrorAction SilentlyContinue
-        foreach ($file in $jsonFiles) {
+        $registrationFiles = Get-ChildItem -LiteralPath $dir -Filter "*.agent-registration.json" -File -ErrorAction SilentlyContinue
+        foreach ($file in $registrationFiles) {
             $result = Import-SingleAgentConfig -FilePath $file.FullName -RepoRoot $RepoRoot
             if ($null -eq $result) { continue }
 

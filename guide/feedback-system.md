@@ -156,11 +156,11 @@ After the evaluator runs, it writes `feedback-result.md` in the run directory:
 ```markdown
 ## Changes Made
 
-- **File**: `.cronagents/agents/daily-review.agent.md`
+- **File**: `.github/agents/daily-review.agent.md`
   **Change**: Tightened system prompt to focus only on security issues,
   removed verbose analysis instructions.
 
-- **File**: `.cronagents/agents/daily-review.agent.md`
+- **File**: `.github/agents/daily-review.agent.md`
   **Change**: Updated grep pattern to include src/utils/ folder
   in search scope.
 

@@ -23,6 +23,7 @@ function New-TestEnvironment {
     # Create directory structure
     $dirs = @(
         (Join-Path $root '.cronagents' 'agents')
+        (Join-Path $root '.github' 'agents')
         (Join-Path $root '.cronstate' 'runs')
         (Join-Path $root 'scheduler' 'lib')
         (Join-Path $root 'scheduler' 'agents')
@@ -130,11 +131,11 @@ function Get-MockInvocations {
 function New-TestAgentConfig {
     <#
     .SYNOPSIS
-        Creates a per-agent config file in the test environment's agents dir.
+        Creates a per-agent registration file in the test environment's agents dir.
     .PARAMETER TestEnv
         The PSCustomObject returned by New-TestEnvironment.
     .PARAMETER AgentId
-        Identifier used as the config filename (without extension).
+        Identifier used as the registration filename stem.
     .PARAMETER Schedule
         Hashtable describing the schedule (e.g. @{ type='daily'; time='09:00' }).
     .PARAMETER Prompt
@@ -168,7 +169,7 @@ function New-TestAgentConfig {
     if ($Agent) { $agentConfig['agent'] = $Agent }
     if ($Timeout) { $agentConfig['timeout'] = $Timeout }
 
-    $filePath = Join-Path $TestEnv.AgentsDir "$AgentId.json"
+    $filePath = Join-Path $TestEnv.AgentsDir "$AgentId.agent-registration.json"
     $agentConfig | ConvertTo-Json -Depth 5 | Out-File -FilePath $filePath -Encoding utf8
 
     [PSCustomObject]$agentConfig

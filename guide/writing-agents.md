@@ -4,19 +4,27 @@ This guide covers how to create scheduled agents, choose between agent mode and 
 
 ## Where agents live
 
-Agent configs go in `.cronagents/agents/`. Each agent needs at least a `.json` config file. Agent mode also needs a sibling `.agent.md` file.
+CronAgents registrations go in `.cronagents/agents/`. Each scheduled entry needs a registration file named `<agent-id>.agent-registration.json`.
+
+If you use agent mode, the Copilot custom agent profile is a separate `.agent.md` file in a Copilot-supported discovery location:
+
+- Project-local: `.github/agents/<agent-name>.agent.md`
+- User-global: `~/.copilot/agents/<agent-name>.agent.md`
 
 ```
 .cronagents/
 └── agents/
-    ├── daily-review.json          # Schedule config
-    ├── daily-review.agent.md      # Agent definition (agent mode)
-    ├── dep-check.json             # Schedule config (prompt-only, no .agent.md)
-    └── weekly-audit.json          # Schedule config
-    └── weekly-audit.agent.md      # Agent definition
+    ├── daily-review.agent-registration.json   # CronAgents registration
+    ├── dep-check.agent-registration.json      # Prompt-only registration
+    └── weekly-audit.agent-registration.json   # CronAgents registration
+
+.github/
+└── agents/
+    ├── daily-review.agent.md                  # Copilot custom agent profile
+    └── weekly-audit.agent.md                  # Copilot custom agent profile
 ```
 
-The filename stem (e.g., `daily-review` from `daily-review.json`) is the **agent ID**. It must be unique and is used in:
+The filename stem (e.g., `daily-review` from `daily-review.agent-registration.json`) is the **agent ID**. It must be unique and is used in:
 
 - CLI commands: `cronagents.ps1 run daily-review`
 - State tracking: `.cronstate/state.json`
@@ -25,13 +33,23 @@ The filename stem (e.g., `daily-review` from `daily-review.json`) is the **agent
 
 ---
 
+## Branch safety first
+
+Tracked agent registrations belong on your personal CronAgents branch, not `master` / `main`.
+
+Before creating or editing files in `.cronagents/agents/`:
+
+1. Check `.\cronagents.ps1 branch`
+2. If you are on `master` / `main`, switch to the expected `agents/<user>` branch first
+3. `.\cronagents.ps1 install` bootstraps the user branch during initial setup
+
 ## Agent mode
 
-Agent mode uses an `.agent.md` file alongside the `.json` config. The `.agent.md` provides a system prompt and scopes which tools the agent can use.
+Agent mode uses a custom Copilot `.agent.md` profile plus a CronAgents registration file. The `.agent.md` provides a system prompt and scopes which tools the agent can use.
 
 ### Step 1: Create the agent definition
 
-**`.cronagents/agents/security-scan.agent.md`**
+**`.github/agents/security-scan.agent.md`**
 
 ```markdown
 ---
@@ -71,9 +89,9 @@ Report each finding with:
 
 Everything after the frontmatter is the **system prompt** that defines the agent's behavior.
 
-### Step 2: Create the schedule config
+### Step 2: Create the registration file
 
-**`.cronagents/agents/security-scan.json`**
+**`.cronagents/agents/security-scan.agent-registration.json`**
 
 ```json
 {
@@ -87,15 +105,15 @@ Everything after the frontmatter is the **system prompt** that defines the agent
 }
 ```
 
-The `agent` field must match the `name` in the `.agent.md` frontmatter.
+The `agent` field must match the custom agent name that Copilot CLI discovers from `.github/agents/` or `~/.copilot/agents/`.
 
 ---
 
 ## Prompt-only mode
 
-Prompt-only mode skips the `.agent.md` file. You only create a `.json` config. The prompt contains all the instructions. All tools are enabled by default (use `denyTools` to restrict).
+Prompt-only mode skips the `.agent.md` file. You only create a registration file. The prompt contains all the instructions. All tools are enabled by default (use `denyTools` to restrict).
 
-**`.cronagents/agents/dep-check.json`**
+**`.cronagents/agents/dep-check.agent-registration.json`**
 
 ```json
 {
@@ -151,7 +169,7 @@ In agent mode, simply omit `shell` from the tools list to prevent all shell acce
 
 ### Tool resolution
 
-The scheduler passes `--add-dir=<config-dir>` when invoking agent mode agents. Copilot CLI resolves tool names from the agent's `.agent.md` frontmatter within that directory context. Common tool names:
+For agent mode, Copilot CLI loads the custom agent profile by name from its supported discovery locations (such as `.github/agents/` or `~/.copilot/agents/`). The profile's frontmatter controls which tools are available. Common tool names:
 
 - `read` — read file contents
 - `search` — search/grep across files
@@ -227,7 +245,7 @@ The skill runs an interactive interview:
 4. **Schedule** — Interval, daily, or weekly
 5. **Additional options** — Timeout, retry, battery, model
 
-It then generates the `.agent.md` and `.json` files for you, validates them against the schemas, and places them in `.cronagents/agents/`.
+It then generates the `.agent.md` profile and `.agent-registration.json` registration file for you, validates them against the schemas, and places them in the correct locations.
 
 ---
 
@@ -237,7 +255,7 @@ It then generates the `.agent.md` and `.json` files for you, validates them agai
 
 Reviews yesterday's changes and reports issues.
 
-**`.cronagents/agents/daily-review.agent.md`**
+**`.github/agents/daily-review.agent.md`**
 
 ```markdown
 ---
@@ -262,7 +280,7 @@ in this repository and produce a summary.
 Start with a one-line status: either "✓ No issues found" or "⚠ N issues found".
 ```
 
-**`.cronagents/agents/daily-review.json`**
+**`.cronagents/agents/daily-review.agent-registration.json`**
 
 ```json
 {
@@ -280,7 +298,7 @@ Start with a one-line status: either "✓ No issues found" or "⚠ N issues foun
 
 Checks for outdated and vulnerable packages. No `.agent.md` needed.
 
-**`.cronagents/agents/dep-audit.json`**
+**`.cronagents/agents/dep-audit.agent-registration.json`**
 
 ```json
 {
@@ -297,7 +315,7 @@ Checks for outdated and vulnerable packages. No `.agent.md` needed.
 
 Finds and reports branches that haven't been updated recently.
 
-**`.cronagents/agents/branch-cleanup.agent.md`**
+**`.github/agents/branch-cleanup.agent.md`**
 
 ```markdown
 ---
@@ -318,7 +336,7 @@ For each stale branch, show:
 Do NOT delete any branches. Only report.
 ```
 
-**`.cronagents/agents/branch-cleanup.json`**
+**`.cronagents/agents/branch-cleanup.agent-registration.json`**
 
 ```json
 {
@@ -335,7 +353,7 @@ Do NOT delete any branches. Only report.
 
 Checks disk space and memory usage every 4 hours.
 
-**`.cronagents/agents/resource-monitor.json`**
+**`.cronagents/agents/resource-monitor.agent-registration.json`**
 
 ```json
 {

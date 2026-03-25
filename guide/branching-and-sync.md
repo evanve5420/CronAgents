@@ -100,7 +100,7 @@ If your changes conflict with `master`:
 
 ```
 ⚠ Merge conflicts detected in:
-  - .cronagents/agents/daily-review.agent.md
+  - .github/agents/daily-review.agent.md
   - cronagents.json
 
 Auto-resolution failed. Resolve manually:
