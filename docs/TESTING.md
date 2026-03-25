@@ -78,7 +78,7 @@ Test config loading, agent discovery, and validation:
 - `model` field accepts valid model strings and rejects empty strings
 - `retentionDays` and `maxRunHistory` validated as positive integers (or 0 for unlimited/disabled)
 - `startupDelay` validated: accepts duration strings (`"5m"`, `"0"`, `"10m"`), rejects negative or malformed values
-- `versioning` block defaults: missing block defaults to `syncPolicy: "notify"`, `userName: null`, `autoCommitFeedback: true`, `branchPrefix: "agents"`
+- `versioning` block defaults: missing block defaults to `syncPolicy: "notify"`, `userName: null`, `autoCommitFeedback: true`, `branchPrefix: "personal-agents"`
 - `versioning.syncPolicy` rejects unknown values (only `"auto"`, `"notify"`, `"manual"` accepted)
 - Agent ID derived correctly from filename stem (e.g., `daily-review.agent-registration.json` → ID `daily-review`)
 - Duplicate agent IDs (same filename stem in different discovery paths) produce a clear error

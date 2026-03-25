@@ -142,7 +142,7 @@ Controls the git branching and sync behavior.
 | `syncPolicy` | `string` | `"notify"` | How the scheduler handles divergence from master. See values below. |
 | `userName` | `string` or `null` | `null` | Override username for the user branch. `null` = auto-detect from `git config github.user`, `gh auth status`, `git config user.name`, or `$env:USERNAME`. |
 | `autoCommitFeedback` | `boolean` | `true` | Automatically `git commit` after the feedback evaluator edits agent files. |
-| `branchPrefix` | `string` | `"agents"` | Prefix for user branches. The full branch name is `<prefix>/<username>`. |
+| `branchPrefix` | `string` | `"personal-agents"` | Prefix for user branches. The full branch name is `<prefix>/<username>`. |
 
 **`syncPolicy` values:**
 

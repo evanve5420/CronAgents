@@ -8,7 +8,7 @@ CronAgents uses a branch-per-user model so multiple people can share the same re
 master                    ← Scaffold: scheduler code, templates, schemas
 ├── personal-agents/alice          ← Alice's agents and customizations
 ├── personal-agents/bob            ← Bob's agents and customizations
-└── agents/evan           ← Evan's agents and customizations
+└── personal-agents/evan  ← Evan's agents and customizations
 ```
 
 | Content | Branch | Git tracked |

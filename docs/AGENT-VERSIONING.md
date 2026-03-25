@@ -228,7 +228,7 @@ New fields in `cronagents.json`:
 }
 ```
 
-All fields are optional with sensible defaults. A user who never touches this section gets `notify` sync policy, auto-detected username, auto-committed feedback edits, and `agents/` prefix.
+All fields are optional with sensible defaults. A user who never touches this section gets `notify` sync policy, auto-detected username, auto-committed feedback edits, and the `personal-agents/` prefix.
 
 ---
 
