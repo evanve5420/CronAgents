@@ -43,7 +43,7 @@ Import-Module (Join-Path $PSScriptRoot 'lib\CronAgents.psd1') -Force
 # 3–4. Load and validate config
 # -----------------------------------------------------------------------
 $config = Import-CronAgentsConfig -ConfigPath $ConfigPath
-$errors = @(Test-CronAgentsConfig -Config $config)
+$errors = Test-CronAgentsConfig -Config $config
 if ($errors.Count -gt 0) {
     foreach ($e in $errors) { Write-Error $e }
     exit 1
