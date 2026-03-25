@@ -28,7 +28,6 @@ Describe 'Import-CronAgentsConfig' {
     "logLevel": "debug",
     "quietHours": { "start": "22:00", "end": "06:00" },
     "versioning": {
-        "enabled": false,
         "syncPolicy": "auto",
         "userName": "testuser",
         "autoCommitFeedback": false,
@@ -48,7 +47,6 @@ Describe 'Import-CronAgentsConfig' {
         $cfg.logLevel      | Should -Be 'debug'
         $cfg.quietHours.start | Should -Be '22:00'
         $cfg.quietHours.end   | Should -Be '06:00'
-        $cfg.versioning.enabled            | Should -Be $false
         $cfg.versioning.syncPolicy         | Should -Be 'auto'
         $cfg.versioning.userName           | Should -Be 'testuser'
         $cfg.versioning.autoCommitFeedback | Should -Be $false
@@ -67,7 +65,6 @@ Describe 'Import-CronAgentsConfig' {
         $cfg.startupDelay  | Should -Be '5m'
         $cfg.logLevel      | Should -Be 'info'
         $cfg.quietHours    | Should -BeNullOrEmpty
-        $cfg.versioning.enabled            | Should -Be $true
         $cfg.versioning.syncPolicy         | Should -Be 'notify'
         $cfg.versioning.userName           | Should -BeNullOrEmpty
         $cfg.versioning.autoCommitFeedback | Should -Be $true
@@ -80,7 +77,6 @@ Describe 'Import-CronAgentsConfig' {
         Set-Content -Path $path -Value $json -Encoding UTF8
 
         $cfg = Import-CronAgentsConfig -ConfigPath $path
-        $cfg.versioning.enabled            | Should -Be $true
         $cfg.versioning.syncPolicy         | Should -Be 'manual'
         $cfg.versioning.autoCommitFeedback | Should -Be $true
         $cfg.versioning.branchPrefix       | Should -Be 'personal-agents'
@@ -159,15 +155,6 @@ Describe 'Import-CronAgentsConfig' {
             $cfg.versioning.syncPolicy | Should -Be $policy
         }
     }
-
-    It 'Accepts versioning.enabled set to false' {
-        $json = '{ "versioning": { "enabled": false } }'
-        $path = Join-Path $fixtureDir 'versioning-disabled.json'
-        Set-Content -Path $path -Value $json -Encoding UTF8
-
-        $cfg = Import-CronAgentsConfig -ConfigPath $path
-        $cfg.versioning.enabled | Should -Be $false
-    }
 }
 
 # ===== Test-CronAgentsConfig =====
@@ -183,7 +170,6 @@ Describe 'Test-CronAgentsConfig' {
             logLevel      = 'info'
             quietHours    = $null
             versioning    = [PSCustomObject]@{
-                enabled            = $true
                 syncPolicy         = 'notify'
                 userName           = $null
                 autoCommitFeedback = $true
@@ -201,7 +187,7 @@ Describe 'Test-CronAgentsConfig' {
             retentionDays = 0
             startupDelay  = '0'
             quietHours    = $null
-            versioning    = [PSCustomObject]@{ enabled = $true; syncPolicy = 'auto' }
+            versioning    = [PSCustomObject]@{ syncPolicy = 'auto' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
         ($errors | Where-Object { $_ -match 'logLevel' }) | Should -Not -BeNullOrEmpty
@@ -214,7 +200,7 @@ Describe 'Test-CronAgentsConfig' {
             retentionDays = 0
             startupDelay  = '0'
             quietHours    = $null
-            versioning    = [PSCustomObject]@{ enabled = $true; syncPolicy = 'yolo' }
+            versioning    = [PSCustomObject]@{ syncPolicy = 'yolo' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
         ($errors | Where-Object { $_ -match 'syncPolicy' }) | Should -Not -BeNullOrEmpty
@@ -227,7 +213,7 @@ Describe 'Test-CronAgentsConfig' {
             retentionDays = -5
             startupDelay  = '0'
             quietHours    = $null
-            versioning    = [PSCustomObject]@{ enabled = $true; syncPolicy = 'notify' }
+            versioning    = [PSCustomObject]@{ syncPolicy = 'notify' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
         ($errors | Where-Object { $_ -match 'retentionDays' }) | Should -Not -BeNullOrEmpty
@@ -240,7 +226,7 @@ Describe 'Test-CronAgentsConfig' {
             retentionDays = 0
             startupDelay  = '0'
             quietHours    = $null
-            versioning    = [PSCustomObject]@{ enabled = $true; syncPolicy = 'notify' }
+            versioning    = [PSCustomObject]@{ syncPolicy = 'notify' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
         ($errors | Where-Object { $_ -match 'maxRunHistory' }) | Should -Not -BeNullOrEmpty
@@ -253,7 +239,7 @@ Describe 'Test-CronAgentsConfig' {
             retentionDays = 0
             startupDelay  = '0'
             quietHours    = [PSCustomObject]@{ start = '25:00'; end = '06:00' }
-            versioning    = [PSCustomObject]@{ enabled = $true; syncPolicy = 'notify' }
+            versioning    = [PSCustomObject]@{ syncPolicy = 'notify' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
         ($errors | Where-Object { $_ -match 'quietHours.start' }) | Should -Not -BeNullOrEmpty
@@ -266,7 +252,7 @@ Describe 'Test-CronAgentsConfig' {
             retentionDays = 0
             startupDelay  = '0'
             quietHours    = [PSCustomObject]@{ start = '22:00' }
-            versioning    = [PSCustomObject]@{ enabled = $true; syncPolicy = 'notify' }
+            versioning    = [PSCustomObject]@{ syncPolicy = 'notify' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
         ($errors | Where-Object { $_ -match 'quietHours.*start and end' }) | Should -Not -BeNullOrEmpty

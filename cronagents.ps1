@@ -45,12 +45,6 @@ function Get-Config {
     return Import-CronAgentsConfig -ConfigPath $ConfigPath
 }
 
-function Test-VersioningEnabled {
-    [OutputType([bool])]
-    param([PSCustomObject]$Config = (Get-Config))
-    return Test-CronAgentsVersioningEnabled -Config $Config
-}
-
 function Get-Agents {
     [OutputType([PSCustomObject[]])]
     param()
@@ -97,9 +91,6 @@ function Get-SafeBranchHeader {
     param()
     try {
         $config = Get-Config
-        if (-not (Test-VersioningEnabled -Config $config)) {
-            return "CronAgents"
-        }
         $branchInfo = Get-CronAgentsBranch -RepoRoot $RepoRoot -BranchPrefix $config.versioning.branchPrefix
         $div = Get-BranchDivergence -RepoRoot $RepoRoot
         $header = "CronAgents (branch: $($branchInfo.CurrentBranch)"
@@ -168,15 +159,13 @@ function Invoke-StatusCommand {
     # Branch info
     try {
         $config = Get-Config
-        if (Test-VersioningEnabled -Config $config) {
-            $branchInfo = Get-CronAgentsBranch -RepoRoot $RepoRoot -BranchPrefix $config.versioning.branchPrefix
-            $div = Get-BranchDivergence -RepoRoot $RepoRoot
-            Write-Host "  Branch: $($branchInfo.CurrentBranch)" -ForegroundColor Cyan
-            if ($div.Behind -gt 0) {
-                Write-Host "  Behind master: $($div.Behind) commits" -ForegroundColor Yellow
-            }
-            Write-Host ""
+        $branchInfo = Get-CronAgentsBranch -RepoRoot $RepoRoot -BranchPrefix $config.versioning.branchPrefix
+        $div = Get-BranchDivergence -RepoRoot $RepoRoot
+        Write-Host "  Branch: $($branchInfo.CurrentBranch)" -ForegroundColor Cyan
+        if ($div.Behind -gt 0) {
+            Write-Host "  Behind master: $($div.Behind) commits" -ForegroundColor Yellow
         }
+        Write-Host ""
     }
     catch {
         # Git info is optional
@@ -465,13 +454,9 @@ function Invoke-SyncCommand {
     [CmdletBinding()]
     param()
 
+    Write-Host "Syncing from master..." -ForegroundColor Cyan
     try {
         $config = Get-Config
-        if (-not (Test-VersioningEnabled -Config $config)) {
-            Write-Host "Git-based versioning is disabled in cronagents.json." -ForegroundColor Yellow
-            return
-        }
-        Write-Host "Syncing from master..." -ForegroundColor Cyan
         $result = Invoke-BranchSync -RepoRoot $RepoRoot -CopilotPath $config.copilotPath
         if ($result.Success) {
             Write-Host $result.Message -ForegroundColor Green
@@ -493,10 +478,6 @@ function Invoke-BranchCommand {
 
     try {
         $config     = Get-Config
-        if (-not (Test-VersioningEnabled -Config $config)) {
-            Write-Host "Git-based versioning is disabled in cronagents.json." -ForegroundColor Yellow
-            return
-        }
         $branchInfo = Get-CronAgentsBranch -RepoRoot $RepoRoot -BranchPrefix $config.versioning.branchPrefix
         $divergence = Get-BranchDivergence -RepoRoot $RepoRoot
 

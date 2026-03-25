@@ -37,7 +37,6 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'lib/CronAgents.psd1') -Force
 
 $config = Import-CronAgentsConfig
-$versioningEnabled = Test-CronAgentsVersioningEnabled -Config $config
 
 if (-not $RepoRoot) {
     $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -154,21 +153,11 @@ if ($unexpected) {
 }
 
 # ── Bootstrap user branch ────────────────────────────────────────────
-if ($versioningEnabled) {
-    $branchPrefix = $config.versioning.branchPrefix
-    $userName = Resolve-CronAgentsUserName -ConfigUserName $config.versioning.userName -RepoRoot $RepoRoot
-    $branchResult = Initialize-UserBranch -RepoRoot $RepoRoot -BranchPrefix $branchPrefix -UserName $userName
+$branchPrefix = $config.versioning.branchPrefix
+$userName = Resolve-CronAgentsUserName -ConfigUserName $config.versioning.userName -RepoRoot $RepoRoot
+$branchResult = Initialize-UserBranch -RepoRoot $RepoRoot -BranchPrefix $branchPrefix -UserName $userName
 
-    Write-CronAgentsLog -Level 'info' -Message "Install: user branch '$($branchResult.BranchName)' — created=$($branchResult.Created)."
-}
-else {
-    $branchResult = [PSCustomObject]@{
-        BranchName = '(unchanged; versioning disabled)'
-        Created    = $false
-        Message    = 'Git versioning is disabled in cronagents.json.'
-    }
-    Write-CronAgentsLog -Level 'info' -Message 'Install: skipped user branch bootstrap because git versioning is disabled.'
-}
+Write-CronAgentsLog -Level 'info' -Message "Install: user branch '$($branchResult.BranchName)' — created=$($branchResult.Created)."
 
 # ── Summary ──────────────────────────────────────────────────────────
 Write-Host ''

@@ -62,7 +62,6 @@ function New-TestEnvironment {
         logLevel       = 'debug'
         quietHours     = $null
         versioning     = [ordered]@{
-            enabled             = $true
             syncPolicy          = 'manual'
             userName            = 'test-user'
             autoCommitFeedback  = $false

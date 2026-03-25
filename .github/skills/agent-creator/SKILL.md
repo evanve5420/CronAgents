@@ -20,19 +20,16 @@ Read these for current structure and options (fall back to [docs/PLAN.md](../../
 Scheduled agent registrations are tracked customizations and should live on the user's personal branch, not `master` / `main`.
 
 1. Read the current branch state before creating files.
-2. Load `cronagents.json` and check `versioning.enabled`.
-3. If versioning is enabled, determine the expected user branch from `versioning.branchPrefix` and `versioning.userName`.
-4. If versioning is enabled and the repo is on `master` or `main`, switch to the expected user branch **before** creating any tracked agent files.
-5. If versioning is disabled, do not create or switch branches automatically; tell the user tracked agent files will stay on the current branch unless they choose a different git workflow.
-6. Use the shared module helpers rather than ad-hoc git logic:
+2. Load `cronagents.json` and determine the expected user branch from `versioning.branchPrefix` and `versioning.userName`.
+3. If the repo is on `master` or `main`, switch to the expected user branch **before** creating any tracked agent files.
+4. Use the shared module helpers rather than ad-hoc git logic:
    - `Import-Module scheduler/lib/CronAgents.psd1 -Force`
    - `Import-CronAgentsConfig`
-   - `Test-CronAgentsVersioningEnabled`
    - `Get-CronAgentsBranch`
    - `Resolve-CronAgentsUserName`
    - `Initialize-UserBranch`
-7. If the working tree is dirty and branch initialization cannot proceed safely, stop and tell the user exactly what must be cleaned up first.
-8. Never scaffold tracked agent files on `master` / `main` unless the user explicitly overrides that rule.
+5. If the working tree is dirty and branch initialization cannot proceed safely, stop and tell the user exactly what must be cleaned up first.
+6. Never scaffold tracked agent files on `master` / `main` unless the user explicitly overrides that rule.
 
 ## Interview the User
 

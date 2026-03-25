@@ -70,11 +70,6 @@
     "versioning": {
       "type": "object",
       "properties": {
-        "enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable git-based branch management, sync, and feedback commits."
-        },
         "syncPolicy": {
           "type": "string",
           "enum": ["auto", "notify", "manual"],
