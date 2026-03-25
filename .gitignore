@@ -1,5 +1,6 @@
 # Runtime data (all branches — entire directory is gitignored)
 .cronstate/
+dashboard.md
 
 # Landscape assessment (developer context only, not for distribution)
 docs/LANDSCAPE.md

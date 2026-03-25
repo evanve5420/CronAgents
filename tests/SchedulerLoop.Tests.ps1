@@ -155,3 +155,41 @@ Describe 'Scheduler — Due Agent Collection' {
         $due | Should -Contain 'agent-three'
     }
 }
+
+Describe 'Scheduler startup entry script' {
+    BeforeEach {
+        $script:testEnv = New-TestEnvironment -Name 'SchedStartup'
+        $script:startScript = Join-Path $repoRoot 'scheduler' 'Start-CronAgents.ps1'
+        $script:stdoutPath = Join-Path $script:testEnv.Root 'scheduler-stdout.log'
+        $script:stderrPath = Join-Path $script:testEnv.Root 'scheduler-stderr.log'
+    }
+
+    AfterEach {
+        if ($script:schedulerProcess -and -not $script:schedulerProcess.HasExited) {
+            Stop-Process -Id $script:schedulerProcess.Id
+            $script:schedulerProcess.WaitForExit()
+        }
+        Remove-TestEnvironment -TestEnv $script:testEnv
+    }
+
+    It 'Stays running past startup with a valid config' {
+        $script:schedulerProcess = Start-Process pwsh -ArgumentList @(
+            '-NoProfile'
+            '-File', $script:startScript
+            '-RepoRoot', $script:testEnv.Root
+            '-ConfigPath', $script:testEnv.ConfigPath
+        ) -PassThru -WindowStyle Hidden `
+          -RedirectStandardOutput $script:stdoutPath `
+          -RedirectStandardError $script:stderrPath
+
+        Start-Sleep -Seconds 2
+
+        if ($script:schedulerProcess.HasExited) {
+            $stdout = if (Test-Path $script:stdoutPath) { Get-Content $script:stdoutPath -Raw } else { '' }
+            $stderr = if (Test-Path $script:stderrPath) { Get-Content $script:stderrPath -Raw } else { '' }
+            throw "Scheduler exited during startup. Stdout: $stdout`nStderr: $stderr"
+        }
+
+        $script:schedulerProcess.HasExited | Should -Be $false
+    }
+}
