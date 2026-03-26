@@ -2,74 +2,69 @@
 
 This guide walks you through installing CronAgents, creating your first scheduled agent, and verifying everything works.
 
-There are two good ways to start:
+> **Note:** CronAgents is Windows-first. The scheduler uses Windows Task Scheduler to run at logon.
 
-- **Path A:** You already have GitHub Copilot CLI installed and signed in. In that case, point Copilot at this guide and let it drive the setup for you.
-- **Path B:** You do not have GitHub Copilot CLI ready yet. Install it, sign in, and then come back to Path A or follow the manual steps below.
+## Quickstart via Copilot CLI
+
+If you already have GitHub Copilot CLI installed and authenticated, that's all you need. Open a terminal, start a Copilot session, and point it at this repo:
+
+```
+Read https://github.com/evanve5420/CronAgents and set up CronAgents for me.
+```
+
+Copilot will read the docs and drive the full setup — cloning, checking for Git and PowerShell, running the installer — asking you questions as needed.
+
+---
 
 ## Prerequisites
+
+If you prefer to set things up manually, you'll need the following. Run each check command in a terminal (PowerShell or Windows Terminal) to verify it's installed.
 
 | Requirement | Minimum | Check command |
 |-------------|---------|---------------|
 | Windows | 10 / Server 2016+ | — |
 | PowerShell | 7.0+ | `$PSVersionTable.PSVersion` |
-| GitHub Copilot CLI | Installed before first run | `copilot --version` |
+| GitHub Copilot CLI | Latest, authenticated | `copilot --version` |
 | Git | 2.x+ | `git --version` |
 
-> **Note:** CronAgents is Windows-first. The scheduler uses Windows Task Scheduler to run at logon.
+### Installing prerequisites
 
-## Choose your starting path
-
-### Path A — Copilot CLI is already installed and signed in
-
-Verify that Copilot CLI is ready:
+Open a terminal and run the following `winget` commands for anything you're missing:
 
 ```powershell
-copilot --version
-copilot auth status
+# PowerShell 7+
+winget install Microsoft.PowerShell
+
+# Git
+winget install Git.Git
+
+# GitHub Copilot CLI
+winget install GitHub.Copilot
 ```
 
-If both commands succeed, clone the repo and open Copilot CLI in the repository:
+After installing, close and reopen your terminal so the new tools are on your PATH.
+
+Then authenticate Copilot CLI:
 
 ```powershell
-git clone <repo-url> CronAgents
-cd CronAgents
+copilot login
+copilot --version   # verify it's working
 ```
 
-Then tell Copilot:
-
-```text
-Read guide/getting-started.md and set up CronAgents in this repository for me. Follow the existing install flow, verify prerequisites, run the installer, and tell me if you need any decisions from me.
-```
-
-That gives people who already trust Copilot CLI a fast path: Copilot can walk the guide, run the setup steps, and report back anything that still needs human input.
-
-If you prefer to do it yourself, skip down to [Manual installation](#manual-installation).
-
-### Path B — Copilot CLI is not installed yet, or you are not signed in
-
-If `copilot --version` fails, or `copilot auth status` shows that you are not authenticated yet:
-
-1. Install or update GitHub Copilot CLI using the current official instructions for your environment.
-2. Sign in:
-
-   ```powershell
-   copilot auth login
-   copilot auth status
-   ```
-
-3. Once `copilot --version` and `copilot auth status` both work, return to Path A or continue with the manual steps below.
-
-## Manual installation
+## Installation
 
 ### 1. Clone the repository
 
+In a terminal, run:
+
 ```powershell
-git clone <repo-url> CronAgents
+git clone https://github.com/evanve5420/CronAgents CronAgents
 cd CronAgents
 ```
 
 ### 2. Run the installer
+
+Still in the same terminal window:
 
 ```powershell
 .\cronagents.ps1 install
@@ -83,10 +78,10 @@ This does two things:
 You should see output like:
 
 ```
-✔ Scheduled task registered: \CronAgents\CronAgents
-  Trigger:   At logon
-  Scheduler: scheduler\Start-CronAgents.ps1
-  Branch:    agents/your-name
+  Task path  : \CronAgents\CronAgents
+  Trigger    : At logon (your-username)
+  Scheduler  : scheduler\Start-CronAgents.ps1
+  Branch     : personal-agents/your-name
 
 To start now:  Start-ScheduledTask -TaskName 'CronAgents' -TaskPath '\CronAgents\'
 ```
@@ -173,9 +168,9 @@ This invokes the agent immediately through Copilot CLI and captures output in a 
 You'll see a table like:
 
 ```
-Agent           Status    Schedule       Last Run              Next Run              Feedback
------           ------    --------       --------              --------              --------
-daily-review    enabled   daily 09:00    2024-01-15 09:02      2024-01-16 09:00      —
+  Agent                Status     Schedule               Last Run               Next Run               Feedback
+  ---------------------------------------------------------------------------------------------------------
+  daily-review         Enabled    daily 09:00            2024-01-15 09:02       2024-01-16 09:00       -
 ```
 
 ### Check the dashboard
