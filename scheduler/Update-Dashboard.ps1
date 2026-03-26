@@ -26,29 +26,21 @@ if (-not $OutputPath) { $OutputPath = Join-Path $RepoRoot 'dashboard.md' }
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
-function Get-RelativeTime {
+function Format-RunTime {
     [CmdletBinding()]
     [OutputType([string])]
     param([Parameter(Mandatory)][datetime]$Time)
 
-    $now  = [datetime]::UtcNow
-    $span = $now - $Time
+    $local   = $Time.ToLocalTime()
+    $now     = [datetime]::Now
+    $timeStr = $local.ToString('h:mm tt')   # e.g. "2:41 PM"
+    $dayDiff = ($now.Date - $local.Date).Days
 
-    if ($span.TotalSeconds -lt 60)  { return 'just now' }
-    if ($span.TotalMinutes -lt 60)  {
-        $m = [math]::Floor($span.TotalMinutes)
-        return "$m minute$(if ($m -ne 1) {'s'}) ago"
-    }
-    if ($span.TotalHours -lt 24) {
-        $h = [math]::Floor($span.TotalHours)
-        return "$h hour$(if ($h -ne 1) {'s'}) ago"
-    }
-    if ($span.TotalDays -lt 2)  { return 'yesterday' }
-    if ($span.TotalDays -lt 30) {
-        $d = [math]::Floor($span.TotalDays)
-        return "$d days ago"
-    }
-    return $Time.ToString('yyyy-MM-dd')
+    if ($dayDiff -eq 0)  { return "Today, $timeStr" }
+    if ($dayDiff -eq 1)  { return "Yesterday, $timeStr" }
+    if ($dayDiff -le 6)  { return "$($local.ToString('ddd')), $timeStr" }
+    if ($local.Year -eq $now.Year) { return "$($local.ToString('MMM d')), $timeStr" }
+    return "$($local.ToString('MMM d yyyy')), $timeStr"
 }
 
 function Get-StatusIcon {
@@ -226,7 +218,7 @@ $sb = [System.Text.StringBuilder]::new()
 foreach ($agentId in $agentLatest.Keys) {
     $run  = $agentLatest[$agentId]
     $name = if ($run.Meta -and $run.Meta.agentName) { $run.Meta.agentName } else { $agentId }
-    $rel  = Get-RelativeTime -Time $run.Timestamp
+    $rel  = Format-RunTime   -Time $run.Timestamp
     $icon = Get-StatusIcon   -Run  $run
     $fb   = Get-FeedbackCell -Run  $run -RepoRoot $RepoRoot
     $det  = Get-DetailCell   -Run  $run
@@ -253,7 +245,8 @@ if ($runs.Count -eq 0) {
 
 foreach ($run in $runs) {
     $name      = if ($run.Meta -and $run.Meta.agentName) { $run.Meta.agentName } else { $run.AgentId }
-    $ts        = $run.Timestamp.ToString('yyyy-MM-dd HH:mm:ss') + ' UTC'
+    $localTs   = $run.Timestamp.ToLocalTime()
+    $ts        = $localTs.ToString('MMM d, h:mm tt')
     $status    = Get-StatusLabel     -Run $run
     $duration  = Get-DurationString  -Run $run
     $prompt    = Get-TruncatedPrompt -Run $run
