@@ -18,24 +18,36 @@ A lightweight, agent scheduler for GitHub Copilot agents that runs recurring wor
 
 > For full details see [Getting Started](guide/getting-started.md).
 
-```powershell
-# Install (registers at-logon task, bootstraps user branch)
-.\cronagents.ps1 install
+Choose the path that matches your starting point:
 
-# Create your first agent (interactive skill)
-# /agent-creator "review PRs every morning"
+- **Copilot CLI already installed + signed in** — open Copilot CLI in this repo and say:
 
-# Or copy a template on your personal branch
-Copy-Item templates\agents\daily-review.agent.md.example .github\agents\daily-review.agent.md
-# Then create .cronagents\agents\daily-review.agent-registration.json
-# (see guide/writing-agents.md)
+  ```text
+  Read guide/getting-started.md and set up CronAgents in this repository for me.
+  ```
 
-# Test it
-.\cronagents.ps1 run daily-review
+- **Copilot CLI not ready yet** — follow [Getting Started](guide/getting-started.md) to install or authenticate Copilot CLI first, then come back to the prompt above.
 
-# Check results
-.\cronagents.ps1 status
-```
+- **Prefer the manual path** — run the setup commands yourself:
+
+  ```powershell
+  # Install (registers at-logon task, bootstraps user branch)
+  .\cronagents.ps1 install
+
+  # Create your first agent (interactive skill)
+  # /agent-creator "review PRs every morning"
+
+  # Or copy a template on your personal branch
+  Copy-Item templates\agents\daily-review.agent.md.example .github\agents\daily-review.agent.md
+  # Then create .cronagents\agents\daily-review.agent-registration.json
+  # (see guide/writing-agents.md)
+
+  # Test it
+  .\cronagents.ps1 run daily-review
+
+  # Check results
+  .\cronagents.ps1 status
+  ```
 
 ## How it works
 

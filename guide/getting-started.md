@@ -2,26 +2,65 @@
 
 This guide walks you through installing CronAgents, creating your first scheduled agent, and verifying everything works.
 
+There are two good ways to start:
+
+- **Path A:** You already have GitHub Copilot CLI installed and signed in. In that case, point Copilot at this guide and let it drive the setup for you.
+- **Path B:** You do not have GitHub Copilot CLI ready yet. Install it, sign in, and then come back to Path A or follow the manual steps below.
+
 ## Prerequisites
 
 | Requirement | Minimum | Check command |
 |-------------|---------|---------------|
 | Windows | 10 / Server 2016+ | — |
 | PowerShell | 7.0+ | `$PSVersionTable.PSVersion` |
-| GitHub Copilot CLI | Latest, authenticated | `copilot --version` |
+| GitHub Copilot CLI | Installed before first run | `copilot --version` |
 | Git | 2.x+ | `git --version` |
 
 > **Note:** CronAgents is Windows-first. The scheduler uses Windows Task Scheduler to run at logon.
 
-Make sure you are signed into Copilot CLI before proceeding:
+## Choose your starting path
+
+### Path A — Copilot CLI is already installed and signed in
+
+Verify that Copilot CLI is ready:
 
 ```powershell
+copilot --version
 copilot auth status
 ```
 
-If not authenticated, run `copilot auth login` first.
+If both commands succeed, clone the repo and open Copilot CLI in the repository:
 
-## Installation
+```powershell
+git clone <repo-url> CronAgents
+cd CronAgents
+```
+
+Then tell Copilot:
+
+```text
+Read guide/getting-started.md and set up CronAgents in this repository for me. Follow the existing install flow, verify prerequisites, run the installer, and tell me if you need any decisions from me.
+```
+
+That gives people who already trust Copilot CLI a fast path: Copilot can walk the guide, run the setup steps, and report back anything that still needs human input.
+
+If you prefer to do it yourself, skip down to [Manual installation](#manual-installation).
+
+### Path B — Copilot CLI is not installed yet, or you are not signed in
+
+If `copilot --version` fails, or `copilot auth status` shows that you are not authenticated yet:
+
+1. Install or update GitHub Copilot CLI using the current official instructions for your environment.
+2. Sign in:
+
+   ```powershell
+   copilot auth login
+   copilot auth status
+   ```
+
+3. Once `copilot --version` and `copilot auth status` both work, return to Path A or continue with the manual steps below.
+
+## Manual installation
 
 ### 1. Clone the repository
 
