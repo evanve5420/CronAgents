@@ -99,7 +99,7 @@ Describe 'CLI Wrapper — pause / resume' {
     }
 }
 
-Describe 'CLI Wrapper — doctor' {
+Describe 'CLI Wrapper — doctor' -Tag 'WindowsOnly' {
     BeforeEach {
         $testEnv = New-TestEnvironment -Name 'CliDoctor'
     }

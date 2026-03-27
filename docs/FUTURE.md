@@ -54,7 +54,7 @@ PowerShell Core runs on macOS/Linux, but initial target is Windows only. macOS w
 
 ### 11. PR Gate Enforcement
 
-The test suite is already structured for CI (`./tests/Invoke-Tests.ps1`). A future GitHub Actions workflow can run this as a required status check on PRs. Currently enforced via `copilot-instructions.md` only.
+A GitHub Actions workflow (`.github/workflows/tests.yml`) runs the cross-platform test suite on `ubuntu-latest` as a required status check on PRs to `master`. Tests tagged `WindowsOnly` (Health Check, CLI doctor) are excluded from this workflow since they depend on Windows Task Scheduler APIs. A future improvement would add a separate `windows-latest` job to cover those tests — acceptable cost once the project gains contributors, but not worth the 2× Actions billing multiplier today.
 
 ### 12. Agent Pipelines
 

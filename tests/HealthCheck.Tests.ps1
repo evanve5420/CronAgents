@@ -12,7 +12,7 @@ BeforeAll {
     $healthScript = Join-Path $repoRoot 'scheduler' 'Test-CronAgentsHealth.ps1'
 }
 
-Describe 'Health Check — Valid Config' {
+Describe 'Health Check — Valid Config' -Tag 'WindowsOnly' {
     BeforeEach {
         $testEnv = New-TestEnvironment -Name 'HealthValid'
         # Ensure state file exists and is valid
@@ -43,7 +43,7 @@ Describe 'Health Check — Valid Config' {
     }
 }
 
-Describe 'Health Check — Corrupted State' {
+Describe 'Health Check — Corrupted State' -Tag 'WindowsOnly' {
     BeforeEach {
         $testEnv = New-TestEnvironment -Name 'HealthCorrupt'
         $stateFile = Join-Path $testEnv.StatePath 'state.json'
@@ -62,7 +62,7 @@ Describe 'Health Check — Corrupted State' {
     }
 }
 
-Describe 'Health Check — Invalid Config' {
+Describe 'Health Check — Invalid Config' -Tag 'WindowsOnly' {
     BeforeEach {
         $testEnv = New-TestEnvironment -Name 'HealthBadCfg'
         # Overwrite cronagents.json with invalid content
@@ -87,7 +87,7 @@ Describe 'Health Check — Invalid Config' {
     }
 }
 
-Describe 'Health Check — Task Path' {
+Describe 'Health Check — Task Path' -Tag 'WindowsOnly' {
     BeforeEach {
         $testEnv = New-TestEnvironment -Name 'HealthTaskPath'
     }

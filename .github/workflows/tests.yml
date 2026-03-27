@@ -1,0 +1,15 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests
+        shell: pwsh
+        run: ./tests/Invoke-Tests.ps1 -ExcludeTag 'E2E','WindowsOnly'
