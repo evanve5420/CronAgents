@@ -10,7 +10,7 @@
         'StateManager.ps1',
         'ScheduleParser.ps1',
         'RunManager.ps1',
-        'GitHelpers.ps1',
+        'PersonalRepo.ps1',
         'PowerHelpers.ps1',
         'RetentionCleanup.ps1'
     )
@@ -39,13 +39,15 @@
         'Write-RunMetadata',
         'Get-RunHistory',
         'Test-FeedbackPresent',
-        # GitHelpers
-        'Get-CronAgentsBranch',
-        'Get-BranchDivergence',
-        'Invoke-BranchSync',
-        'New-FeedbackCommit',
-        'Initialize-UserBranch',
+        # PersonalRepo
+        'ConvertTo-Slug',
+        'Resolve-GitHubHandle',
         'Resolve-CronAgentsUserName',
+        'New-FeedbackCommit',
+        'Get-PersonalRepoPath',
+        'Test-PersonalRepoValid',
+        'Initialize-PersonalRepo',
+        'Import-PersonalRepoConfig',
         # PowerHelpers
         'Test-OnBatteryPower',
         # RetentionCleanup
