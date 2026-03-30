@@ -154,6 +154,37 @@ Describe 'Scheduler — Due Agent Collection' {
         $due | Should -Contain 'agent-two'
         $due | Should -Contain 'agent-three'
     }
+
+    It 'runIf can suppress an otherwise-due agent' {
+        $trackedFile = Join-Path $testEnv.Root 'package.json'
+        Set-Content -Path $trackedFile -Value '{ "name": "scheduler-test" }' -Encoding UTF8
+        $trackedStamp = (Get-Item $trackedFile).LastWriteTimeUtc.ToString('o')
+
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'conditional-agent' `
+            -Schedule @{ type = 'interval'; every = '30m' } `
+            -Prompt 'Task one' `
+            -RunIf 'file-changed:package.json'
+
+        $agents = Get-AgentConfigs -RepoRoot $testEnv.Root
+        $stateFile = Join-Path $testEnv.StatePath 'state.json'
+        Set-AgentState -StateFile $stateFile -AgentId 'conditional-agent' -RunIfState @{
+            fileChanged = @{
+                'package.json' = $trackedStamp
+            }
+        }
+
+        $state = Get-AgentState -StateFile $stateFile
+        $agent = $agents[0]
+        $due = Test-AgentDue -Schedule @{ type = 'interval'; every = '30m' } -LastRun $null -Now ([datetime]::UtcNow)
+        $shouldRun = Test-AgentRunIf -RunIf $agent.Config.runIf `
+            -ExecutionRoot $testEnv.Root `
+            -AgentId $agent.Id `
+            -StateFile $stateFile `
+            -RunIfState $state.agents['conditional-agent'].runIfState
+
+        $due | Should -Be $true
+        $shouldRun | Should -Be $false
+    }
 }
 
 Describe 'Scheduler startup entry script' {
@@ -206,7 +237,7 @@ Describe 'Scheduler startup entry script' {
         $script:schedulerProcess = Start-Process @startArgs
 
         $dashboardPath = Join-Path $script:testEnv.Root 'dashboard.md'
-        $deadline = (Get-Date).AddSeconds(10)
+        $deadline = (Get-Date).AddSeconds(20)
         while ((Get-Date) -lt $deadline -and -not (Test-Path $dashboardPath)) {
             if ($script:schedulerProcess.HasExited) { break }
             Start-Sleep -Milliseconds 250

@@ -287,6 +287,16 @@ function Import-SingleAgentConfig {
         }
     }
 
+    $runIfDefinition = $null
+    if ($parsed.PSObject.Properties['runIf'] -and $null -ne $parsed.runIf) {
+        try {
+            $runIfDefinition = ConvertTo-AgentRunIfDefinition -RunIf $parsed.runIf
+        }
+        catch {
+            $valErrors.Add($_.Exception.Message)
+        }
+    }
+
     if ($valErrors.Count -gt 0) {
         $detail = $valErrors -join '; '
         Write-CronAgentsLog -Level 'warn' -Message "Agent config '$FilePath' skipped — validation errors: $detail"
@@ -319,6 +329,7 @@ function Import-SingleAgentConfig {
         envVars       = $envVarsObj
         workingDirectory = if ($parsed.PSObject.Properties['workingDirectory'])
                            { $parsed.workingDirectory } else { $null }
+        runIf         = $runIfDefinition
     }
 
     # Copy agent reference if present
