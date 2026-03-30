@@ -1,7 +1,7 @@
-# Agent Versioning — Git Branch Model for sser Agent Customizations
+# Agent Versioning — Personal Repo Model for User Agent Customizations
 
 **Status:** Day 0 requirement
-**Scope:** How user-created agent/skill/instruction files are version-controlled, backed up, and kept in sync with scaffold updates.
+**Scope:** How user-created agent/skill/instruction files are version-controlled, backed up, and evolved through feedback.
 
 ---
 
@@ -12,145 +12,102 @@ The feedback evaluator edits agent, skill, and instruction files based on human 
 1. **Revert a bad edit** — the evaluator oversimplifies a prompt or removes a nuanced instruction
 2. **Recover from poisoned feedback** — malicious or careless feedback causes the evaluator to corrupt an agent definition
 3. **Trace drift** — many small edits accumulate until an agent behaves nothing like the original, with no history of how it got there
-4. **spdate the scaffold** — master gets improvements, but users on personal branches can't easily adopt them
 
-CronAgents is intended for sharing with coworkers and potentially open-sourcing. Personal agents must not land on `master`.
+CronAgents is intended for sharing with coworkers and potentially open-sourcing. Personal agents must not land in the shared infra repo.
 
 ---
 
-## Design: Per-sser Long-Running Branches
+## Design: Separate Personal Repository
 
-### Branch model
+### The model
 
 ```
-master                    ← scaffold code, templates, scaffold agents. Shared/public-safe.
-├── personal-agents/evanve5420      ← Evan's customizations layered on top of master
-├── personal-agents/alice          ← Alice's customizations layered on top of master
-└── personal-agents/bob            ← Bob's customizations layered on top of master
+Infra repo (shared)                 ← Scheduler code, templates, schemas, docs
+  └── master / feature branches
+
+~/.cronagents/ (personal repo)      ← User's agents, registrations, runtime data
+  ├── .github/agents/               ← Agent profiles (.agent.md)
+  ├── .github/skills/               ← Agent skills (SKILL.md)
+  ├── .cronagents/agents/           ← Agent registrations (.agent-registration.json)
+  ├── .cronstate/                   ← Runtime data (gitignored)
+  └── cronagents.json               ← Personal config overrides
 ```
 
-- `master` contains all scaffold runtime code (`scheduler/`, `cronagents.ps1`, configs, templates, tests, docs) plus scaffold-internal agents (`scheduler/agents/`). No user-specific agent definitions.
-- `personal-agents/<username>` branches are **supersets** of master: they contain everything on master plus the user's personal agent/skill/instruction files under `.cronagents/agents/` and related directories.
-- sser branches diverge from master **only** in the customization directories. Scaffold code is never edited on user branches (unless intentionally, which creates a legitimate merge conflict).
+- The **infra repo** contains all shared runtime code (`scheduler/`, `cronagents.ps1`, configs, templates, tests, docs) plus scaffold-internal agents (`scheduler/agents/`). No user-specific agent definitions.
+- The **personal repo** (`~/.cronagents/`) is a standalone git repository containing the user's agent profiles, registrations, skills, and runtime state. It is completely independent of the infra repo.
+- No branches, no sync, no merge conflicts between shared code and personal agents.
 
 ### What lives where
 
-| Content | Branch | Tracked? |
-|---------|--------|----------|
-| Scaffold runtime (`scheduler/`, `cronagents.ps1`, etc.) | `master` | Yes |
-| Global config (`cronagents.json`) | `master` | Yes |
-| Scaffold agents (feedback-evaluator, run-summarizer) | `master` (in `scheduler/agents/`) | Yes |
-| Templates/examples | `master` (in `templates/`) | Yes |
-| Tests, docs, config schemas | `master` | Yes |
-| sser workload agents + schedule configs (`.cronagents/agents/`) | `personal-agents/<user>` | Yes (on user branch) |
-| sser skill/instruction overrides | `personal-agents/<user>` | Yes (on user branch) |
-| Runtime data (`.cronstate/` — runs, state, logs) | Neither | Gitignored on all branches |
+| Content | Location | Tracked? |
+|---------|----------|----------|
+| Scaffold runtime (`scheduler/`, `cronagents.ps1`, etc.) | Infra repo | Yes |
+| Global config (`cronagents.json`) | Infra repo (base) + personal repo (overrides) | Yes |
+| Scaffold agents (feedback-evaluator, run-summarizer) | Infra repo (`scheduler/agents/`) | Yes |
+| Templates/examples | Infra repo (`templates/`) | Yes |
+| Tests, docs, config schemas | Infra repo | Yes |
+| User workload agents (`.github/agents/`, `.cronagents/agents/`) | Personal repo | Yes |
+| User skills (`.github/skills/`) | Personal repo | Yes |
+| Runtime data (`.cronstate/` — runs, state, logs) | Personal repo | Gitignored |
 
-### Why supersets, not separate trees
+### Why a separate repo
 
-sser branches are supersets of master (scaffold + customizations), not disconnected branches with only agent files. This means:
-
-- `git merge master` brings scaffold updates into the user branch cleanly because the scaffold files are shared lineage
-- The sync script itself lives in `scheduler/` on master and is always current — **no self-update paradox** where a stale sync script can't update itself
-- ssers can run the full project from their branch — everything is present
+- **Zero merge conflicts** — personal agents and shared infrastructure never touch the same git history
+- **No branch management** — users don't need to understand branches, sync, or merge
+- **Clean separation** — the infra repo stays generic and shareable; personal agents are private
+- **Simple multi-machine** — copy or push the personal repo independently
+- **Config layering** — team defaults from the infra repo, personal overrides in the personal repo
 
 ---
 
 ## Auto-Bootstrap
 
-On first run (or `cronagents.ps1 install`), the scheduler detects branch state and bootstraps automatically:
+On first run (or `cronagents.ps1 install`), the installer initializes the personal repo:
 
 ```
-Start-CronAgents.ps1 / cronagents.ps1 install
-  → Does personal-agents/<user> branch exist?
-    → No:  git checkout -b personal-agents/<user> from master
-    → Yes: git checkout personal-agents/<user>
+cronagents.ps1 install
+  → Does personal repo exist at configured path?
+    → No:  Initialize-PersonalRepo (create dir, git init, scaffold structure)
+    → Yes: Validate structure (Test-PersonalRepoValid)
+  → Register Task Scheduler entry
   → Continue with normal startup
 ```
 
-**ssername resolution** (in priority order):
-1. `userName` field in `cronagents.json` (explicit config)
-2. `git config user.name` (slugified: lowercased, spaces → hyphens, non-alphanumeric stripped)
-3. `$env:sSERNAME` (fallback)
+**Username resolution** (in priority order):
+1. `personalRepo.userName` field in `cronagents.json` (explicit config)
+2. `git config github.user`
+3. `gh auth status` active account
+4. `git config user.name` (slugified: lowercased, spaces → hyphens, non-alphanumeric stripped)
+5. `$env:USERNAME` (fallback)
 
-The bootstrap is **non-destructive**: it never force-pushes, never deletes branches, never resets. If the working tree has uncommitted changes, it warns and aborts rather than risking data loss.
+The bootstrap is **non-destructive**: it never deletes or overwrites existing files. If the personal repo already exists and is valid, it's left as-is.
 
 ---
 
 ## Feedback-Commit Hook
 
-After the feedback evaluator edits files and writes `feedback-result.md`, the **scheduler** (not the evaluator) performs:
+After the feedback evaluator edits files and writes `feedback-result.md`, the **scheduler** commits the changes in the personal repo with a structured message:
 
 ```powershell
-git add .cronagents/agents/ <any other edited paths from changelog>
-git commit -m "feedback: <agent-name> — <one-line summary>"
+git -C ~/.cronagents add .github/agents/ .cronagents/agents/ <any other edited paths>
+git -C ~/.cronagents commit -m "feedback: <agent-name> — <one-line summary>"
 ```
 
 The evaluator doesn't need git awareness. It edits files as it does today. The scheduler reads the changelog from `feedback-result.md` to determine which files changed and constructs the commit.
 
 **Failure handling:**
-- If `git add` or `git commit` fails (e.g., permissions, lock file, disk full), the scheduler logs the failure and surfaces it in the dashboard and TsI.
-- The files are still edited on disk — only the commit failed. The user can manually commit or the next feedback cycle will pick up the uncommitted changes.
-- Pre-edit snapshots (option A, see below) are written **before** the edit attempt, so they exist regardless of git state.
+- If `git add` or `git commit` fails, the scheduler logs the failure and surfaces it in the dashboard.
+- The files are still edited on disk — only the commit failed. The user can manually commit.
+- Pre-edit snapshots are written **before** the edit attempt, so they exist regardless of git state.
 
 ---
 
-## Sync: Merging Scaffold spdates from Master
+## Pre-Edit Snapshots
 
-A **sync** operation merges `master → personal-agents/<user>` to bring scaffold improvements into the user's branch.
-
-### Sync policies
-
-Configured via `syncPolicy` in `cronagents.json`:
-
-| Policy | Behavior | Default? |
-|--------|----------|----------|
-| `auto` | Merge master → user branch automatically between scheduler ticks. On conflict, pause sync and flag in dashboard/TsI. | No |
-| `notify` | Check for divergence on each scheduler startup, report in dashboard/TsI (`N commits behind master`). sser triggers merge manually. | **Yes** |
-| `manual` | No automatic checking. sser runs `cronagents.ps1 sync` explicitly. | No |
-
-### Sync execution
-
-The sync is a **deterministic script** (no LLM), not an agent:
-
-```powershell
-# Happy path — fast, free, no tokens
-git fetch origin master
-git merge origin/master --no-edit
-```
-
-If the merge succeeds cleanly (expected for most updates since users don't edit scaffold files), it commits automatically and continues.
-
-### Conflict resolution
-
-If `git merge` fails with conflicts:
-
-1. The sync script records the conflict state (which files, conflict markers)
-2. It invokes Copilot CLI with a focused prompt:
-   ```
-   copilot -p "Resolve these git merge conflicts. The scaffold (master) changes are...
-   The user's customizations are... Preserve the user's intent while adopting
-   the scaffold improvement." --share=<run-dir>/session.md
-   ```
-3. If the agent resolves all conflicts, the script stages and commits
-4. If conflicts remain, the script aborts the merge (`git merge --abort`), logs the failure, and notifies the user via dashboard/TsI to resolve manually
-
-**Script for the happy path, agent for conflicts.** Clean merges are free. Only conflicts burn tokens.
-
-### Sync timing
-
-- `auto` policy: Sync runs **between scheduler ticks**, before the feedback sweep. This ensures scaffold code is current before any agents run.
-- The scheduler does **not** sync while an agent is mid-execution.
-- VS Code file watchers will pick up changes automatically. The dashboard notes when a sync occurred.
-
----
-
-## Pre-Edit Snapshots (Option A)
-
-Regardless of git branching, the feedback evaluator **always** creates pre-edit snapshots:
+The feedback evaluator **always** creates pre-edit snapshots in the run directory:
 
 ```
-.cronstate/runs/<timestamp>_<agent-id>_<nonce>/
+~/.cronagents/.cronstate/runs/<timestamp>_<agent-id>_<nonce>/
 ├── backup/
 │   ├── daily-review.agent.md    ← copy of file before evaluator edited it
 │   └── review-skill/SKILL.md   ← copy of file before evaluator edited it
@@ -162,91 +119,62 @@ Regardless of git branching, the feedback evaluator **always** creates pre-edit 
 └── ...
 ```
 
-The `backup/` subdirectory mirrors the relative paths of edited files.
-
 **Why keep both snapshots and git history?**
-- Snapshots serve a different timescale: immediate "undo this specific feedback edit" without knowing git
+- Snapshots serve immediate "undo this specific feedback edit" without knowing git
 - Snapshots survive even if git operations fail
-- Snapshots are paired with the feedback that caused the change (readable in context)
+- Snapshots are paired with the feedback that caused the change
 - Git history serves the long-term view: "what happened to this agent over months"
 - Snapshots are subject to `retentionDays` cleanup; git history is permanent
 
 ---
 
-## CLI Integration
-
-### New subcommands
-
-| Command | Behavior |
-|---------|----------|
-| `cronagents.ps1 sync` | Manually trigger merge from master. Reports clean merge or conflict status. |
-| `cronagents.ps1 branch` | Show current branch, commits ahead/behind master, last sync date. |
-
-### spdated subcommands
-
-| Command | Change |
-|---------|--------|
-| `status` | Shows current branch, commits behind master (if `notify` or `auto` policy) |
-| `doctor` | Verifies user is on expected `personal-agents/<user>` branch. Warns if on master with customizations. Warns if branch is significantly behind master. |
-
-### TsI integration
-
-The interactive menu gains sync awareness:
-
-```
-CronAgents (branch: personal-agents/<user>, 3 behind master)
-──────────────────────────
- 1) Status & upcoming runs
- 2) Trigger ad-hoc run
- 3) Pause / Resume
- 4) View run history
- 5) Submit feedback
- 6) Health check (doctor)
- 7) Sync from master
- 8) Branch info
- 9) Exit
-──────────────────────────
-Select [1-9]:
-```
-
----
-
 ## Configuration
 
-New fields in `cronagents.json`:
+Fields in `cronagents.json`:
 
 ```jsonc
 {
   // Existing fields...
 
-  "versioning": {
-    "syncPolicy": "notify",        // "auto" | "notify" | "manual"
-    "userName": null,               // Override for branch name. null = auto-detect.
-    "autoCommitFeedback": true,     // Commit after feedback evaluator edits. Default true.
-    "branchPrefix": "personal-agents"       // Branch naming: <prefix>/<userName>. Default "personal-agents".
+  "personalRepo": {
+    "path": null,                      // Path to personal repo. null = ~/.cronagents/
+    "userName": null,                  // Override for display/identification. null = auto-detect.
+    "autoCommitFeedback": true,        // Commit after feedback evaluator edits. Default true.
+    "defaultWorkingDirectory": null    // Default CWD for agent runs. null = personal repo root.
   }
 }
 ```
 
-All fields are optional with sensible defaults. A user who never touches this section gets `notify` sync policy, auto-detected username, auto-committed feedback edits, and the `personal-agents/` prefix.
+All fields are optional with sensible defaults. A user who never touches this section gets a personal repo at `~/.cronagents/`, auto-detected username, auto-committed feedback edits, and agents running from the personal repo root with `--allow-all`.
+
+---
+
+## Scheduler Execution
+
+The scheduler runs Copilot CLI with CWD set to the personal repo by default:
+
+- Agent profiles are discovered from `~/.cronagents/.github/agents/`
+- Registrations are read from `~/.cronagents/.cronagents/agents/`
+- `--allow-all` is passed by default (CWD = personal repo)
+- Per-agent `workingDirectory` config can restrict to specific project directories
 
 ---
 
 ## Testing
 
-See [TESTING.md](TESTING.md) — `AgentVersioning.Tests.ps1`, `SyncWorkflow.Tests.ps1`, `BackupRestore.Tests.ps1`.
+See [TESTING.md](TESTING.md) — `AgentVersioning.Tests.ps1`, `BackupRestore.Tests.ps1`.
 
 ---
 
-## Open Questions
+## Migration
 
-1. **Push policy**: Should the scheduler push user branches to the remote? This enables backup and multi-machine sync but raises the "personal agents visible on remote" concern. Options: never push (local only), push to a separate private remote, or push to origin but rely on branch protection to keep master clean. Day 0 recommendation: **local only** — pushing is opt-in future work.
+Users on the old branch model (`personal-agents/<username>`) can migrate with:
 
-2. **Multiple machines**: If the same user runs CronAgents on two machines, their `personal-agents/<user>` branches diverge locally. Without pushing/pulling, they're independent. This is acceptable for day 0 but worth noting.
+```powershell
+.\cronagents.ps1 migrate
+```
 
-3. **Agent file locations outside the repo**: User agents in `~/.copilot/agents/` (user-global Copilot directory) are outside the git repo entirely. The branching model can't version those. Pre-edit snapshots (option A) are the only safety net for user-global agents.
-
-4. **Branch cleanup**: If a user is removed from the team, their `personal-agents/<user>` branch lingers. Not a day-0 concern but worth a `cronagents.ps1 prune-branches` command eventually.
+This copies agent profiles and registrations from the infra repo's `.github/agents/` and `.cronagents/agents/` into the personal repo.
 
 
 

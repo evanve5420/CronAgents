@@ -73,7 +73,7 @@ Still in the same terminal window:
 This does two things:
 
 1. **Registers a Windows Task Scheduler entry** that starts the scheduler automatically at logon. The task runs `Start-CronAgents.ps1` in a hidden PowerShell window — no terminal pops up.
-2. **Bootstraps your user branch** (`personal-agents/<your-handle>`) so your agent customizations are tracked separately from the scaffold code on `master`.
+2. **Initializes your personal repo** at `~/.cronagents/` — a standalone git repository where your agent definitions, registrations, and runtime data live. No branches to manage.
 
 You should see output like:
 
@@ -81,7 +81,7 @@ You should see output like:
   Task path  : \CronAgents\CronAgents
   Trigger    : At logon (your-username)
   Scheduler  : scheduler\Start-CronAgents.ps1
-  Branch     : personal-agents/your-name
+  Personal   : ~/.cronagents/
 
 To start now:  Start-ScheduledTask -TaskName 'CronAgents' -TaskPath '\CronAgents\'
 ```
@@ -110,9 +110,9 @@ It will walk you through an interview to set up your agent's name, schedule, pro
 
 ### Manual setup
 
-Create one registration file in `.cronagents/agents/` and one custom agent profile in `.github/agents/`:
+Create one agent profile in the personal repo's `.github/agents/` and one registration in `.cronagents/agents/`:
 
-**`.github/agents/daily-review.agent.md`** — the agent definition:
+**`~/.cronagents/.github/agents/daily-review.agent.md`** — the agent definition:
 
 ```markdown
 ---
@@ -132,7 +132,7 @@ in this repository and produce a summary.
 3. Summarize findings in a clear, actionable format.
 ```
 
-**`.cronagents/agents/daily-review.agent-registration.json`** — the agent registration:
+**`~/.cronagents/.cronagents/agents/daily-review.agent-registration.json`** — the agent registration:
 
 ```json
 {
@@ -175,7 +175,7 @@ You'll see a table like:
 
 ### Check the dashboard
 
-After the scheduler runs, it generates `dashboard.md` in the repo root with a live summary of all agents, recent runs, and pending feedback.
+After the scheduler runs, it generates `dashboard.md` in the personal repo with a live summary of all agents, recent runs, and pending feedback.
 
 ### Run the health check
 
@@ -183,16 +183,16 @@ After the scheduler runs, it generates `dashboard.md` in the repo root with a li
 .\cronagents.ps1 doctor
 ```
 
-This verifies that the Task Scheduler entry is registered, configs are valid, Copilot CLI is reachable, and the git branch state is healthy.
+This verifies that the Task Scheduler entry is registered, configs are valid, Copilot CLI is reachable, and the personal repo is healthy.
 
 ## What happens at next logon
 
 When you log in to Windows, Task Scheduler automatically starts the CronAgents scheduler in the background. The scheduler:
 
 1. Waits for the configured startup delay (default: 5 minutes) to avoid thrashing at boot.
-2. Discovers all agents in `.cronagents/agents/`.
+2. Discovers all agents in the personal repo (`~/.cronagents/.cronagents/agents/`).
 3. Checks each agent's schedule against its last run time.
-4. Runs any agents that are due.
+4. Runs any agents that are due, with CWD set to the personal repo (or the agent's configured `workingDirectory`).
 5. Updates the dashboard.
 6. Repeats on a ~60-second tick cycle.
 

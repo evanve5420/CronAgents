@@ -27,11 +27,11 @@ Describe 'Import-CronAgentsConfig' {
     "startupDelay": "10m",
     "logLevel": "debug",
     "quietHours": { "start": "22:00", "end": "06:00" },
-    "versioning": {
-        "syncPolicy": "auto",
+    "personalRepo": {
+        "path": "~/.cronagents",
         "userName": "testuser",
         "autoCommitFeedback": false,
-        "branchPrefix": "custom"
+        "defaultWorkingDirectory": null
     }
 }
 '@
@@ -47,10 +47,11 @@ Describe 'Import-CronAgentsConfig' {
         $cfg.logLevel      | Should -Be 'debug'
         $cfg.quietHours.start | Should -Be '22:00'
         $cfg.quietHours.end   | Should -Be '06:00'
-        $cfg.versioning.syncPolicy         | Should -Be 'auto'
-        $cfg.versioning.userName           | Should -Be 'testuser'
-        $cfg.versioning.autoCommitFeedback | Should -Be $false
-        $cfg.versioning.branchPrefix       | Should -Be 'custom'
+        $cfg.versioning                          | Should -BeNullOrEmpty
+        $cfg.personalRepo.path                   | Should -Be '~/.cronagents'
+        $cfg.personalRepo.userName               | Should -Be 'testuser'
+        $cfg.personalRepo.autoCommitFeedback     | Should -Be $false
+        $cfg.personalRepo.defaultWorkingDirectory | Should -BeNullOrEmpty
     }
 
     It 'Applies all defaults for an empty config' {
@@ -65,21 +66,23 @@ Describe 'Import-CronAgentsConfig' {
         $cfg.startupDelay  | Should -Be '5m'
         $cfg.logLevel      | Should -Be 'info'
         $cfg.quietHours    | Should -BeNullOrEmpty
-        $cfg.versioning.syncPolicy         | Should -Be 'notify'
-        $cfg.versioning.userName           | Should -BeNullOrEmpty
-        $cfg.versioning.autoCommitFeedback | Should -Be $true
-        $cfg.versioning.branchPrefix       | Should -Be 'personal-agents'
+        $cfg.versioning                          | Should -BeNullOrEmpty
+        $cfg.personalRepo.path                   | Should -Be '~/.cronagents'
+        $cfg.personalRepo.userName               | Should -BeNullOrEmpty
+        $cfg.personalRepo.autoCommitFeedback     | Should -Be $true
+        $cfg.personalRepo.defaultWorkingDirectory | Should -BeNullOrEmpty
     }
 
-    It 'Applies versioning defaults when versioning block is partial' {
-        $json = '{ "versioning": { "syncPolicy": "manual" } }'
-        $path = Join-Path $fixtureDir 'partial-ver.json'
+    It 'Applies personalRepo defaults when personalRepo block is partial' {
+        $json = '{ "personalRepo": { "userName": "alice" } }'
+        $path = Join-Path $fixtureDir 'partial-pr.json'
         Set-Content -Path $path -Value $json -Encoding UTF8
 
         $cfg = Import-CronAgentsConfig -ConfigPath $path
-        $cfg.versioning.syncPolicy         | Should -Be 'manual'
-        $cfg.versioning.autoCommitFeedback | Should -Be $true
-        $cfg.versioning.branchPrefix       | Should -Be 'personal-agents'
+        $cfg.personalRepo.userName               | Should -Be 'alice'
+        $cfg.personalRepo.path                   | Should -Be '~/.cronagents'
+        $cfg.personalRepo.autoCommitFeedback     | Should -Be $true
+        $cfg.personalRepo.defaultWorkingDirectory | Should -BeNullOrEmpty
     }
 
     It 'Throws on malformed JSON' {
@@ -106,11 +109,11 @@ Describe 'Import-CronAgentsConfig' {
         { Import-CronAgentsConfig -ConfigPath $path } | Should -Throw '*retentionDays*'
     }
 
-    It 'Throws on invalid syncPolicy' {
-        $json = '{ "versioning": { "syncPolicy": "yolo" } }'
-        $path = Join-Path $fixtureDir 'bad-sync.json'
+    It 'Throws on empty personalRepo.path' {
+        $json = '{ "personalRepo": { "path": "" } }'
+        $path = Join-Path $fixtureDir 'bad-pr-path.json'
         Set-Content -Path $path -Value $json -Encoding UTF8
-        { Import-CronAgentsConfig -ConfigPath $path } | Should -Throw '*syncPolicy*'
+        { Import-CronAgentsConfig -ConfigPath $path } | Should -Throw '*personalRepo.path*'
     }
 
     It 'Throws on invalid startupDelay' {
@@ -146,13 +149,13 @@ Describe 'Import-CronAgentsConfig' {
         }
     }
 
-    It 'Accepts each valid syncPolicy value' {
-        foreach ($policy in @('auto', 'notify', 'manual')) {
-            $json = "{ `"versioning`": { `"syncPolicy`": `"$policy`" } }"
-            $path = Join-Path $fixtureDir "sync-$policy.json"
+    It 'Accepts various personalRepo.path formats' {
+        foreach ($prPath in @('~/.cronagents', 'C:\my\agents', './local')) {
+            $json = "{ `"personalRepo`": { `"path`": `"$($prPath -replace '\\','\\')`" } }"
+            $path = Join-Path $fixtureDir "pr-path-$($prPath -replace '[\\/:~.]','_').json"
             Set-Content -Path $path -Value $json -Encoding UTF8
             $cfg = Import-CronAgentsConfig -ConfigPath $path
-            $cfg.versioning.syncPolicy | Should -Be $policy
+            $cfg.personalRepo.path | Should -Be $prPath
         }
     }
 }
@@ -169,11 +172,12 @@ Describe 'Test-CronAgentsConfig' {
             startupDelay  = '5m'
             logLevel      = 'info'
             quietHours    = $null
-            versioning    = [PSCustomObject]@{
-                syncPolicy         = 'notify'
-                userName           = $null
-                autoCommitFeedback = $true
-                branchPrefix       = 'personal-agents'
+            versioning    = $null
+            personalRepo  = [PSCustomObject]@{
+                path                    = '~/.cronagents'
+                userName                = $null
+                autoCommitFeedback      = $true
+                defaultWorkingDirectory = $null
             }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
@@ -187,23 +191,24 @@ Describe 'Test-CronAgentsConfig' {
             retentionDays = 0
             startupDelay  = '0'
             quietHours    = $null
-            versioning    = [PSCustomObject]@{ syncPolicy = 'auto' }
-        }
+            versioning    = $null
+            personalRepo  = [PSCustomObject]@{ path = '~/.cronagents' }        }
         $errors = Test-CronAgentsConfig -Config $cfg
         ($errors | Where-Object { $_ -match 'logLevel' }) | Should -Not -BeNullOrEmpty
     }
 
-    It 'Reports invalid syncPolicy' {
+    It 'Reports empty personalRepo.path' {
         $cfg = [PSCustomObject]@{
             logLevel      = 'info'
             maxRunHistory = 0
             retentionDays = 0
             startupDelay  = '0'
             quietHours    = $null
-            versioning    = [PSCustomObject]@{ syncPolicy = 'yolo' }
+            versioning    = $null
+            personalRepo  = [PSCustomObject]@{ path = '' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
-        ($errors | Where-Object { $_ -match 'syncPolicy' }) | Should -Not -BeNullOrEmpty
+        ($errors | Where-Object { $_ -match 'personalRepo\.path' }) | Should -Not -BeNullOrEmpty
     }
 
     It 'Reports negative retentionDays' {
@@ -213,7 +218,8 @@ Describe 'Test-CronAgentsConfig' {
             retentionDays = -5
             startupDelay  = '0'
             quietHours    = $null
-            versioning    = [PSCustomObject]@{ syncPolicy = 'notify' }
+            versioning    = $null
+            personalRepo  = [PSCustomObject]@{ path = '~/.cronagents' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
         ($errors | Where-Object { $_ -match 'retentionDays' }) | Should -Not -BeNullOrEmpty
@@ -226,7 +232,8 @@ Describe 'Test-CronAgentsConfig' {
             retentionDays = 0
             startupDelay  = '0'
             quietHours    = $null
-            versioning    = [PSCustomObject]@{ syncPolicy = 'notify' }
+            versioning    = $null
+            personalRepo  = [PSCustomObject]@{ path = '~/.cronagents' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
         ($errors | Where-Object { $_ -match 'maxRunHistory' }) | Should -Not -BeNullOrEmpty
@@ -239,7 +246,8 @@ Describe 'Test-CronAgentsConfig' {
             retentionDays = 0
             startupDelay  = '0'
             quietHours    = [PSCustomObject]@{ start = '25:00'; end = '06:00' }
-            versioning    = [PSCustomObject]@{ syncPolicy = 'notify' }
+            versioning    = $null
+            personalRepo  = [PSCustomObject]@{ path = '~/.cronagents' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
         ($errors | Where-Object { $_ -match 'quietHours.start' }) | Should -Not -BeNullOrEmpty
@@ -252,7 +260,8 @@ Describe 'Test-CronAgentsConfig' {
             retentionDays = 0
             startupDelay  = '0'
             quietHours    = [PSCustomObject]@{ start = '22:00' }
-            versioning    = [PSCustomObject]@{ syncPolicy = 'notify' }
+            versioning    = $null
+            personalRepo  = [PSCustomObject]@{ path = '~/.cronagents' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
         ($errors | Where-Object { $_ -match 'quietHours.*start and end' }) | Should -Not -BeNullOrEmpty
@@ -265,7 +274,8 @@ Describe 'Test-CronAgentsConfig' {
             retentionDays = 0
             startupDelay  = '0'
             quietHours    = [PSCustomObject]@{ start = '22:00'; end = '06:00' }
-            versioning    = [PSCustomObject]@{ syncPolicy = 'notify' }
+            versioning    = $null
+            personalRepo  = [PSCustomObject]@{ path = '~/.cronagents' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
         $errors | Should -HaveCount 0
@@ -278,7 +288,8 @@ Describe 'Test-CronAgentsConfig' {
             retentionDays = -1
             startupDelay  = 'bad'
             quietHours    = $null
-            versioning    = [PSCustomObject]@{ syncPolicy = 'yolo' }
+            versioning    = $null
+            personalRepo  = [PSCustomObject]@{ path = '~/.cronagents' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
         $errors.Count | Should -BeGreaterOrEqual 4
@@ -291,7 +302,8 @@ Describe 'Test-CronAgentsConfig' {
             retentionDays = 0
             startupDelay  = 'abc'
             quietHours    = $null
-            versioning    = [PSCustomObject]@{ syncPolicy = 'notify' }
+            versioning    = $null
+            personalRepo  = [PSCustomObject]@{ path = '~/.cronagents' }
         }
         $errors = Test-CronAgentsConfig -Config $cfg
         ($errors | Where-Object { $_ -match 'startupDelay' }) | Should -Not -BeNullOrEmpty

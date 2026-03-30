@@ -19,6 +19,10 @@
 .PARAMETER RepoRoot
     Absolute path to the repository root.
 
+.PARAMETER PersonalRepoPath
+    Optional path to the personal repo (~/.cronagents). When provided, Copilot
+    CLI runs with WorkingDirectory set to this path instead of RepoRoot.
+
 .PARAMETER RunsRoot
     Directory for storing run artifacts. Defaults to <RepoRoot>/.cronstate/runs.
 #>
@@ -29,6 +33,7 @@ param(
     [Parameter(Mandatory)] [PSCustomObject]$AgentConfig,
     [Parameter(Mandatory)] [PSCustomObject]$GlobalConfig,
     [Parameter(Mandatory)] [string]$RepoRoot,
+    [string]$PersonalRepoPath,
     [string]$RunsRoot
 )
 
@@ -76,7 +81,7 @@ function Invoke-CopilotRun {
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
     $psi.FileName               = $copilotPath
     $psi.Arguments              = $Arguments -join ' '
-    $psi.WorkingDirectory       = $RepoRoot
+    $psi.WorkingDirectory       = if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }
     $psi.UseShellExecute        = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
@@ -179,6 +184,22 @@ function Build-CopilotArguments {
         foreach ($flag in $extraCliFlags) {
             $args_.Add($flag)
         }
+    }
+
+    # Working-directory scoping
+    $agentWd = $null
+    if ($AgentConfig.PSObject.Properties['workingDirectory'] -and
+        -not [string]::IsNullOrWhiteSpace($AgentConfig.workingDirectory)) {
+        $agentWd = $AgentConfig.workingDirectory
+    }
+
+    if ($agentWd) {
+        $args_.Add("--add-dir=$agentWd")
+        if ($PersonalRepoPath) { $args_.Add("--add-dir=$PersonalRepoPath") }
+        $args_.Add("--add-dir=$RepoRoot")
+    }
+    else {
+        $args_.Add('--allow-all')
     }
 
     # Unattended execution
@@ -342,7 +363,7 @@ try {
         $sumPsi = [System.Diagnostics.ProcessStartInfo]::new()
         $sumPsi.FileName               = $copilotPath
         $sumPsi.Arguments              = $summaryArgs -join ' '
-        $sumPsi.WorkingDirectory       = $RepoRoot
+        $sumPsi.WorkingDirectory       = if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }
         $sumPsi.UseShellExecute        = $false
         $sumPsi.RedirectStandardOutput = $true
         $sumPsi.RedirectStandardError  = $true

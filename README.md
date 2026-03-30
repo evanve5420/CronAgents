@@ -8,7 +8,7 @@ A lightweight, agent scheduler for GitHub Copilot agents that runs recurring wor
 - **Agent + prompt-only modes** — full `.agent.md` agents or simple prompt-only invocations
 - **Live markdown dashboard** — auto-generated `dashboard.md` with run summaries, status, and links
 - **Human feedback loop** — write feedback on any run, an evaluator agent edits agent definitions accordingly
-- **Git branch versioning** — personal `personal-agents/<handle>` branches keep customizations separate from scaffold
+- **Separate personal repo** — agent definitions live in `~/.cronagents/`, fully isolated from shared infrastructure
 - **CLI + interactive TUI** — `cronagents.ps1` with subcommands and a numbered menu
 - **Health checks** — `cronagents.ps1 doctor` verifies task registration, config, state integrity
 - **Copilot-native** — built on `.agent.md`, `SKILL.md`, and Copilot CLI primitives
@@ -31,15 +31,15 @@ Choose the path that matches your starting point:
 - **Prefer the manual path** — run the setup commands yourself:
 
   ```powershell
-  # Install (registers at-logon task, bootstraps user branch)
+  # Install (registers at-logon task, initializes personal repo)
   .\cronagents.ps1 install
 
   # Create your first agent (interactive skill)
   # /agent-creator "review PRs every morning"
 
-  # Or copy a template on your personal branch
-  Copy-Item templates\agents\daily-review.agent.md.example .github\agents\daily-review.agent.md
-  # Then create .cronagents\agents\daily-review.agent-registration.json
+  # Or copy a template into your personal repo
+  Copy-Item templates\agents\daily-review.agent.md.example ~/.cronagents/.github/agents/daily-review.agent.md
+  # Then create ~/.cronagents/.cronagents/agents/daily-review.agent-registration.json
   # (see guide/writing-agents.md)
 
   # Test it
@@ -52,7 +52,7 @@ Choose the path that matches your starting point:
 ## How it works
 
 1. A single background scheduler process starts at logon via Task Scheduler.
-2. It reads agent registrations from `.cronagents/agents/`.
+2. It reads agent registrations from the personal repo (`~/.cronagents/.cronagents/agents/`).
 3. On each tick it evaluates schedules and runs due agents via Copilot CLI.
 4. Output is captured, summaries are generated, and the dashboard is updated.
 5. An optional feedback loop lets humans review runs — an evaluator agent applies that feedback to improve agent definitions over time.
@@ -66,7 +66,7 @@ Choose the path that matches your starting point:
 | [CLI Reference](guide/cli-reference.md) | Subcommands, TUI menu, --help |
 | [Writing Agents](guide/writing-agents.md) | Create and register scheduled agents |
 | [Feedback System](guide/feedback-system.md) | How the feedback loop works |
-| [Branching & Sync](guide/branching-and-sync.md) | User branches, sync from master |
+| [Branching & Sync](guide/branching-and-sync.md) | Personal repo model, shared dev workflow |
 | [Troubleshooting](guide/troubleshooting.md) | Common issues, health checks, logs |
 
 ## Project structure
@@ -78,14 +78,17 @@ CronAgents/
 ├── scheduler/                  # Background scheduler + shared library
 │   ├── CronAgents-Scheduler.ps1
 │   └── lib/                    # Shared PowerShell module (CronAgents.psd1)
-├── .cronagents/                # Per-user tracked customizations (user branch)
-│   └── agents/                 # Agent definitions + schedule configs
-├── .cronstate/                 # Run state, logs, dashboard output (git-ignored)
 ├── templates/                  # Starter agent + config templates
 │   └── agents/                 # Example .agent.md files
 ├── guide/                      # User-facing documentation
 ├── docs/                       # Design docs and architecture notes
 └── tests/                      # Pester tests
+
+~/.cronagents/                  # Personal repo (per-user, separate git repo)
+├── .github/agents/             # Agent profiles (.agent.md)
+├── .cronagents/agents/         # Agent registrations + schedule configs
+├── .cronstate/                 # Run state, logs, dashboard output (git-ignored)
+└── cronagents.json             # Personal config overrides (optional)
 ```
 
 ## License

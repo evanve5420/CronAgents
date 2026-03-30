@@ -22,11 +22,11 @@ Located at the repository root. Controls scheduler-wide behavior.
   "startupDelay": "5m",
   "logLevel": "info",
   "quietHours": null,
-  "versioning": {
-    "syncPolicy": "notify",
+  "personalRepo": {
+    "path": null,
     "userName": null,
     "autoCommitFeedback": true,
-    "branchPrefix": "personal-agents"
+    "defaultWorkingDirectory": null
   }
 }
 ```
@@ -133,31 +133,23 @@ Located at the repository root. Controls scheduler-wide behavior.
 | `start` | `string` | `HH:MM` (24h) | Start of quiet window |
 | `end` | `string` | `HH:MM` (24h) | End of quiet window |
 
-#### `versioning`
+#### `personalRepo`
 
-Controls the git branching and sync behavior.
+Controls the separate personal repository for user agent definitions.
 
 | Sub-field | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `syncPolicy` | `string` | `"notify"` | How the scheduler handles divergence from master. See values below. |
-| `userName` | `string` or `null` | `null` | Override username for the user branch. `null` = auto-detect from `git config github.user`, `gh auth status`, `git config user.name`, or `$env:USERNAME`. |
-| `autoCommitFeedback` | `boolean` | `true` | Automatically `git commit` after the feedback evaluator edits agent files. |
-| `branchPrefix` | `string` | `"personal-agents"` | Prefix for user branches. The full branch name is `<prefix>/<username>`. |
-
-**`syncPolicy` values:**
-
-| Value | Behavior |
-|-------|----------|
-| `"auto"` | Scheduler merges from `origin/master` on each tick |
-| `"notify"` | Scheduler detects divergence and logs a warning (default) |
-| `"manual"` | No automatic sync — run `cronagents.ps1 sync` yourself |
+| `path` | `string` or `null` | `null` | Path to the personal repo. `null` = `~/.cronagents/`. |
+| `userName` | `string` or `null` | `null` | Override username for the personal repo. `null` = auto-detect from `git config github.user`, `gh auth status`, `git config user.name`, or `$env:USERNAME`. |
+| `autoCommitFeedback` | `boolean` | `true` | Automatically `git commit` after the feedback evaluator edits agent files in the personal repo. |
+| `defaultWorkingDirectory` | `string` or `null` | `null` | Default working directory for agent runs. `null` = scheduler runs copilot with `--allow-all` from the personal repo root. |
 
 ```json
-"versioning": {
-  "syncPolicy": "auto",
+"personalRepo": {
+  "path": "~/.cronagents",
   "userName": "alice",
   "autoCommitFeedback": true,
-  "branchPrefix": "personal-agents"
+  "defaultWorkingDirectory": "C:\\Projects\\my-app"
 }
 ```
 
@@ -343,6 +335,18 @@ Each agent has a JSON config file. The filename stem (for example, `daily-review
   "NODE_ENV": "production",
   "REVIEW_DEPTH": "shallow"
 }
+```
+
+#### `workingDirectory`
+
+| | |
+|---|---|
+| **Type** | `string` or `null` |
+| **Default** | `null` |
+| **Description** | Override the working directory for this agent's Copilot CLI invocation. When `null`, uses the personal repo root (with `--allow-all`). Set to a specific project directory to restrict the agent's scope. |
+
+```json
+"workingDirectory": "C:\\Projects\\my-app"
 ```
 
 ---

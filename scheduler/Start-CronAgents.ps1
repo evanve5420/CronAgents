@@ -29,11 +29,6 @@ if (-not $ConfigPath) {
     $ConfigPath = Join-Path $RepoRoot 'cronagents.json'
 }
 
-$cronStateDir = Join-Path $RepoRoot '.cronstate'
-$stateFile    = Join-Path $cronStateDir 'state.json'
-$runsRoot     = Join-Path $cronStateDir 'runs'
-$logFile      = Join-Path $cronStateDir 'scheduler.log'
-
 # -----------------------------------------------------------------------
 # 2. Import module
 # -----------------------------------------------------------------------
@@ -48,6 +43,16 @@ if ($errors.Count -gt 0) {
     foreach ($e in $errors) { Write-Error $e }
     exit 1
 }
+
+# -----------------------------------------------------------------------
+# 4a. Resolve personal repo path
+# -----------------------------------------------------------------------
+$personalRepoPath = Get-PersonalRepoPath -ConfigPath $config.personalRepo.path
+
+$cronStateDir = Join-Path $personalRepoPath '.cronstate'
+$stateFile    = Join-Path $cronStateDir 'state.json'
+$runsRoot     = Join-Path $cronStateDir 'runs'
+$logFile      = Join-Path $cronStateDir 'scheduler.log'
 
 # -----------------------------------------------------------------------
 # 5. Initialize logging
@@ -231,8 +236,8 @@ try {
             try {
                 Invoke-FeedbackSweep -RunsRoot $runsRoot `
                     -CopilotPath $config.copilotPath `
-                    -RepoRoot $RepoRoot `
-                    -AutoCommitFeedback $config.versioning.autoCommitFeedback
+                    -RepoRoot $personalRepoPath `
+                    -AutoCommitFeedback $config.personalRepo.autoCommitFeedback
             }
             catch {
                 Write-CronAgentsLog -Level 'warn' -Message "Feedback sweep error: $_"
@@ -252,27 +257,9 @@ try {
 
         if (-not $skipAgents) {
             # -----------------------------------------------------------
-            # Step 4: Sync check (notify / auto)
+            # Step 4: Scheduled agents
             # -----------------------------------------------------------
-            try {
-                if ($config.versioning.syncPolicy -eq 'notify') {
-                    $divergence = Get-BranchDivergence -RepoRoot $RepoRoot
-                    if ($divergence.Behind -gt 0) {
-                        Write-CronAgentsLog -Level 'info' -Message "Branch is $($divergence.Behind) commits behind master"
-                    }
-                }
-                elseif ($config.versioning.syncPolicy -eq 'auto') {
-                    Invoke-BranchSync -RepoRoot $RepoRoot
-                }
-            }
-            catch {
-                Write-CronAgentsLog -Level 'warn' -Message "Sync check error: $_"
-            }
-
-            # -----------------------------------------------------------
-            # Step 5: Scheduled agents
-            # -----------------------------------------------------------
-            $agents = Get-AgentConfigs -RepoRoot $RepoRoot
+            $agents = Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath
             $state  = Get-AgentState -StateFile $stateFile
             $now    = (Get-Date).ToUniversalTime()
             $queue  = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -337,6 +324,7 @@ try {
                         & $invokeScript -AgentConfig $agent `
                             -Config $config `
                             -RepoRoot $RepoRoot `
+                            -PersonalRepoPath $personalRepoPath `
                             -StateFile $stateFile `
                             -RunsRoot $runsRoot
                     }
@@ -409,7 +397,7 @@ try {
         $today = (Get-Date).Date
         if ($script:lastCleanupDate -ne $today) {
             try {
-                $agentIds = @((Get-AgentConfigs -RepoRoot $RepoRoot) | ForEach-Object { $_.Id })
+                $agentIds = @((Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath) | ForEach-Object { $_.Id })
                 Invoke-RetentionCleanup -RunsRoot $runsRoot `
                     -RetentionDays $config.retentionDays `
                     -StateFile $stateFile `
@@ -425,7 +413,7 @@ try {
         # -----------------------------------------------------------
         # Step 8: Sleep until next tick
         # -----------------------------------------------------------
-        $agents = Get-AgentConfigs -RepoRoot $RepoRoot
+        $agents = Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath
         $state  = Get-AgentState -StateFile $stateFile
         $now    = (Get-Date).ToUniversalTime()
         $maxSleepSec = 3600  # Clamp to 1 hour max

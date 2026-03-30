@@ -61,11 +61,12 @@ function New-TestEnvironment {
         startupDelay   = '0'
         logLevel       = 'debug'
         quietHours     = $null
-        versioning     = [ordered]@{
-            syncPolicy          = 'manual'
-            userName            = 'test-user'
-            autoCommitFeedback  = $false
-            branchPrefix        = 'personal-agents'
+        versioning     = $null
+        personalRepo   = [ordered]@{
+            path                    = '~/.cronagents'
+            userName                = 'test-user'
+            autoCommitFeedback      = $false
+            defaultWorkingDirectory = $null
         }
     }
     $configPath = Join-Path $root 'cronagents.json'
