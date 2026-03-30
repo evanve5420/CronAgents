@@ -136,7 +136,6 @@ function Import-CronAgentsConfig {
         quietHours    = if ($null -ne $parsed.PSObject.Properties['quietHours'] -and
                             $null -ne $parsed.quietHours)
                         { $parsed.quietHours } else { $null }
-        versioning    = $null
         personalRepo  = $personalRepo
     }
 
@@ -366,13 +365,13 @@ function Get-AgentConfigs {
     [System.Collections.Generic.List[string]]$scanDirs = @()
 
     if ($PersonalRepoPath) {
-        $personalAgentsDir = Join-Path $PersonalRepoPath '.cronagents\agents'
+        $personalAgentsDir = Join-Path $PersonalRepoPath '.cronagents' 'agents'
         if (Test-Path $personalAgentsDir) {
             $scanDirs.Add($personalAgentsDir)
         }
     }
 
-    $defaultDir = Join-Path $RepoRoot '.cronagents\agents'
+    $defaultDir = Join-Path $RepoRoot '.cronagents' 'agents'
     if (Test-Path $defaultDir) {
         $scanDirs.Add($defaultDir)
     }

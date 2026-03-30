@@ -7,7 +7,6 @@
   "startupDelay": "5m",
   "logLevel": "info",
   "quietHours": null,
-  "versioning": null,
   "personalRepo": {
     "path": "~/.cronagents",
     "userName": null,

@@ -7,10 +7,10 @@
   "startupDelay": "10m",
   "logLevel": "debug",
   "quietHours": { "start": "22:00", "end": "06:00" },
-  "versioning": {
-    "syncPolicy": "auto",
+  "personalRepo": {
+    "path": "~/.cronagents",
     "userName": "testuser",
     "autoCommitFeedback": true,
-    "branchPrefix": "personal-agents"
+    "defaultWorkingDirectory": null
   }
 }

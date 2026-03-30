@@ -155,7 +155,7 @@ if ($unexpected) {
 # ── Initialize personal repo ─────────────────────────────────────────
 $personalRepoPath = Get-PersonalRepoPath -ConfigPath $config.personalRepo.path
 $userName = Resolve-CronAgentsUserName -ConfigUserName $config.personalRepo.userName -RepoRoot $RepoRoot
-$repoResult = Initialize-PersonalRepo -Path $personalRepoPath -UserName $userName
+$repoResult = Initialize-PersonalRepo -Path $personalRepoPath -UserName $userName -InfraRepoRoot $RepoRoot
 Write-CronAgentsLog -Level 'info' -Message "Install: personal repo '$personalRepoPath' — created=$($repoResult.Created)."
 
 # ── Summary ──────────────────────────────────────────────────────────

@@ -279,7 +279,10 @@ function Initialize-PersonalRepo {
         [string]$Path,
 
         [Parameter(Mandatory)]
-        [string]$UserName
+        [string]$UserName,
+
+        [Parameter()]
+        [string]$InfraRepoRoot
     )
 
     # If repo already exists and is valid, return early
@@ -296,6 +299,8 @@ function Initialize-PersonalRepo {
     }
 
     Write-CronAgentsLog -Level 'info' -Message "Initializing personal repo at $Path for user '$UserName'"
+
+    Assert-GitAvailable
 
     # Create directory structure
     $dirs = @(
@@ -320,7 +325,6 @@ function Initialize-PersonalRepo {
     $configPath = Join-Path $Path 'cronagents.json'
     $configContent = @'
 {
-  "$schema": "https://cronagents.dev/cronagents.schema.json"
 }
 '@
     [System.IO.File]::WriteAllText($configPath, $configContent, [System.Text.Encoding]::UTF8)
@@ -333,23 +337,21 @@ function Initialize-PersonalRepo {
     Write-CronAgentsLog -Level 'debug' -Message "Created .github/copilot-instructions.md"
 
     # git init
-    Assert-GitAvailable
     $null = Invoke-Git -Arguments @('-C', $Path, 'init')
     Write-CronAgentsLog -Level 'debug' -Message "Initialized git repository"
 
     # Configure git user from infra repo or fallbacks
     $gitUserName  = $null
     $gitUserEmail = $null
+    $infraRoot = if ($InfraRepoRoot) { $InfraRepoRoot } else { (Get-Location).Path }
 
     try {
-        $infraRoot = (Get-Location).Path
         $gitUserName  = Invoke-Git -Arguments @('-C', $infraRoot, 'config', 'user.name')
     }
     catch {
         Write-CronAgentsLog -Level 'debug' -Message "Could not read user.name from infra repo: $_"
     }
     try {
-        $infraRoot = (Get-Location).Path
         $gitUserEmail = Invoke-Git -Arguments @('-C', $infraRoot, 'config', 'user.email')
     }
     catch {
@@ -421,7 +423,8 @@ function Import-PersonalRepoConfig {
         if ($prop.Name -eq 'personalRepo' -and
             $null -ne $merged.PSObject.Properties[$prop.Name] -and
             $prop.Value -is [PSCustomObject]) {
-            # Property-level merge for personalRepo sub-object
+            # Property-level merge for personalRepo sub-object so users can
+            # override e.g. userName without losing the default path.
             foreach ($subProp in $prop.Value.PSObject.Properties) {
                 if ($null -ne $subProp.Value) {
                     if ($null -eq $merged.$($prop.Name).PSObject.Properties[$subProp.Name]) {
@@ -434,7 +437,9 @@ function Import-PersonalRepoConfig {
             }
         }
         else {
-            # Top-level override
+            # Top-level override (wholesale replacement — intentional for
+            # atomic objects like quietHours where partial merge would be
+            # surprising, e.g. overriding start but keeping the old end).
             if ($null -eq $merged.PSObject.Properties[$prop.Name]) {
                 $merged | Add-Member -NotePropertyName $prop.Name -NotePropertyValue $prop.Value
             }
