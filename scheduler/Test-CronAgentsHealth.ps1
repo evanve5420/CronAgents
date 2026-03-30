@@ -355,6 +355,42 @@ function Test-OrphanedRuns {
 }
 
 # ===================================================================
+# Check 8: Notification Backend
+# ===================================================================
+function Test-NotificationBackend {
+    param([string]$RepoRoot)
+
+    try {
+        $configPath = Join-Path $RepoRoot 'cronagents.json'
+        $cfg = Import-CronAgentsConfig -ConfigPath $configPath
+    }
+    catch {
+        $cfg = [PSCustomObject]@{ notifications = $true }
+    }
+
+    if ($cfg.PSObject.Properties['notifications'] -and $cfg.notifications -eq $false) {
+        return New-CheckResult -Name 'Notifications' -Status 'Pass' `
+            -Message 'Disabled globally (notifications: false)'
+    }
+
+    if (Get-Module -ListAvailable -Name 'BurntToast' -ErrorAction SilentlyContinue) {
+        return New-CheckResult -Name 'Notifications' -Status 'Pass' `
+            -Message 'BurntToast module available'
+    }
+
+    # Try native WinRT
+    try {
+        $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+        return New-CheckResult -Name 'Notifications' -Status 'Pass' `
+            -Message 'Native Windows.UI.Notifications available (BurntToast recommended for richer toasts)'
+    }
+    catch { }
+
+    return New-CheckResult -Name 'Notifications' -Status 'Warn' `
+        -Message 'No notification backend available. Install BurntToast: Install-Module BurntToast -Scope CurrentUser'
+}
+
+# ===================================================================
 # Run all checks
 # ===================================================================
 [System.Collections.Generic.List[PSCustomObject]]$checks = @()
@@ -366,6 +402,7 @@ $checks.Add((Test-StateFile -RepoRoot $RepoRoot))
 $checks.Add((Test-SchedulerProcess))
 $checks.Add((Test-BranchState -RepoRoot $RepoRoot))
 $checks.Add((Test-OrphanedRuns -RepoRoot $RepoRoot))
+$checks.Add((Test-NotificationBackend -RepoRoot $RepoRoot))
 
 # ===================================================================
 # Compute summary

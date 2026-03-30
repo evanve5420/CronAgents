@@ -166,3 +166,35 @@ Write-Host '  Scheduler    : ' -NoNewline; Write-Host $schedulerScript
 Write-Host '  Personal repo: ' -NoNewline; Write-Host $personalRepoPath
 Write-Host ''
 Write-Host "To start now:  Start-ScheduledTask -TaskName '$TaskName' -TaskPath '$TaskPath'"
+
+# ── Offer BurntToast installation ────────────────────────────────────
+if (-not (Get-Module -ListAvailable -Name 'BurntToast' -ErrorAction SilentlyContinue)) {
+    Write-Host ''
+    Write-Host 'BurntToast module is not installed.' -ForegroundColor Yellow
+    Write-Host 'BurntToast enables rich Windows toast notifications for agent failures'
+    Write-Host 'and scheduler errors. Without it, CronAgents will try the native Windows'
+    Write-Host 'notification API and silently degrade if neither is available.'
+    Write-Host ''
+
+    $response = Read-Host 'Install BurntToast from the PowerShell Gallery? (Y/n)'
+    if ($response -match '^(y(es)?)?$') {
+        try {
+            Write-Host 'Installing BurntToast...' -ForegroundColor Cyan
+            Install-Module BurntToast -Scope CurrentUser -Force -ErrorAction Stop
+            Write-Host 'BurntToast installed successfully.' -ForegroundColor Green
+            Write-CronAgentsLog -Level 'info' -Message 'Install: BurntToast module installed.'
+        }
+        catch {
+            Write-Host "BurntToast installation failed: $_" -ForegroundColor Yellow
+            Write-Host 'You can install it later with: Install-Module BurntToast -Scope CurrentUser'
+            Write-CronAgentsLog -Level 'warn' -Message "Install: BurntToast installation failed: $_"
+        }
+    }
+    else {
+        Write-Host 'Skipped. You can install later with: Install-Module BurntToast -Scope CurrentUser'
+    }
+}
+else {
+    Write-Host ''
+    Write-Host '  Notifications: BurntToast module available' -ForegroundColor Green
+}
