@@ -40,37 +40,43 @@ Allow agent entries to specify a `script` path instead of `agent`+`prompt`, so t
 
 A scaffold-internal agent that reviews recent diffs to agent definitions, skills, config, and feedback for harmful patterns. Runs after the feedback-commit hook but before the next scheduled agents execute, so poisoned edits are caught before they take effect. Would watch for: prompt injection in agent definitions, unexpected tool additions/`--deny-tool` removals, feedback content attempting to manipulate the evaluator, and anomalous output patterns suggesting data exfiltration. Flagged issues auto-pause the affected agent and notify via dashboard/TUI. The infrastructure for this already exists: git branch diffs from agent versioning, pre-edit snapshots, and feedback-result.md changelogs provide structured input. Attack pattern knowledge would accumulate in a dedicated skill file (`scheduler/skills/security-reviewer/SKILL.md`) that can be community-contributed.
 
-Bonus 1:  set up capability for certain agents to be able to request actions or ask questions of the user. For instance, an inbox tidying agent which asks the user, "Is it okay if I move these seven items to this directory?" The user should have a whole new space to be able to respond to that. On the next turn, the next cron job, that agent should be able to pick that up and apply it. 
+### 9. User Questions / Deferred Decisions
+
+Some agents need a human-in-the-loop inbox, not a feedback-evaluator edit pass. Example: an inbox manager can confidently archive obvious spam, but when it hits gray-area messages it should be able to ask the user a concrete question like "Should I move these seven items to Clients/Acme?" and then resume on the next scheduled run with the user's answer as runtime input.
+
+This is fundamentally different from `feedback.md`. Feedback is retrospective guidance that teaches the evaluator how to edit an agent's `.agent.md` or `SKILL.md`. These questions are operational decisions for the next run. They need their own persisted queue, response UX, and run handoff.
+
+Implementation could be a dedicated questions page or an expanded `dashboard.md` section, plus a TUI/CLI entry point to review and answer pending questions. The scheduler would store question IDs, originating run metadata, and any expiration/skipped state, then inject resolved answers into the next invocation of that same agent so it can continue work without re-asking.
 
 ---
 
 ## Medium-Term
 
-### 9. Parallel Execution & Agent Dependencies
+### 10. Parallel Execution & Agent Dependencies
 
 Currently agents run sequentially in discovery order. A future version could add parallel execution for independent agents plus a `dependsOn: ["other-agent-id"]` config to express ordering constraints, with the scheduler building a dependency graph and running independent branches concurrently. Parallelism would make 30-minute schedules more attractive, but it adds complexity: Copilot CLI rate limits, concurrent `.cronstate/state.json` access (already designed with file-level locking), output interleaving, and topological sort. Not worth it until someone has enough agents to feel the sequential bottleneck. Run directory naming already includes a random nonce to prevent collisions.
 
-### 10. Cloud Reporting
+### 11. Cloud Reporting
 
 Local markdown now, but `Update-Dashboard.ps1` is designed to be extensible to webhooks/Slack/Teams.
 
-### 11. Cross-Platform
+### 12. Cross-Platform
 
 PowerShell Core runs on macOS/Linux, but initial target is Windows only. macOS would need `launchd` instead of Task Scheduler. Linux would need systemd user services or cron.
 
-### 12. PR Gate Enforcement
+### 13. PR Gate Enforcement
 
 A GitHub Actions workflow (`.github/workflows/tests.yml`) runs the cross-platform test suite on `ubuntu-latest` as a required status check on PRs to `master`. Tests tagged `WindowsOnly` (Health Check, CLI doctor) are excluded from this workflow since they depend on Windows Task Scheduler APIs. A future improvement would add a separate `windows-latest` job to cover those tests — acceptable cost once the project gains contributors, but not worth the 2× Actions billing multiplier today.
 
-### 13. Agent Pipelines
+### 14. Agent Pipelines
 
 `"dependsOn": ["data-gather"]` with output passing: the output of one agent becomes context for the next. This is the compositional version of agent dependencies — chaining data through a sequence rather than just ordering execution.
 
-### 14. Rate Limiting
+### 15. Rate Limiting
 
 Global cap on Copilot CLI invocations per hour. Prevents a misconfigured schedule from hammering the API. `"rateLimits": { "maxRunsPerHour": 10 }`.
 
-### 15. SQLite State Backend
+### 16. SQLite State Backend
 
 Replace `StateManager.ps1`'s JSON file backend with SQLite. The `StateManager` module boundary already abstracts all state access — swapping the backing store is an internal change. Worth considering when token budget tracking, rate limiting, run history queries, or parallel execution make flat JSON painful. Day 0 JSON files are the right starting point.
 
@@ -78,18 +84,18 @@ Replace `StateManager.ps1`'s JSON file backend with SQLite. The `StateManager` m
 
 ## Far-Future
 
-### 16. Token / Cost Budgets
+### 17. Token / Cost Budgets
 
 `"tokenBudget": { "daily": 50000, "monthly": 500000 }` per agent or globally. Track cumulative token usage from `--output-format=json` metadata across runs. Auto-pause agents that exceed their budget. Becomes important with many agents running frequently and predictable costs are needed.
 
-### 17. Config Profiles / Inheritance
+### 18. Config Profiles / Inheritance
 
 A base `cronagents.json` with environment overlays: `cronagents.work.json` for work hours, `cronagents.home.json` for personal projects. `cronagents.ps1 --profile=work`. Useful when one machine serves multiple contexts.
 
-### 18. Webhook Triggers
+### 19. Webhook Triggers
 
 An HTTP endpoint (from the future dashboard server) that can trigger agent runs. `POST /api/trigger/daily-review` from a GitHub webhook fires on push. Blurs the line between scheduled and event-driven, but the infrastructure is already there in [UX-REQUIREMENTS.md](UX-REQUIREMENTS.md).
 
-### 19. Remote Config
+### 20. Remote Config
 
 Pull config from a URL or git ref so teams can centrally manage agent definitions. `"configSource": "https://..."` or `"configRef": "origin/main:cronagents.json"`. Relevant when you have many coworkers and want consistent agent behavior.
