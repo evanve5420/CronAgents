@@ -125,6 +125,13 @@
       "default": [],
       "description": "Additional CLI flags passed to the Copilot CLI invocation."
     },
+    "workingDirectory": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "null" }
+      ],
+      "description": "Working directory or project path for this agent. Null = use global default (allow all directories)."
+    },
     "envVars": {
       "type": "object",
       "additionalProperties": { "type": "string" },

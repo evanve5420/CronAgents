@@ -67,14 +67,13 @@
       "default": null,
       "description": "Time window during which no agents are run. Null to disable."
     },
-    "versioning": {
+    "personalRepo": {
       "type": "object",
       "properties": {
-        "syncPolicy": {
+        "path": {
           "type": "string",
-          "enum": ["auto", "notify", "manual"],
-          "default": "notify",
-          "description": "How the scheduler handles git sync after agent runs."
+          "default": "~/.cronagents",
+          "description": "Path to the personal agents repository. Tilde (~) expands to $HOME."
         },
         "userName": {
           "oneOf": [
@@ -82,21 +81,24 @@
             { "type": "null" }
           ],
           "default": null,
-          "description": "GitHub handle override for the user branch. Null = detect from git config github.user, gh auth status, git config user.name, or USERNAME."
+          "description": "GitHub handle override. Null = detect from git config github.user, gh auth status, git config user.name, or USERNAME."
         },
         "autoCommitFeedback": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically commit feedback-evaluator changes."
+          "description": "Automatically commit feedback-evaluator changes in the personal repo."
         },
-        "branchPrefix": {
-          "type": "string",
-          "default": "personal-agents",
-          "description": "Prefix for branches created by versioning."
+        "defaultWorkingDirectory": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ],
+          "default": null,
+          "description": "Default project directory agents work in. Null = allow all directories."
         }
       },
       "additionalProperties": false,
-      "description": "Git versioning settings for agent runs."
+      "description": "Personal repository settings for agent definitions and scheduling."
     }
   },
   "additionalProperties": false

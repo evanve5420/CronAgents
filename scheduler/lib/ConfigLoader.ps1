@@ -13,7 +13,6 @@ $script:AgentRegistrationSuffix = '.agent-registration.json'
 
 # Valid enum values
 $script:ValidLogLevels   = @('debug', 'info', 'warn', 'error')
-$script:ValidSyncPolicies = @('auto', 'notify', 'manual')
 $script:ValidScheduleTypes = @('interval', 'daily', 'weekly')
 $script:DurationPattern  = '^[0-9]+(m|h|s)?$|^0$'
 $script:TimePattern      = '^([01]\d|2[0-3]):[0-5]\d$'
@@ -93,26 +92,25 @@ function Import-CronAgentsConfig {
         throw "Failed to parse CronAgents config '$ConfigPath': $_"
     }
 
-    # Build versioning sub-object with defaults
-    $versioningRaw = if ($parsed.PSObject.Properties['versioning']) { $parsed.versioning } else { $null }
-    $versioningRaw = ConvertTo-OrderedPSObject -InputObject $versioningRaw
+    # Build personalRepo sub-object with defaults
+    $personalRepoRaw = if ($parsed.PSObject.Properties['personalRepo']) { $parsed.personalRepo } else { $null }
+    $personalRepoRaw = ConvertTo-OrderedPSObject -InputObject $personalRepoRaw
 
-    $versioning = [PSCustomObject]@{
-        syncPolicy         = if ($null -ne $versioningRaw -and
-                                 $null -ne $versioningRaw.PSObject.Properties['syncPolicy'] -and
-                                 $null -ne $versioningRaw.syncPolicy)
-                             { $versioningRaw.syncPolicy } else { 'notify' }
-        userName           = if ($null -ne $versioningRaw -and
-                                 $null -ne $versioningRaw.PSObject.Properties['userName'])
-                             { $versioningRaw.userName } else { $null }
-        autoCommitFeedback = if ($null -ne $versioningRaw -and
-                                 $null -ne $versioningRaw.PSObject.Properties['autoCommitFeedback'] -and
-                                 $null -ne $versioningRaw.autoCommitFeedback)
-                             { [bool]$versioningRaw.autoCommitFeedback } else { $true }
-        branchPrefix       = if ($null -ne $versioningRaw -and
-                                 $null -ne $versioningRaw.PSObject.Properties['branchPrefix'] -and
-                                 $null -ne $versioningRaw.branchPrefix)
-                             { $versioningRaw.branchPrefix } else { 'personal-agents' }
+    $personalRepo = [PSCustomObject]@{
+        path                   = if ($null -ne $personalRepoRaw -and
+                                     $null -ne $personalRepoRaw.PSObject.Properties['path'] -and
+                                     $null -ne $personalRepoRaw.path)
+                                 { $personalRepoRaw.path } else { '~/.cronagents' }
+        userName               = if ($null -ne $personalRepoRaw -and
+                                     $null -ne $personalRepoRaw.PSObject.Properties['userName'])
+                                 { $personalRepoRaw.userName } else { $null }
+        autoCommitFeedback     = if ($null -ne $personalRepoRaw -and
+                                     $null -ne $personalRepoRaw.PSObject.Properties['autoCommitFeedback'] -and
+                                     $null -ne $personalRepoRaw.autoCommitFeedback)
+                                 { [bool]$personalRepoRaw.autoCommitFeedback } else { $true }
+        defaultWorkingDirectory = if ($null -ne $personalRepoRaw -and
+                                      $null -ne $personalRepoRaw.PSObject.Properties['defaultWorkingDirectory'])
+                                  { $personalRepoRaw.defaultWorkingDirectory } else { $null }
     }
 
     # Build top-level config with defaults
@@ -138,7 +136,8 @@ function Import-CronAgentsConfig {
         quietHours    = if ($null -ne $parsed.PSObject.Properties['quietHours'] -and
                             $null -ne $parsed.quietHours)
                         { $parsed.quietHours } else { $null }
-        versioning    = $versioning
+        versioning    = $null
+        personalRepo  = $personalRepo
     }
 
     # Validate
@@ -169,11 +168,11 @@ function Test-CronAgentsConfig {
         $errors.Add("logLevel must be one of: $($script:ValidLogLevels -join ', '). Got: '$($Config.logLevel)'")
     }
 
-    # versioning.syncPolicy
-    if ($Config.PSObject.Properties['versioning'] -and $null -ne $Config.versioning -and
-        $Config.versioning.PSObject.Properties['syncPolicy'] -and
-        $Config.versioning.syncPolicy -notin $script:ValidSyncPolicies) {
-        $errors.Add("versioning.syncPolicy must be one of: $($script:ValidSyncPolicies -join ', '). Got: '$($Config.versioning.syncPolicy)'")
+    # personalRepo.path
+    if ($Config.PSObject.Properties['personalRepo'] -and $null -ne $Config.personalRepo -and
+        $Config.personalRepo.PSObject.Properties['path'] -and
+        [string]::IsNullOrWhiteSpace($Config.personalRepo.path)) {
+        $errors.Add("personalRepo.path must not be empty when specified.")
     }
 
     # retentionDays
@@ -319,6 +318,8 @@ function Import-SingleAgentConfig {
         extraCliFlags = if ($parsed.PSObject.Properties['extraCliFlags'] -and $null -ne $parsed.extraCliFlags)
                         { @($parsed.extraCliFlags) } else { @() }
         envVars       = $envVarsObj
+        workingDirectory = if ($parsed.PSObject.Properties['workingDirectory'])
+                           { $parsed.workingDirectory } else { $null }
     }
 
     # Copy agent reference if present
@@ -353,18 +354,29 @@ function Get-AgentConfigs {
         [Parameter(Mandatory)]
         [string]$RepoRoot,
 
+        [string]$PersonalRepoPath,
+
         [string[]]$AdditionalPaths
     )
 
     [System.Collections.Generic.List[PSCustomObject]]$agents = @()
     [System.Collections.Generic.HashSet[string]]$seenIds = @()
 
-    # Collect scan directories
+    # Collect scan directories — personal repo first, then infra repo fallback
     [System.Collections.Generic.List[string]]$scanDirs = @()
+
+    if ($PersonalRepoPath) {
+        $personalAgentsDir = Join-Path $PersonalRepoPath '.cronagents\agents'
+        if (Test-Path $personalAgentsDir) {
+            $scanDirs.Add($personalAgentsDir)
+        }
+    }
+
     $defaultDir = Join-Path $RepoRoot '.cronagents\agents'
     if (Test-Path $defaultDir) {
         $scanDirs.Add($defaultDir)
     }
+
     if ($AdditionalPaths) {
         foreach ($p in $AdditionalPaths) {
             if (Test-Path $p) {
@@ -376,10 +388,13 @@ function Get-AgentConfigs {
         }
     }
 
+    # Determine the agent file resolution root — prefer personal repo
+    $agentRepoRoot = if ($PersonalRepoPath -and (Test-Path $PersonalRepoPath)) { $PersonalRepoPath } else { $RepoRoot }
+
     foreach ($dir in $scanDirs) {
         $registrationFiles = Get-ChildItem -LiteralPath $dir -Filter "*.agent-registration.json" -File -ErrorAction SilentlyContinue
         foreach ($file in $registrationFiles) {
-            $result = Import-SingleAgentConfig -FilePath $file.FullName -RepoRoot $RepoRoot
+            $result = Import-SingleAgentConfig -FilePath $file.FullName -RepoRoot $agentRepoRoot
             if ($null -eq $result) { continue }
 
             if ($seenIds.Contains($result.Id)) {
