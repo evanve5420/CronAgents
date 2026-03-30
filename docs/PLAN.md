@@ -486,7 +486,7 @@ Run all tests except E2E: `Invoke-Pester ./tests/ -ExcludeTag 'E2E'`
 
 ## Copilot CLI Reference
 
-Full details in [COPILOT-CLI.md](COPILOT-CLI.md). Key design implications:
+Full details in the [copilot-cli skill](../.github/skills/copilot-cli/SKILL.md). Key design implications:
 
 1. `--agent` flag confirmed — agent instructions load from `.agent.md` files natively, no prompt inlining needed
 2. `--silent` + `--output-format=json` ideal for parsing run results in PowerShell
