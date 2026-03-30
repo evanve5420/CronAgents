@@ -220,6 +220,22 @@ Describe 'Send-AgentFailureNotification — timeout message' {
 
         $capturedTitle | Should -Match 'timed out'
     }
+
+    It 'Includes "failed (exit code N)" in the title when TimedOut is false' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnFailure $true
+
+        $capturedTitle = $null
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body)
+            Set-Variable -Name capturedTitle -Value $Title -Scope 2
+        }
+
+        Send-AgentFailureNotification -AgentId 'exitcode-test' -AgentName 'ExitCode Test' `
+            -ExitCode 42 -TimedOut $false -GlobalConfig $global -AgentConfig $agent
+
+        $capturedTitle | Should -Match 'failed \(exit code 42\)'
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -261,46 +277,35 @@ Describe 'ConfigLoader — notifyOnFailure parsing' {
 
 # ---------------------------------------------------------------------------
 Describe 'ConfigLoader — global notifications parsing' {
+    BeforeEach {
+        $testEnv = New-TestEnvironment -Name 'NotifGlobal'
+    }
+    AfterEach {
+        Remove-TestEnvironment -TestEnv $testEnv
+    }
+
     It 'Defaults notifications to true when absent' {
-        $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-NotifGlobal-$([System.IO.Path]::GetRandomFileName().Replace('.',''))"
-        New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
-        try {
-            $configContent = [ordered]@{
-                '$schema' = './cronagents.schema.json'
-                logLevel  = 'info'
-            }
-            $configPath = Join-Path $tmpDir 'cronagents.json'
-            $configContent | ConvertTo-Json -Depth 5 | Out-File -FilePath $configPath -Encoding utf8
-
-            # Touch a .git dir so Find-RepoRoot finds it
-            New-Item -ItemType Directory -Path (Join-Path $tmpDir '.git') -Force | Out-Null
-
-            $config = Import-CronAgentsConfig -ConfigPath $configPath
-            $config.notifications | Should -Be $true
+        $configContent = [ordered]@{
+            '$schema' = './cronagents.schema.json'
+            logLevel  = 'info'
         }
-        finally {
-            Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        $configContent | ConvertTo-Json -Depth 5 |
+            Out-File -FilePath $testEnv.ConfigPath -Encoding utf8
+
+        $config = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $config.notifications | Should -Be $true
     }
 
     It 'Parses notifications = false' {
-        $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-NotifGlobal-$([System.IO.Path]::GetRandomFileName().Replace('.',''))"
-        New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
-        try {
-            $configContent = [ordered]@{
-                '$schema'      = './cronagents.schema.json'
-                logLevel       = 'info'
-                notifications  = $false
-            }
-            $configPath = Join-Path $tmpDir 'cronagents.json'
-            $configContent | ConvertTo-Json -Depth 5 | Out-File -FilePath $configPath -Encoding utf8
-            New-Item -ItemType Directory -Path (Join-Path $tmpDir '.git') -Force | Out-Null
+        $configContent = [ordered]@{
+            '$schema'      = './cronagents.schema.json'
+            logLevel       = 'info'
+            notifications  = $false
+        }
+        $configContent | ConvertTo-Json -Depth 5 |
+            Out-File -FilePath $testEnv.ConfigPath -Encoding utf8
 
-            $config = Import-CronAgentsConfig -ConfigPath $configPath
-            $config.notifications | Should -Be $false
-        }
-        finally {
-            Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        $config = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $config.notifications | Should -Be $false
     }
 }

@@ -27,6 +27,8 @@ A config-level `editScope` per agent restricting which paths the evaluator can m
 ### 5. Windows Notifications ✅ Implemented
 
 Per-agent `"notifyOnFailure": true` that triggers a Windows toast notification (`New-BurntToastNotification` or native `[Windows.UI.Notifications]`) when an agent errors or times out. Opt-in per agent; disabled globally with `"notifications": false` in `cronagents.json`. Gracefully degrades: BurntToast → native WinRT → silent no-op.
+
+**Future extension:** `"notifyOnSuccess": true` for success toasts (e.g. confirming a critical daily agent completed). Not implemented yet — current design only notifies on failure.
 
 ### 6. GitHub Remote for Personal Repo
 
