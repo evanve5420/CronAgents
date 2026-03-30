@@ -5,7 +5,7 @@
 .DESCRIPTION
     Creates (or updates) a Windows Task Scheduler task that launches the CronAgents
     scheduler at user logon. The task runs as the current user with no elevation.
-    Also initialises the per-user git branch used for agent feedback.
+    Also initialises the personal repo (~/.cronagents) used for agent state and feedback.
 
     Safe to run multiple times — idempotent by design.
 
@@ -152,18 +152,17 @@ if ($unexpected) {
     }
 }
 
-# ── Bootstrap user branch ────────────────────────────────────────────
-$branchPrefix = $config.versioning.branchPrefix
-$userName = Resolve-CronAgentsUserName -ConfigUserName $config.versioning.userName -RepoRoot $RepoRoot
-$branchResult = Initialize-UserBranch -RepoRoot $RepoRoot -BranchPrefix $branchPrefix -UserName $userName
-
-Write-CronAgentsLog -Level 'info' -Message "Install: user branch '$($branchResult.BranchName)' — created=$($branchResult.Created)."
+# ── Initialize personal repo ─────────────────────────────────────────
+$personalRepoPath = Get-PersonalRepoPath -ConfigPath $config.personalRepo.path
+$userName = Resolve-CronAgentsUserName -ConfigUserName $config.personalRepo.userName -RepoRoot $RepoRoot
+$repoResult = Initialize-PersonalRepo -Path $personalRepoPath -UserName $userName
+Write-CronAgentsLog -Level 'info' -Message "Install: personal repo '$personalRepoPath' — created=$($repoResult.Created)."
 
 # ── Summary ──────────────────────────────────────────────────────────
 Write-Host ''
-Write-Host '  Task path  : ' -NoNewline; Write-Host "$TaskPath$TaskName"
-Write-Host '  Trigger    : ' -NoNewline; Write-Host "At logon ($env:USERNAME)"
-Write-Host '  Scheduler  : ' -NoNewline; Write-Host $schedulerScript
-Write-Host '  Branch     : ' -NoNewline; Write-Host $branchResult.BranchName
+Write-Host '  Task path    : ' -NoNewline; Write-Host "$TaskPath$TaskName"
+Write-Host '  Trigger      : ' -NoNewline; Write-Host "At logon ($env:USERNAME)"
+Write-Host '  Scheduler    : ' -NoNewline; Write-Host $schedulerScript
+Write-Host '  Personal repo: ' -NoNewline; Write-Host $personalRepoPath
 Write-Host ''
 Write-Host "To start now:  Start-ScheduledTask -TaskName '$TaskName' -TaskPath '$TaskPath'"

@@ -9,7 +9,7 @@
 
 .PARAMETER Command
     Subcommand to execute (run, status, list, pause, resume, feedback,
-    evaluate, doctor, install, uninstall, sync, branch, help).
+    evaluate, doctor, install, uninstall, migrate, help).
 
 .PARAMETER Argument
     Optional argument for the subcommand (e.g. agent-id).
@@ -32,10 +32,13 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot   = $PSScriptRoot
 $ModulePath = Join-Path $PSScriptRoot 'scheduler/lib/CronAgents.psd1'
 $ConfigPath = Join-Path $RepoRoot 'cronagents.json'
-$StateFile  = Join-Path $RepoRoot '.cronstate/state.json'
-$RunsRoot   = Join-Path $RepoRoot '.cronstate/runs'
 
 Import-Module $ModulePath -Force
+
+$PersonalRepoConfig = Import-CronAgentsConfig -ConfigPath $ConfigPath
+$PersonalRepoPath   = Get-PersonalRepoPath -ConfigPath $PersonalRepoConfig.personalRepo.path
+$StateFile  = Join-Path $PersonalRepoPath '.cronstate/state.json'
+$RunsRoot   = Join-Path $PersonalRepoPath '.cronstate/runs'
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -48,7 +51,7 @@ function Get-Config {
 function Get-Agents {
     [OutputType([PSCustomObject[]])]
     param()
-    $result = @(Get-AgentConfigs -RepoRoot $RepoRoot)
+    $result = @(Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $PersonalRepoPath)
     Write-Output -NoEnumerate $result
 }
 
@@ -86,19 +89,15 @@ function Format-Schedule {
     }
 }
 
-function Get-SafeBranchHeader {
+function Get-SafeHeader {
     [OutputType([string])]
     param()
     try {
-        $config = Get-Config
-        $branchInfo = Get-CronAgentsBranch -RepoRoot $RepoRoot -BranchPrefix $config.versioning.branchPrefix
-        $div = Get-BranchDivergence -RepoRoot $RepoRoot
-        $header = "CronAgents (branch: $($branchInfo.CurrentBranch)"
-        if ($div.Behind -gt 0) {
-            $header += ", $($div.Behind) behind master"
+        $validation = Test-PersonalRepoValid -Path $PersonalRepoPath
+        if ($validation.Valid) {
+            return "CronAgents (personal repo: $PersonalRepoPath)"
         }
-        $header += ")"
-        return $header
+        return "CronAgents (personal repo: not initialized)"
     }
     catch {
         return "CronAgents"
@@ -132,6 +131,7 @@ function Invoke-RunCommand {
                         -AgentConfig $agent.Config `
                         -GlobalConfig $globalConfig `
                         -RepoRoot $RepoRoot `
+                        -PersonalRepoPath $PersonalRepoPath `
                         -RunsRoot $RunsRoot
         Write-Host "Agent '$AgentId' completed." -ForegroundColor Green
     }
@@ -158,17 +158,17 @@ function Invoke-StatusCommand {
 
     # Branch info
     try {
-        $config = Get-Config
-        $branchInfo = Get-CronAgentsBranch -RepoRoot $RepoRoot -BranchPrefix $config.versioning.branchPrefix
-        $div = Get-BranchDivergence -RepoRoot $RepoRoot
-        Write-Host "  Branch: $($branchInfo.CurrentBranch)" -ForegroundColor Cyan
-        if ($div.Behind -gt 0) {
-            Write-Host "  Behind master: $($div.Behind) commits" -ForegroundColor Yellow
+        $validation = Test-PersonalRepoValid -Path $PersonalRepoPath
+        if ($validation.Valid) {
+            Write-Host "  Personal repo: $PersonalRepoPath" -ForegroundColor Cyan
+        }
+        else {
+            Write-Host "  Personal repo: not initialized" -ForegroundColor Yellow
         }
         Write-Host ""
     }
     catch {
-        # Git info is optional
+        # Personal repo info is optional
     }
 
     $agents = Get-Agents
@@ -448,53 +448,25 @@ function Invoke-UninstallCommand {
     }
 }
 
-# ── Subcommand: sync ─────────────────────────────────────────────────
+# ── Subcommand: migrate ───────────────────────────────────────────────
 
-function Invoke-SyncCommand {
+function Invoke-MigrateCommand {
     [CmdletBinding()]
     param()
 
-    Write-Host "Syncing from master..." -ForegroundColor Cyan
-    try {
-        $config = Get-Config
-        $result = Invoke-BranchSync -RepoRoot $RepoRoot -CopilotPath $config.copilotPath
-        if ($result.Success) {
-            Write-Host $result.Message -ForegroundColor Green
-        }
-        else {
-            Write-Host $result.Message -ForegroundColor Red
-        }
-    }
-    catch {
-        Write-Host "Sync failed: $_" -ForegroundColor Red
-    }
-}
-
-# ── Subcommand: branch ───────────────────────────────────────────────
-
-function Invoke-BranchCommand {
-    [CmdletBinding()]
-    param()
-
-    try {
-        $config     = Get-Config
-        $branchInfo = Get-CronAgentsBranch -RepoRoot $RepoRoot -BranchPrefix $config.versioning.branchPrefix
-        $divergence = Get-BranchDivergence -RepoRoot $RepoRoot
-
-        Write-Host ""
-        Write-Host "  Current branch : $($branchInfo.CurrentBranch)" -ForegroundColor Cyan
-        Write-Host "  Expected branch: $($branchInfo.ExpectedBranch)"
-        Write-Host "  On user branch : $($branchInfo.IsUserBranch)"
-        Write-Host "  Ahead of master: $($divergence.Ahead)"
-        Write-Host "  Behind master  : $($divergence.Behind)"
-        if ($divergence.LastSync) {
-            Write-Host "  Last sync      : $($divergence.LastSync.ToLocalTime().ToString('yyyy-MM-dd HH:mm'))"
-        }
-        Write-Host ""
-    }
-    catch {
-        Write-Host "Could not retrieve branch info: $_" -ForegroundColor Red
-    }
+    Write-Host ""
+    Write-Host "CronAgents Migration: personal-branches → personal-repo" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "The branch-based model (cronagents/<user>) has been replaced with a" -ForegroundColor White
+    Write-Host "standalone personal repo at: $PersonalRepoPath" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Migration steps:" -ForegroundColor Yellow
+    Write-Host "  1. Run './cronagents.ps1 install' to initialize the personal repo."
+    Write-Host "  2. Copy any custom agent .md files from your old branch into:"
+    Write-Host "     $PersonalRepoPath\agents\"
+    Write-Host "  3. Feedback history will start fresh in the personal repo."
+    Write-Host "  4. The old cronagents/<user> branch can be deleted once migrated."
+    Write-Host ""
 }
 
 # ── Help ─────────────────────────────────────────────────────────────
@@ -514,10 +486,9 @@ function Show-Usage {
     Write-Host "  feedback [agent-id]  Open most recent pending feedback"
     Write-Host "  evaluate             Process all pending feedback"
     Write-Host "  doctor               Run health checks"
-    Write-Host "  install              Register scheduled task & bootstrap branch"
+    Write-Host "  install              Register scheduled task & init personal repo"
     Write-Host "  uninstall            Remove scheduled task"
-    Write-Host "  sync                 Merge latest changes from master"
-    Write-Host "  branch               Show branch info & divergence"
+    Write-Host "  migrate              Show migration guide from branch model"
     Write-Host "  help, --help         Show this help message"
     Write-Host ""
     Write-Host "Run without arguments for an interactive menu."
@@ -532,7 +503,7 @@ function Show-InteractiveMenu {
 
     while ($true) {
         Write-Host ""
-        Write-Host (Get-SafeBranchHeader) -ForegroundColor Cyan
+        Write-Host (Get-SafeHeader) -ForegroundColor Cyan
         Write-Host ([char]0x2500 * 30)
         Write-Host " 1) Status & upcoming runs"
         Write-Host " 2) Trigger ad-hoc run"
@@ -540,12 +511,10 @@ function Show-InteractiveMenu {
         Write-Host " 4) View run history"
         Write-Host " 5) Submit feedback"
         Write-Host " 6) Health check (doctor)"
-        Write-Host " 7) Sync from master"
-        Write-Host " 8) Branch info"
-        Write-Host " 9) Exit"
+        Write-Host " 7) Exit"
         Write-Host ([char]0x2500 * 30)
 
-        $choice = Read-Host "Select [1-9]"
+        $choice = Read-Host "Select [1-7]"
 
         switch ($choice) {
             '1' { Invoke-StatusCommand }
@@ -554,10 +523,8 @@ function Show-InteractiveMenu {
             '4' { Invoke-TuiRunHistory }
             '5' { Invoke-TuiFeedback }
             '6' { Invoke-DoctorCommand }
-            '7' { Invoke-SyncCommand }
-            '8' { Invoke-BranchCommand }
-            '9' { Write-Host "Goodbye." -ForegroundColor Cyan; return }
-            default { Write-Host "Invalid selection. Please enter 1-9." -ForegroundColor Yellow }
+            '7' { Write-Host "Goodbye." -ForegroundColor Cyan; return }
+            default { Write-Host "Invalid selection. Please enter 1-7." -ForegroundColor Yellow }
         }
     }
 }
@@ -789,8 +756,7 @@ try {
         'doctor'    { Invoke-DoctorCommand }
         'install'   { Invoke-InstallCommand }
         'uninstall' { Invoke-UninstallCommand }
-        'sync'      { Invoke-SyncCommand }
-        'branch'    { Invoke-BranchCommand }
+        'migrate'   { Invoke-MigrateCommand }
         default {
             Write-Host "Unknown command: '$Command'" -ForegroundColor Red
             Show-Usage
