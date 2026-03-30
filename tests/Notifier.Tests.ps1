@@ -239,6 +239,81 @@ Describe 'Send-AgentFailureNotification — timeout message' {
 }
 
 # ---------------------------------------------------------------------------
+Describe 'Send-SchedulerErrorNotification — gating logic' {
+    BeforeEach {
+        InModuleScope CronAgents { $script:NotificationBackend = 'None' }
+    }
+    AfterEach {
+        InModuleScope CronAgents { $script:NotificationBackend = $null }
+    }
+
+    It 'Does nothing when global notifications = false' {
+        $global = New-MockGlobalConfig -Notifications $false
+
+        { Send-SchedulerErrorNotification -Operation 'Test op' -ErrorMessage 'boom' -GlobalConfig $global } |
+            Should -Not -Throw
+    }
+
+    It 'Proceeds when global notifications = true (backend=None → silent)' {
+        $global = New-MockGlobalConfig -Notifications $true
+
+        { Send-SchedulerErrorNotification -Operation 'Test op' -ErrorMessage 'boom' -GlobalConfig $global } |
+            Should -Not -Throw
+    }
+}
+
+# ---------------------------------------------------------------------------
+Describe 'Send-SchedulerErrorNotification — toast content' {
+    BeforeEach {
+        InModuleScope CronAgents { $script:NotificationBackend = 'BurntToast' }
+    }
+    AfterEach {
+        InModuleScope CronAgents { $script:NotificationBackend = $null }
+    }
+
+    It 'Includes operation name in the title' {
+        $global = New-MockGlobalConfig -Notifications $true
+
+        $capturedTitle = $null
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body)
+            Set-Variable -Name capturedTitle -Value $Title -Scope 2
+        }
+
+        Send-SchedulerErrorNotification -Operation 'Dashboard update' -ErrorMessage 'file locked' -GlobalConfig $global
+
+        $capturedTitle | Should -Match 'Dashboard update'
+        $capturedTitle | Should -Match 'failed'
+    }
+
+    It 'Includes error message in the body' {
+        $global = New-MockGlobalConfig -Notifications $true
+
+        $capturedBody = $null
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body)
+            Set-Variable -Name capturedBody -Value $Body -Scope 2
+        }
+
+        Send-SchedulerErrorNotification -Operation 'Retention cleanup' -ErrorMessage 'disk full' -GlobalConfig $global
+
+        $capturedBody | Should -Match 'disk full'
+    }
+
+    It 'Falls back to native when BurntToast throws' {
+        $global = New-MockGlobalConfig -Notifications $true
+
+        Mock -ModuleName CronAgents Send-BurntToastNotification { throw 'BurntToast unavailable' }
+        Mock -ModuleName CronAgents Send-NativeToastNotification {}
+
+        Send-SchedulerErrorNotification -Operation 'Test fallback' -ErrorMessage 'error' -GlobalConfig $global
+
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 1
+        Should -Invoke -ModuleName CronAgents Send-NativeToastNotification -Times 1
+    }
+}
+
+# ---------------------------------------------------------------------------
 Describe 'ConfigLoader — notifyOnFailure parsing' {
     BeforeEach {
         $testEnv = New-TestEnvironment -Name 'NotifierConfig'

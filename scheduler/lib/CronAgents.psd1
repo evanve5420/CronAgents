@@ -61,6 +61,7 @@
         'Invoke-RetentionCleanup',
         # Notifier
         'Send-AgentFailureNotification',
+        'Send-SchedulerErrorNotification',
         'Test-NotificationAvailable'
     )
     CmdletsToExport   = @()

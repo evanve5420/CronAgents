@@ -499,6 +499,13 @@ catch {
     # ------------------------------------------------------------------
     Write-CronAgentsLog -Level 'error' -Message "Unexpected error running agent '$AgentId': $_"
 
+    # Notify about the infrastructure-level failure
+    try {
+        Send-SchedulerErrorNotification -Operation "Agent runner ($AgentId)" `
+            -ErrorMessage "Unexpected error: $_" -GlobalConfig $GlobalConfig
+    }
+    catch { <# best-effort #> }
+
     if ($runDir -and (Test-Path $runDir)) {
         try {
             Write-RunMetadata -RunDirectory $runDir -AgentId $AgentId `

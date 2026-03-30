@@ -200,3 +200,70 @@ function Send-AgentFailureNotification {
         }
     }
 }
+
+function Send-SchedulerErrorNotification {
+    <#
+    .SYNOPSIS
+        Shows a Windows toast notification for a scheduler infrastructure error.
+        Gated only by the global notifications toggle. Silently degrades if no
+        backend is available.
+
+    .PARAMETER Operation
+        Short label for what failed (e.g. 'Dashboard update', 'Retention cleanup').
+
+    .PARAMETER ErrorMessage
+        The error details to include in the toast body.
+
+    .PARAMETER GlobalConfig
+        The parsed global config object. Must have a 'notifications' property.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Operation,
+        [Parameter(Mandatory)][string]$ErrorMessage,
+        [Parameter(Mandatory)][PSCustomObject]$GlobalConfig
+    )
+
+    # Gate: global toggle
+    if ($GlobalConfig.PSObject.Properties['notifications'] -and
+        $GlobalConfig.notifications -eq $false) {
+        Write-CronAgentsLog -Level 'debug' -Message "Notifications disabled globally — skipping scheduler error toast."
+        return
+    }
+
+    $title = "CronAgents: $Operation failed"
+    $body  = "$ErrorMessage"
+
+    $backend = Resolve-NotificationBackend
+
+    switch ($backend) {
+        'BurntToast' {
+            try {
+                Send-BurntToastNotification -Title $title -Body $body
+                Write-CronAgentsLog -Level 'info' -Message "Scheduler error toast sent via BurntToast: $Operation"
+            }
+            catch {
+                Write-CronAgentsLog -Level 'warn' -Message "BurntToast failed for scheduler error — trying native fallback."
+                try {
+                    Send-NativeToastNotification -Title $title -Body $body
+                    Write-CronAgentsLog -Level 'info' -Message "Scheduler error toast sent via native API: $Operation"
+                }
+                catch {
+                    Write-CronAgentsLog -Level 'warn' -Message "Native toast also failed for scheduler error: $_ — skipped."
+                }
+            }
+        }
+        'Native' {
+            try {
+                Send-NativeToastNotification -Title $title -Body $body
+                Write-CronAgentsLog -Level 'info' -Message "Scheduler error toast sent via native API: $Operation"
+            }
+            catch {
+                Write-CronAgentsLog -Level 'warn' -Message "Native toast failed for scheduler error: $_ — skipped."
+            }
+        }
+        default {
+            Write-CronAgentsLog -Level 'debug' -Message "No notification backend available — scheduler error toast skipped."
+        }
+    }
+}
