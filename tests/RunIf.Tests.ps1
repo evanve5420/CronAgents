@@ -179,3 +179,14 @@ param(
         (Test-AgentRunIf -RunIf $runIf -ExecutionRoot $repoPath -AgentId 'script-agent' -StateFile $stateFile) | Should -Be $true
     }
 }
+
+Describe 'Get-AgentRunIfSnapshot - failure preserves prior state' {
+    It 'Returns Success=$false for git-dirty in a non-git directory' {
+        $nonGitDir = Join-Path $TestDrive 'not-a-repo'
+        New-Item -ItemType Directory -Path $nonGitDir -Force | Out-Null
+        $runIf = ConvertTo-AgentRunIfDefinition -RunIf 'git-dirty'
+        $result = Get-AgentRunIfSnapshot -RunIf $runIf -ExecutionRoot $nonGitDir
+        $result.Success | Should -BeFalse
+        $result.Snapshot | Should -BeOfType [hashtable]
+    }
+}

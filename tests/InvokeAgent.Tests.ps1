@@ -173,4 +173,33 @@ Describe 'Invoke-ScheduledAgent — Exit Code and State' {
         $state = Get-AgentState -StateFile (Join-Path $testEnv.StatePath 'state.json')
         $state.agents['test-agent'].runIfState.fileChanged.ContainsKey('package.json') | Should -Be $true
     }
+
+    It 'Preserves prior runIfState when snapshot capture fails' {
+        # Seed state with a known runIfState (simulate a previous successful run)
+        $stateFile = Join-Path $testEnv.StatePath 'state.json'
+        $priorSnapshot = @{ gitDirty = @{ head = 'abc1234deadbeef' } }
+        Set-AgentState -StateFile $stateFile -AgentId 'test-agent' -LastRun ([datetime]::UtcNow).AddHours(-1) -RunIfState $priorSnapshot
+
+        # Create agent with git-dirty runIf but root is NOT a git repo — snapshot will fail
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'test-agent' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Prompt 'Check repo' `
+            -RunIf 'git-dirty'
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = (Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'test-agent')
+
+        # Run without passing RunIfSnapshot — forces Invoke-ScheduledAgent to capture its own
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Be 0
+
+        # Prior runIfState should be preserved, not wiped to {}
+        $state = Get-AgentState -StateFile $stateFile
+        $state.agents['test-agent'].runIfState.gitDirty.head | Should -Be 'abc1234deadbeef'
+    }
 }

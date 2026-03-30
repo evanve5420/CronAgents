@@ -451,7 +451,14 @@ try {
         $null -ne $AgentConfig.runIf -and
         -not $PSBoundParameters.ContainsKey('RunIfSnapshot')) {
         $executionRoot = Get-AgentRunIfExecutionRoot -AgentConfig $AgentConfig -RepoRoot $RepoRoot -PersonalRepoPath $PersonalRepoPath
-        $RunIfSnapshot = (Get-AgentRunIfSnapshot -RunIf $AgentConfig.runIf -ExecutionRoot $executionRoot).Snapshot
+        $snapshotResult = Get-AgentRunIfSnapshot -RunIf $AgentConfig.runIf -ExecutionRoot $executionRoot
+        if ($snapshotResult.Success) {
+            $RunIfSnapshot = $snapshotResult.Snapshot
+        } else {
+            Write-CronAgentsLog -Level 'warn' -Message "Snapshot capture failed for '$AgentId': $($snapshotResult.Reason) — preserving previous runIfState."
+            $existingState = Get-AgentState -StateFile $stateFile -AgentId $AgentId
+            $RunIfSnapshot = if ($existingState -and $existingState.ContainsKey('runIfState')) { $existingState.runIfState } else { @{} }
+        }
     }
 
     Set-AgentState -StateFile $stateFile -AgentId $AgentId -LastRun ([datetime]::UtcNow) -RunIfState $RunIfSnapshot

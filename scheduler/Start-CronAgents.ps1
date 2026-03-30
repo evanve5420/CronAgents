@@ -313,7 +313,13 @@ try {
                         continue
                     }
 
-                    $runIfSnapshot = (Get-AgentRunIfSnapshot -RunIf $agent.Config.runIf -ExecutionRoot $executionRoot).Snapshot
+                    $snapshotResult = Get-AgentRunIfSnapshot -RunIf $agent.Config.runIf -ExecutionRoot $executionRoot
+                    $runIfSnapshot = if ($snapshotResult.Success) {
+                        $snapshotResult.Snapshot
+                    } else {
+                        Write-CronAgentsLog -Level 'warn' -Message "Snapshot capture failed for '$agentId': $($snapshotResult.Reason) — preserving previous runIfState."
+                        $runIfState
+                    }
                     if ($agent.PSObject.Properties['RunIfSnapshot']) {
                         $agent.RunIfSnapshot = $runIfSnapshot
                     }
