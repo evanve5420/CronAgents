@@ -1,6 +1,6 @@
 ---
 name: copilot-cli
-description: "Copilot CLI flags and invocation patterns used by CronAgents"
+description: "Use when trying to understand GitHub Copilot CLI flags and invocation patterns used by CronAgents"
 ---
 
 # Copilot CLI — CronAgents Quick Reference
