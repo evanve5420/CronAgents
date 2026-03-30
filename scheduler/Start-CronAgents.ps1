@@ -163,7 +163,10 @@ function Invoke-FeedbackSweep {
         }
         catch {
             Write-CronAgentsLog -Level 'warn' -Message "Feedback evaluator failed for $runDir`: $_"
-            try { Send-SchedulerErrorNotification -Operation 'Feedback evaluator' -ErrorMessage "$_" -GlobalConfig $config } catch { }
+            try {
+                Send-SchedulerErrorNotification -Operation 'Feedback evaluator' `
+                    -ErrorMessage "$_" -GlobalConfig $config
+            } catch { <# best-effort #> }
         }
 
         # Mark feedbackProcessed in meta.json
@@ -178,7 +181,10 @@ function Invoke-FeedbackSweep {
         }
         catch {
             Write-CronAgentsLog -Level 'warn' -Message "Failed to update feedbackProcessed in $runDir`: $_"
-            try { Send-SchedulerErrorNotification -Operation 'Feedback metadata update' -ErrorMessage "$_" -GlobalConfig $config } catch { }
+            try {
+                Send-SchedulerErrorNotification -Operation 'Feedback metadata update' `
+                    -ErrorMessage "$_" -GlobalConfig $config
+            } catch { <# best-effort #> }
         }
 
         if ($AutoCommitFeedback) {
@@ -190,7 +196,10 @@ function Invoke-FeedbackSweep {
             }
             catch {
                 Write-CronAgentsLog -Level 'warn' -Message "Feedback commit failed for $($run.AgentId): $_"
-                try { Send-SchedulerErrorNotification -Operation 'Feedback commit' -ErrorMessage "$_" -GlobalConfig $config } catch { }
+                try {
+                    Send-SchedulerErrorNotification -Operation 'Feedback commit' `
+                        -ErrorMessage "$_" -GlobalConfig $config
+                } catch { <# best-effort #> }
             }
         }
     }
@@ -244,7 +253,10 @@ try {
             }
             catch {
                 Write-CronAgentsLog -Level 'warn' -Message "Feedback sweep error: $_"
-                try { Send-SchedulerErrorNotification -Operation 'Feedback sweep' -ErrorMessage "$_" -GlobalConfig $config } catch { }
+                try {
+                    Send-SchedulerErrorNotification -Operation 'Feedback sweep' `
+                        -ErrorMessage "$_" -GlobalConfig $config
+                } catch { <# best-effort #> }
             }
         }
 
@@ -360,7 +372,10 @@ try {
                 }
                 catch {
                     Write-CronAgentsLog -Level 'error' -Message "Agent '$agentId' failed: $_"
-                    try { Send-SchedulerErrorNotification -Operation "Agent execution ($agentId)" -ErrorMessage "$_" -GlobalConfig $config } catch { }
+                    try {
+                        Send-SchedulerErrorNotification -Operation "Agent execution ($agentId)" `
+                            -ErrorMessage "$_" -GlobalConfig $config
+                    } catch { <# best-effort #> }
                 }
 
                 # Post-run feedback for this specific agent
@@ -394,7 +409,10 @@ try {
                     }
                     catch {
                         Write-CronAgentsLog -Level 'warn' -Message "Post-run feedback for '$agentId' failed: $_"
-                        try { Send-SchedulerErrorNotification -Operation "Post-run feedback ($agentId)" -ErrorMessage "$_" -GlobalConfig $config } catch { }
+                        try {
+                            Send-SchedulerErrorNotification -Operation "Post-run feedback ($agentId)" `
+                                -ErrorMessage "$_" -GlobalConfig $config
+                        } catch { <# best-effort #> }
                     }
                 }
             }
@@ -417,7 +435,10 @@ try {
         }
         catch {
             Write-CronAgentsLog -Level 'warn' -Message "Dashboard update failed: $_"
-            try { Send-SchedulerErrorNotification -Operation 'Dashboard update' -ErrorMessage "$_" -GlobalConfig $config } catch { }
+            try {
+                Send-SchedulerErrorNotification -Operation 'Dashboard update' `
+                    -ErrorMessage "$_" -GlobalConfig $config
+            } catch { <# best-effort #> }
         }
 
         # -----------------------------------------------------------
@@ -436,7 +457,10 @@ try {
             }
             catch {
                 Write-CronAgentsLog -Level 'warn' -Message "Retention cleanup failed: $_"
-                try { Send-SchedulerErrorNotification -Operation 'Retention cleanup' -ErrorMessage "$_" -GlobalConfig $config } catch { }
+                try {
+                    Send-SchedulerErrorNotification -Operation 'Retention cleanup' `
+                        -ErrorMessage "$_" -GlobalConfig $config
+                } catch { <# best-effort #> }
             }
         }
 

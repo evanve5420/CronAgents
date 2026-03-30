@@ -112,6 +112,53 @@ function Send-NativeToastNotification {
     [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
 }
 
+function Send-ToastWithFallback {
+    <#
+    .SYNOPSIS
+        Private helper — dispatches a toast through the BurntToast → Native
+        fallback chain. Caller is responsible for gating logic.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Title,
+        [Parameter(Mandatory)][string]$Body,
+        [string]$LogContext = 'notification'
+    )
+
+    $backend = Resolve-NotificationBackend
+
+    switch ($backend) {
+        'BurntToast' {
+            try {
+                Send-BurntToastNotification -Title $Title -Body $Body
+                Write-CronAgentsLog -Level 'info' -Message "Toast sent for $LogContext via BurntToast."
+            }
+            catch {
+                Write-CronAgentsLog -Level 'warn' -Message "BurntToast failed for $LogContext`: $_ — trying native fallback."
+                try {
+                    Send-NativeToastNotification -Title $Title -Body $Body
+                    Write-CronAgentsLog -Level 'info' -Message "Toast sent for $LogContext via native API."
+                }
+                catch {
+                    Write-CronAgentsLog -Level 'warn' -Message "Native toast also failed for $LogContext`: $_ — skipped."
+                }
+            }
+        }
+        'Native' {
+            try {
+                Send-NativeToastNotification -Title $Title -Body $Body
+                Write-CronAgentsLog -Level 'info' -Message "Toast sent for $LogContext via native API."
+            }
+            catch {
+                Write-CronAgentsLog -Level 'warn' -Message "Native toast failed for $LogContext`: $_ — skipped."
+            }
+        }
+        default {
+            Write-CronAgentsLog -Level 'debug' -Message "No notification backend available — toast skipped for $LogContext."
+        }
+    }
+}
+
 function Send-AgentFailureNotification {
     <#
     .SYNOPSIS
@@ -166,39 +213,7 @@ function Send-AgentFailureNotification {
     $title  = "CronAgents: $AgentName $reason"
     $body   = "Agent '$AgentId' $reason. Check the dashboard or run directory for details."
 
-    $backend = Resolve-NotificationBackend
-
-    switch ($backend) {
-        'BurntToast' {
-            try {
-                Send-BurntToastNotification -Title $title -Body $body
-                Write-CronAgentsLog -Level 'info' -Message "Toast notification sent for '$AgentId' via BurntToast."
-            }
-            catch {
-                Write-CronAgentsLog -Level 'warn' -Message "BurntToast notification failed for '$AgentId': $_ — trying native fallback."
-                # Fall through to native
-                try {
-                    Send-NativeToastNotification -Title $title -Body $body
-                    Write-CronAgentsLog -Level 'info' -Message "Toast notification sent for '$AgentId' via native API."
-                }
-                catch {
-                    Write-CronAgentsLog -Level 'warn' -Message "Native toast also failed for '$AgentId': $_ — notification skipped."
-                }
-            }
-        }
-        'Native' {
-            try {
-                Send-NativeToastNotification -Title $title -Body $body
-                Write-CronAgentsLog -Level 'info' -Message "Toast notification sent for '$AgentId' via native API."
-            }
-            catch {
-                Write-CronAgentsLog -Level 'warn' -Message "Native toast failed for '$AgentId': $_ — notification skipped."
-            }
-        }
-        default {
-            Write-CronAgentsLog -Level 'debug' -Message "No notification backend available — toast skipped for '$AgentId'."
-        }
-    }
+    Send-ToastWithFallback -Title $title -Body $body -LogContext "agent '$AgentId'"
 }
 
 function Send-SchedulerErrorNotification {
@@ -232,38 +247,7 @@ function Send-SchedulerErrorNotification {
     }
 
     $title = "CronAgents: $Operation failed"
-    $body  = "$ErrorMessage"
+    $body  = $ErrorMessage
 
-    $backend = Resolve-NotificationBackend
-
-    switch ($backend) {
-        'BurntToast' {
-            try {
-                Send-BurntToastNotification -Title $title -Body $body
-                Write-CronAgentsLog -Level 'info' -Message "Scheduler error toast sent via BurntToast: $Operation"
-            }
-            catch {
-                Write-CronAgentsLog -Level 'warn' -Message "BurntToast failed for scheduler error — trying native fallback."
-                try {
-                    Send-NativeToastNotification -Title $title -Body $body
-                    Write-CronAgentsLog -Level 'info' -Message "Scheduler error toast sent via native API: $Operation"
-                }
-                catch {
-                    Write-CronAgentsLog -Level 'warn' -Message "Native toast also failed for scheduler error: $_ — skipped."
-                }
-            }
-        }
-        'Native' {
-            try {
-                Send-NativeToastNotification -Title $title -Body $body
-                Write-CronAgentsLog -Level 'info' -Message "Scheduler error toast sent via native API: $Operation"
-            }
-            catch {
-                Write-CronAgentsLog -Level 'warn' -Message "Native toast failed for scheduler error: $_ — skipped."
-            }
-        }
-        default {
-            Write-CronAgentsLog -Level 'debug' -Message "No notification backend available — scheduler error toast skipped."
-        }
-    }
+    Send-ToastWithFallback -Title $title -Body $body -LogContext "scheduler error ($Operation)"
 }

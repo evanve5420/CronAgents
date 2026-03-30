@@ -29,6 +29,8 @@ A config-level `editScope` per agent restricting which paths the evaluator can m
 Per-agent `"notifyOnFailure": true` that triggers a Windows toast notification (`New-BurntToastNotification` or native `[Windows.UI.Notifications]`) when an agent errors or times out. Opt-in per agent; disabled globally with `"notifications": false` in `cronagents.json`. Gracefully degrades: BurntToast → native WinRT → silent no-op.
 
 **Future extension:** `"notifyOnSuccess": true` for success toasts (e.g. confirming a critical daily agent completed). Not implemented yet — current design only notifies on failure.
+
+**Future extension:** Notification rate limiter / cooldown. In a failure cascade (e.g. disk full), a single scheduler tick can fire multiple toasts. A per-tick summary toast or a cooldown (e.g. one scheduler-error toast per 5 minutes) would prevent notification floods.
 
 ### 6. GitHub Remote for Personal Repo
 
