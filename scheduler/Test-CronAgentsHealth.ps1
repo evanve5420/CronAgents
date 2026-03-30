@@ -365,6 +365,7 @@ function Test-NotificationBackend {
         $cfg = Import-CronAgentsConfig -ConfigPath $configPath
     }
     catch {
+        Write-CronAgentsLog -Level 'warn' -Message "Notification health check: config parse failed: $_"
         $cfg = [PSCustomObject]@{ notifications = $true }
     }
 
@@ -373,21 +374,22 @@ function Test-NotificationBackend {
             -Message 'Disabled globally (notifications: false)'
     }
 
-    if (Get-Module -ListAvailable -Name 'BurntToast' -ErrorAction SilentlyContinue) {
-        return New-CheckResult -Name 'Notifications' -Status 'Pass' `
-            -Message 'BurntToast module available'
-    }
+    $backend = Resolve-NotificationBackend
 
-    # Try native WinRT
-    try {
-        $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
-        return New-CheckResult -Name 'Notifications' -Status 'Pass' `
-            -Message 'Native Windows.UI.Notifications available (BurntToast recommended for richer toasts)'
+    switch ($backend) {
+        'BurntToast' {
+            return New-CheckResult -Name 'Notifications' -Status 'Pass' `
+                -Message 'BurntToast module available'
+        }
+        'Native' {
+            return New-CheckResult -Name 'Notifications' -Status 'Pass' `
+                -Message 'Native Windows.UI.Notifications available (BurntToast recommended for richer toasts)'
+        }
+        default {
+            return New-CheckResult -Name 'Notifications' -Status 'Warn' `
+                -Message 'No notification backend available. Install BurntToast: Install-Module BurntToast -Scope CurrentUser'
+        }
     }
-    catch { }
-
-    return New-CheckResult -Name 'Notifications' -Status 'Warn' `
-        -Message 'No notification backend available. Install BurntToast: Install-Module BurntToast -Scope CurrentUser'
 }
 
 # ===================================================================

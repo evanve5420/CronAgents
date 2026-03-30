@@ -62,7 +62,8 @@
         # Notifier
         'Send-AgentFailureNotification',
         'Send-SchedulerErrorNotification',
-        'Test-NotificationAvailable'
+        'Test-NotificationAvailable',
+        'Resolve-NotificationBackend'
     )
     CmdletsToExport   = @()
     VariablesToExport  = @()
