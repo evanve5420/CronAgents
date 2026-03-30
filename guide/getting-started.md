@@ -9,7 +9,7 @@ This guide walks you through installing CronAgents, creating your first schedule
 If you already have GitHub Copilot CLI installed and authenticated, that's all you need. Open a terminal, start a Copilot session, and point it at this repo:
 
 ```
-Read https://github.com/evanve5420/CronAgents and set up CronAgents for me.
+Read this CronAgents repository and set up CronAgents for me.
 ```
 
 Copilot will read the docs and drive the full setup — cloning, checking for Git and PowerShell, running the installer — asking you questions as needed.
@@ -58,7 +58,7 @@ copilot --version   # verify it's working
 In a terminal, run:
 
 ```powershell
-git clone https://github.com/evanve5420/CronAgents CronAgents
+git clone <repo-url> CronAgents
 cd CronAgents
 ```
 

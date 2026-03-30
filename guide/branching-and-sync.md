@@ -50,8 +50,8 @@ CronAgents determines your username using this priority order:
 | Priority | Source | Example |
 |----------|--------|---------|
 | 1 (highest) | `cronagents.json` → `personalRepo.userName` | `"userName": "alice"` |
-| 2 | `git config github.user` | `evanve5420` |
-| 3 | `gh auth status` active account | `evanve5420` |
+| 2 | `git config github.user` | `alice` |
+| 3 | `gh auth status` active account | `alice` |
 | 4 | `git config user.name` (slugified) | `"Alice Smith"` → `alice-smith` |
 | 5 (fallback) | `$env:USERNAME` (Windows) | `ALICE` → `alice` |
 
