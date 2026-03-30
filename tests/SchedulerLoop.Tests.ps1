@@ -173,14 +173,15 @@ Describe 'Scheduler startup entry script' {
     }
 
     It 'Stays running past startup with a valid config' {
-        $script:schedulerProcess = Start-Process pwsh -ArgumentList @(
-            '-NoProfile'
-            '-File', $script:startScript
-            '-RepoRoot', $script:testEnv.Root
-            '-ConfigPath', $script:testEnv.ConfigPath
-        ) -PassThru -WindowStyle Hidden `
-          -RedirectStandardOutput $script:stdoutPath `
-          -RedirectStandardError $script:stderrPath
+        $startArgs = @{
+            FilePath               = 'pwsh'
+            ArgumentList           = @('-NoProfile', '-File', $script:startScript, '-RepoRoot', $script:testEnv.Root, '-ConfigPath', $script:testEnv.ConfigPath)
+            PassThru               = $true
+            RedirectStandardOutput = $script:stdoutPath
+            RedirectStandardError  = $script:stderrPath
+        }
+        if ($IsWindows) { $startArgs.WindowStyle = 'Hidden' }
+        $script:schedulerProcess = Start-Process @startArgs
 
         Start-Sleep -Seconds 2
 
@@ -194,14 +195,15 @@ Describe 'Scheduler startup entry script' {
     }
 
     It 'Generates dashboard.md on its first tick' {
-        $script:schedulerProcess = Start-Process pwsh -ArgumentList @(
-            '-NoProfile'
-            '-File', $script:startScript
-            '-RepoRoot', $script:testEnv.Root
-            '-ConfigPath', $script:testEnv.ConfigPath
-        ) -PassThru -WindowStyle Hidden `
-          -RedirectStandardOutput $script:stdoutPath `
-          -RedirectStandardError $script:stderrPath
+        $startArgs = @{
+            FilePath               = 'pwsh'
+            ArgumentList           = @('-NoProfile', '-File', $script:startScript, '-RepoRoot', $script:testEnv.Root, '-ConfigPath', $script:testEnv.ConfigPath)
+            PassThru               = $true
+            RedirectStandardOutput = $script:stdoutPath
+            RedirectStandardError  = $script:stderrPath
+        }
+        if ($IsWindows) { $startArgs.WindowStyle = 'Hidden' }
+        $script:schedulerProcess = Start-Process @startArgs
 
         $dashboardPath = Join-Path $script:testEnv.Root 'dashboard.md'
         $deadline = (Get-Date).AddSeconds(10)

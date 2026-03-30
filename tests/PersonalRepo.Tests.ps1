@@ -43,8 +43,9 @@ Describe 'Get-PersonalRepoPath' {
     }
 
     It 'Handles explicit absolute path' {
-        $result = Get-PersonalRepoPath -ConfigPath 'C:\my\agents'
-        $result | Should -Be 'C:\my\agents'
+        $absPath = if ($IsWindows -or $env:OS -eq 'Windows_NT') { 'C:\my\agents' } else { '/opt/my/agents' }
+        $result = Get-PersonalRepoPath -ConfigPath $absPath
+        $result | Should -Be $absPath
     }
 }
 

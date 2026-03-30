@@ -154,13 +154,14 @@ function Resolve-CronAgentsUserName {
         }
     }
 
-    # 4. Environment variable
-    if ($env:USERNAME) {
-        Write-CronAgentsLog -Level 'debug' -Message "Username from env:USERNAME: $env:USERNAME"
-        return ConvertTo-Slug -Value $env:USERNAME
+    # 4. Environment variable (cross-platform)
+    $envUser = if ($env:USERNAME) { $env:USERNAME } elseif ($env:USER) { $env:USER } else { $null }
+    if ($envUser) {
+        Write-CronAgentsLog -Level 'debug' -Message "Username from environment: $envUser"
+        return ConvertTo-Slug -Value $envUser
     }
 
-    throw 'Cannot resolve username: no config value, GitHub handle, git config, or USERNAME environment variable available.'
+    throw 'Cannot resolve username: no config value, GitHub handle, git config, or USERNAME/USER environment variable available.'
 }
 
 # ===================================================================
