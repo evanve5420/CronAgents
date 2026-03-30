@@ -64,9 +64,9 @@ Local markdown now, but `Update-Dashboard.ps1` is designed to be extensible to w
 
 PowerShell Core runs on macOS/Linux, but initial target is Windows only. macOS would need `launchd` instead of Task Scheduler. Linux would need systemd user services or cron.
 
-### 13. PR Gate Enforcement
+### 13. Windows PR Coverage
 
-A GitHub Actions workflow (`.github/workflows/tests.yml`) runs the cross-platform test suite on `ubuntu-latest` as a required status check on PRs to `master`. Tests tagged `WindowsOnly` (Health Check, CLI doctor) are excluded from this workflow since they depend on Windows Task Scheduler APIs. A future improvement would add a separate `windows-latest` job to cover those tests — acceptable cost once the project gains contributors, but not worth the 2× Actions billing multiplier today.
+The baseline PR gate already exists: `.github/workflows/tests.yml` runs the non-Windows test suite on `ubuntu-latest` for pull requests to `master`. The remaining future work is adding a separate `windows-latest` job so tests tagged `WindowsOnly` (Health Check, CLI doctor) are covered in CI too — acceptable once the project has enough churn to justify the extra Actions cost.
 
 ### 14. Agent Pipelines
 
