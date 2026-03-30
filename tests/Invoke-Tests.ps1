@@ -58,11 +58,18 @@ if (`$r.FailedCount -gt 0) {
 "@
     $encodedCommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($cmd))
 
+    $startArgs = @{
+        FilePath     = 'pwsh'
+        ArgumentList = @('-NoProfile', '-EncodedCommand', $encodedCommand)
+        PassThru     = $true
+    }
+    if ($IsWindows) { $startArgs.WindowStyle = 'Hidden' }
+
     [PSCustomObject]@{
         File       = $File
         Label      = $File.Name.Replace('.Tests.ps1', '')
         ResultFile = $resultFile
-        Process    = Start-Process pwsh -ArgumentList @('-NoProfile', '-EncodedCommand', $encodedCommand) -PassThru -WindowStyle Hidden
+        Process    = Start-Process @startArgs
     }
 }
 
