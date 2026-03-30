@@ -1,3 +1,8 @@
+---
+name: copilot-cli
+description: "Copilot CLI flags and invocation patterns used by CronAgents"
+---
+
 # Copilot CLI — CronAgents Quick Reference
 
 > **Note:** The old `gh copilot` extension was retired October 2025. Install the standalone CLI via `winget install GitHub.Copilot` on Windows.
