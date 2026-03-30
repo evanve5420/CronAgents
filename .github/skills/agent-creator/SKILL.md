@@ -15,21 +15,25 @@ Read these for current structure and options (fall back to [docs/PLAN.md](../../
 1. [guide/writing-agents.md](../../../guide/writing-agents.md)
 2. [guide/configuration.md](../../../guide/configuration.md)
 
-## Branch Safety — Do This Before Creating Anything
+## Personal Repo Setup — Do This Before Creating Anything
 
-Scheduled agent registrations are tracked customizations and should live on the user's personal branch, not `master` / `main`.
+Agent definitions and registrations live in the user's **personal repo** (`~/.cronagents/`), not in the infra repo.
 
-1. Read the current branch state before creating files.
-2. Load `cronagents.json` and determine the expected user branch from `versioning.branchPrefix` and `versioning.userName`.
-3. If the repo is on `master` or `main`, switch to the expected user branch **before** creating any tracked agent files.
-4. Use the shared module helpers rather than ad-hoc git logic:
-   - `Import-Module scheduler/lib/CronAgents.psd1 -Force`
-   - `Import-CronAgentsConfig`
-   - `Get-CronAgentsBranch`
-   - `Resolve-CronAgentsUserName`
-   - `Initialize-UserBranch`
-5. If the working tree is dirty and branch initialization cannot proceed safely, stop and tell the user exactly what must be cleaned up first.
-6. Never scaffold tracked agent files on `master` / `main` unless the user explicitly overrides that rule.
+1. Load the shared module and check the personal repo:
+   ```powershell
+   Import-Module scheduler/lib/CronAgents.psd1 -Force
+   Import-CronAgentsConfig
+   $repoPath = Get-PersonalRepoPath
+   $valid = Test-PersonalRepoValid
+   ```
+2. If the personal repo doesn't exist or isn't valid, initialize it:
+   ```powershell
+   Initialize-PersonalRepo
+   ```
+3. Agent files go in:
+   - **Agent profiles:** `~/.cronagents/.github/agents/<agent-name>.agent.md`
+   - **Registrations:** `~/.cronagents/.cronagents/agents/<agent-id>.agent-registration.json`
+4. No branch switching is needed — the personal repo is a standalone git repository.
 
 ## Interview the User
 
@@ -45,16 +49,17 @@ Skip anything already clear from context:
    - `--allow-all-tools` only when genuinely needed — confirm with the user
 5. **Model preference?**
 6. **Execution policies?** — timeout, skip on battery, retry on failure
-7. **Agent profile placement (agent mode only)** — project-local `.github/agents/` or user-global `~/.copilot/agents/`
+7. **Agent profile placement (agent mode only)** — personal repo `.github/agents/` (default) or user-global `~/.copilot/agents/`
+8. **Working directory?** — which project directory the agent should run in (null = allow all via `--allow-all`)
 
 ## Create
 
 ### Agent mode
 
-Custom agent profile in a Copilot-supported discovery location — scope `tools` to what the task actually needs:
+Custom agent profile in the personal repo — scope `tools` to what the task actually needs:
 
 ```markdown
-# .github/agents/<agent-name>.agent.md
+# ~/.cronagents/.github/agents/<agent-name>.agent.md
 ---
 name: <agent-name>
 description: "<one-line description>"
@@ -68,14 +73,14 @@ tools:
 CronAgents registration file — **filename stem = stable agent ID**:
 
 ```jsonc
-// .cronagents/agents/<agent-id>.agent-registration.json
+// ~/.cronagents/.cronagents/agents/<agent-id>.agent-registration.json
 {
   "$schema": "../../cronagents-agent.schema.json",
   "name": "<Display Name>",
   "agent": "<agent-name>",
   "prompt": "<run prompt>",
   "schedule": { "type": "daily", "time": "09:00" }
-  // Optional: timeout, skipOnBattery, retryCount, model, denyTools, extraCliFlags, envVars
+  // Optional: timeout, skipOnBattery, retryCount, model, denyTools, extraCliFlags, envVars, workingDirectory
 }
 ```
 
@@ -84,7 +89,7 @@ CronAgents registration file — **filename stem = stable agent ID**:
 No `.agent.md`. Omit `agent` field — scheduler invokes `copilot -p` with `--allow-all-tools`. Use `denyTools` to restrict.
 
 ```jsonc
-// .cronagents/agents/<agent-id>.agent-registration.json
+// ~/.cronagents/.cronagents/agents/<agent-id>.agent-registration.json
 {
   "$schema": "../../cronagents-agent.schema.json",
   "name": "<Display Name>",
@@ -96,11 +101,11 @@ No `.agent.md`. Omit `agent` field — scheduler invokes `copilot -p` with `--al
 
 ### Companion SKILL.md (optional, agent mode only)
 
-Create in `scheduler/skills/<agent-name>/SKILL.md` if the agent needs domain knowledge.
+Create in `~/.cronagents/.github/skills/<agent-name>/SKILL.md` if the agent needs domain knowledge.
 
 ## Validate
 
-- Agent mode: `.agent.md` lives in `.github/agents/` or `~/.copilot/agents/`, has explicit `tools` list (least-privilege), and `agent` in the registration matches the `.agent.md` name
+- Agent mode: `.agent.md` lives in `~/.cronagents/.github/agents/` or `~/.copilot/agents/`, has explicit `tools` list (least-privilege), and `agent` in the registration matches the `.agent.md` name
 - Prompt-only: registration has `prompt` + `schedule`, no `agent` field, `denyTools` considered
-- Both: registration file is named `.cronagents/agents/<agent-id>.agent-registration.json`
+- Both: registration file is named `~/.cronagents/.cronagents/agents/<agent-id>.agent-registration.json`
 - Both: schedule type is `interval`/`daily`/`weekly`, test with `cronagents.ps1 run <agent-id>`

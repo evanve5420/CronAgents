@@ -141,7 +141,7 @@ Process all pending feedback using the feedback evaluator agent.
 
 This finds all run directories with unprocessed feedback and invokes the feedback-evaluator agent for each one. The evaluator reads your feedback, makes targeted edits to the agent's definition files, and writes a changelog to `feedback-result.md`.
 
-If `versioning.autoCommitFeedback` is `true`, changes are automatically committed to git.
+If `personalRepo.autoCommitFeedback` is `true`, changes are automatically committed to the personal repo.
 
 See [Feedback System](feedback-system.md) for the full workflow.
 
@@ -149,7 +149,7 @@ See [Feedback System](feedback-system.md) for the full workflow.
 
 ### `doctor`
 
-Run health checks to verify the Cronggents installation.
+Run health checks to verify the CronAgents installation.
 
 ```powershell
 .\cronagents.ps1 doctor
@@ -161,8 +161,8 @@ Checks include:
 - Config files are valid JSON and pass schema validation
 - Copilot CLI is available and authenticated
 - State file integrity
-- Git repository and branch health
-- ggent config discovery
+- Personal repo exists and is valid
+- Agent config discovery
 
 Each check reports pass/fail with details on how to fix failures.
 
@@ -170,7 +170,7 @@ Each check reports pass/fail with details on how to fix failures.
 
 ### `install`
 
-Register the Windows Task Scheduler entry and bootstrap the user branch.
+Register the Windows Task Scheduler entry and initialize the personal repo.
 
 ```powershell
 .\cronagents.ps1 install
@@ -178,10 +178,10 @@ Register the Windows Task Scheduler entry and bootstrap the user branch.
 
 **What it does:**
 
-1. Registers a scheduled task (`\Cronggents\Cronggents`) that triggers at logon
-2. Creates or checks out your user branch (`personal-agents/<username>`)
+1. Registers a scheduled task (`\CronAgents\CronAgents`) that triggers at logon
+2. Initializes the personal repo at `~/.cronagents/` (or the configured `personalRepo.path`)
 
-The command is idempotent — running it again won't create duplicate tasks. Use this after cloning the repo for the first time or if the task was accidentally removed.
+The command is idempotent — running it again won't create duplicate tasks or reinitialize an existing personal repo. Use this after cloning the infra repo for the first time or if the task was accidentally removed.
 
 ---
 
@@ -193,39 +193,19 @@ Remove the Windows Task Scheduler entry.
 .\cronagents.ps1 uninstall
 ```
 
-Stops the running scheduler (if active) and removes the `\Cronggents\Cronggents` scheduled task. Does not delete any files, configs, or run history.
+Stops the running scheduler (if active) and removes the `\CronAgents\CronAgents` scheduled task. Does not delete any files, configs, or run history.
 
 ---
 
-### `sync`
+### `migrate`
 
-Merge the latest changes from `master` into your user branch.
-
-```powershell
-.\cronagents.ps1 sync
-```
-
-Fetches `origin/master` and merges into your current branch. If conflicts are detected, Cronggents attempts agent-assisted resolution via Copilot CLI. If that fails, the merge is aborted and you can resolve manually.
-
-See [Branching & Sync](branching-and-sync.md) for details.
-
----
-
-### `branch`
-
-Show information about the current branch and its relationship to `master`.
+Migrate agent definitions from the old branch model (`personal-agents/<username>`) to the personal repo.
 
 ```powershell
-.\cronagents.ps1 branch
+.\cronagents.ps1 migrate
 ```
 
-Output includes:
-
-- Current branch name
-- Whether it's a valid user branch
-- Expected branch name based on username
-- Commits ahead/behind `master`
-- Last sync time (merge-base)
+Copies agent profiles and registrations from the current infra repo into the personal repo at `~/.cronagents/`. Existing files in the personal repo are not overwritten unless `--force` is specified.
 
 ---
 
@@ -245,7 +225,7 @@ Show the usage summary.
 Running `cronagents.ps1` with no arguments launches a numbered interactive menu:
 
 ```
-Cronggents — Interactive Menu
+CronAgents — Interactive Menu
 
   1) Status & upcoming runs
   2) Trigger ad-hoc run
@@ -253,16 +233,14 @@ Cronggents — Interactive Menu
   4) View run history
   5) Submit feedback
   6) Health check (doctor)
-  7) Sync from master
-  8) Branch info
-  9) Exit
+  7) Exit
 
-Select [1-9]:
+Select [1-7]:
 ```
 
 ### Menu options
 
-| # | gction | Description |
+| # | Action | Description |
 |---|--------|-------------|
 | 1 | Status & upcoming runs | Same as `cronagents.ps1 status` |
 | 2 | Trigger ad-hoc run | Shows a list of discovered agents, lets you pick one to run |
@@ -270,11 +248,9 @@ Select [1-9]:
 | 4 | View run history | Shows the 20 most recent runs with agent, time, exit code, and feedback status |
 | 5 | Submit feedback | Opens the most recent pending `feedback.md` in your editor |
 | 6 | Health check | Same as `cronagents.ps1 doctor` |
-| 7 | Sync from master | Same as `cronagents.ps1 sync` |
-| 8 | Branch info | Same as `cronagents.ps1 branch` |
-| 9 | Exit | Close the menu |
+| 7 | Exit | Close the menu |
 
-Type the number and press Enter. gfter each action completes, the menu reappears so you can perform additional operations.
+Type the number and press Enter. After each action completes, the menu reappears so you can perform additional operations.
 
 ---
 
@@ -303,9 +279,8 @@ Type the number and press Enter. gfter each action completes, the menu reappears
 .\cronagents.ps1 feedback daily-review  # Open feedback for agent
 .\cronagents.ps1 evaluate               # Process all pending feedback
 .\cronagents.ps1 doctor                 # Run health checks
-.\cronagents.ps1 install                # Register Task Scheduler + branch
+.\cronagents.ps1 install                # Register Task Scheduler + personal repo
 .\cronagents.ps1 uninstall              # Remove Task Scheduler entry
-.\cronagents.ps1 sync                   # Merge from master
-.\cronagents.ps1 branch                 # Show branch info
+.\cronagents.ps1 migrate                # Migrate from branch model to personal repo
 ```
 

@@ -19,7 +19,7 @@ A reusable scaffolding that runs Copilot CLI agents on configurable schedules, r
 **Step 1** — Create the directory layout:
 
 ```
-CronAgents/
+CronAgents/                                   ← Infra repo (shared)
 ├── .github/
 │   ├── copilot-instructions.md               ← workspace instructions for repo development
 │   ├── skills/
@@ -47,26 +47,39 @@ CronAgents/
 │       ├── StateManager.ps1                  ← state.json read/write/recovery (file-locked)
 │       ├── ScheduleParser.ps1                ← schedule matching logic
 │       ├── RunManager.ps1                    ← run directory creation, metadata, output capture
-│       ├── GitHelpers.ps1                    ← branch detection, sync, commit, divergence
+│       ├── GitHelpers.ps1                    ← personal repo management, commit, validation
 │       ├── PowerHelpers.ps1                  ← battery state detection
 │       ├── Logger.ps1                        ← structured logging (global + per-run)
 │       └── RetentionCleanup.ps1              ← run directory expiration
 ├── cronagents.ps1                           ← CLI wrapper (run, status, pause, resume, feedback)
-├── cronagents.json                          ← global scheduler settings (no agent definitions)
+├── cronagents.json                          ← global scheduler settings (base config)
 ├── cronagents.schema.json                   ← JSON Schema for global config validation
 ├── cronagents-agent.schema.json             ← JSON Schema for per-agent schedule config files
-├── dashboard.md                              ← live at-a-glance results (read-only)
+├── tests/
+│   ├── ScheduleParser.Tests.ps1
+│   ├── ConfigValidation.Tests.ps1
+│   └── ...
+├── docs/                                     ← developer/design docs (not user-facing)
+├── guide/                                    ← user-facing documentation
+├── .gitignore
+├── README.md                                 ← landing page: overview, feature highlights, docs map
+└── LICENSE
+
+~/.cronagents/                                ← Personal repo (per-user, separate git repo)
+├── .github/
+│   ├── agents/                               ← user agent profiles (.agent.md)
+│   │   ├── daily-review.agent.md
+│   │   └── weekly-deps.agent.md
+│   └── skills/                               ← user agent skills (SKILL.md)
 ├── .cronagents/
-│   └── agents/                               ← repo-local workload agents + scheduling configs
-│       ├── daily-review.agent.md             ← Copilot agent definition
-│       ├── daily-review.agent-registration.json ← agent registration (id = filename stem)
-│       ├── weekly-deps.agent.md
-│       └── weekly-deps.json
-├── .cronstate/                              ← runtime data (always gitignored, entire directory)
+│   └── agents/                               ← agent registrations (.agent-registration.json)
+│       ├── daily-review.agent-registration.json
+│       └── weekly-deps.agent-registration.json
+├── .cronstate/                               ← runtime data (gitignored)
 │   ├── state.json                            ← last-run timestamps + agent enabled/disabled
 │   ├── scheduler.log                         ← global scheduler log (rotated)
 │   └── runs/                                 ← per-run detailed output
-│       └── <timestamp>_<agent-id>_<nonce>/   ← nonce = short random suffix for uniqueness
+│       └── <timestamp>_<agent-id>_<nonce>/
 │           ├── output.md                     ← captured agent output
 │           ├── summary.md                    ← LLM-generated run summary (cached, written once)
 │           ├── meta.json                     ← run metadata + feedbackProcessed flag
@@ -74,50 +87,15 @@ CronAgents/
 │           ├── scheduler.log                 ← per-run debug log (always debug level)
 │           ├── feedback.md                   ← human feedback file (user edits this)
 │           └── feedback-result.md            ← evaluator's changelog (written by evaluator)
-├── tests/
-│   ├── ScheduleParser.Tests.ps1
-│   ├── ConfigValidation.Tests.ps1
-│   ├── InvokeAgent.Tests.ps1
-│   ├── Dashboard.Tests.ps1
-│   ├── FeedbackFlow.Tests.ps1
-│   ├── CliWrapper.Tests.ps1
-│   ├── SchedulerLoop.Tests.ps1
-│   ├── RetentionCleanup.Tests.ps1
-│   ├── StateManagement.Tests.ps1
-│   ├── AgentVersioning.Tests.ps1
-│   ├── SyncWorkflow.Tests.ps1
-│   ├── BackupRestore.Tests.ps1
-│   ├── Smoke.Tests.ps1                       ← E2E (requires real Copilot CLI)
-│   ├── TestHelpers.psm1                      ← shared setup/teardown
-│   ├── fixtures/                             ← sample configs, run data, feedback files
-│   └── mocks/
-│       └── copilot.ps1                       ← mock Copilot CLI for testing
-├── docs/                                     ← developer/design docs (not user-facing)
-│   ├── PLAN.md                               ← this file — master build plan
-│   ├── TESTING.md                            ← test specifications
-│   ├── AGENT-VERSIONING.md                   ← git branch model design
-│   ├── FUTURE.md                             ← roadmap beyond day 0
-│   ├── SCRIPT-MODE.md                        ← future script mode design
-│   ├── UX-REQUIREMENTS.md                    ← future HTML dashboard requirements
-│   └── LANDSCAPE.md                          ← competitive intelligence (gitignored)
-├── guide/                                    ← user-facing documentation
-│   ├── getting-started.md                    ← prerequisites, install, first run
-│   ├── configuration.md                      ← cronagents.json reference (all fields, defaults, examples)
-│   ├── cli-reference.md                      ← cronagents.ps1 subcommands + TUI menu
-│   ├── writing-agents.md                     ← how to create/register a scheduled agent
-│   ├── feedback-system.md                    ← how the feedback loop works, editing feedback.md
-│   ├── branching-and-sync.md                 ← user branch model, sync commands
-│   └── troubleshooting.md                    ← common issues, health check, logs
-├── .gitignore
-├── README.md                                 ← landing page: overview, feature highlights, docs map
-└── LICENSE
+├── cronagents.json                          ← personal config overrides (optional)
+└── dashboard.md                             ← live at-a-glance results (read-only)
 ```
 
-`.github` is reserved for Copilot customizations that apply when *developing this repo* (workspace instructions, prompts). Scaffold-internal agents (feedback evaluator, run summarizer) and their skills live in `scheduler/agents/` and `scheduler/skills/` because they are product components of the CronAgents runtime, not repo development tools. The scheduler passes `--add-dir=scheduler/` when invoking them so Copilot CLI can resolve them. User-defined scheduled workload agents live in `.cronagents/agents/` (tracked on user branches), user-global directories like `C:\Users\<user>\.copilot`, or both.
+`.github` is reserved for Copilot customizations that apply when *developing this repo* (workspace instructions, prompts). Scaffold-internal agents (feedback evaluator, run summarizer) and their skills live in `scheduler/agents/` and `scheduler/skills/` because they are product components of the CronAgents runtime, not repo development tools. The scheduler passes `--add-dir=scheduler/` when invoking them so Copilot CLI can resolve them. User-defined scheduled workload agents live in the personal repo at `~/.cronagents/` — in `.github/agents/` for agent profiles and `.cronagents/agents/` for registrations. User-global directories like `~/.copilot/agents/` are also supported.
 
-**Config split — global settings vs. per-agent scheduling:** `cronagents.json` contains only global scheduler settings (log level, retention, quiet hours, versioning, etc.) — no agent definitions. Each user agent has a `.agent-registration.json` registration file in `.cronagents/agents/`. The filename stem (e.g., `daily-review` from `daily-review.agent-registration.json`) serves as the **stable agent ID** used in state tracking, run directories, CLI commands, and future `dependsOn` references. The human-readable `name` field inside the file is display-only and can be changed freely without breaking history. This separation means master never touches agent definitions, user branches never touch global settings, and merge conflicts between the two are structurally impossible.
+**Config split — global settings vs. per-agent scheduling:** `cronagents.json` contains only global scheduler settings (log level, retention, quiet hours, personal repo settings, etc.) — no agent definitions. Each user agent has a `.agent-registration.json` registration file in the personal repo's `.cronagents/agents/`. The filename stem (e.g., `daily-review` from `daily-review.agent-registration.json`) serves as the **stable agent ID** used in state tracking, run directories, CLI commands, and future `dependsOn` references. The human-readable `name` field inside the file is display-only and can be changed freely without breaking history. This separation means the infra repo never touches agent definitions and merge conflicts between shared code and personal agents are structurally impossible.
 
-**Runtime data isolation:** All ephemeral runtime data lives in `.cronstate/` — a separate top-level directory that is always gitignored in its entirety. This includes `state.json`, `scheduler.log`, and all run directories under `runs/`. Clean separation from `.cronagents/` (which contains version-controlled code: agent definitions and scheduling configs on user branches) eliminates mixed git semantics within a single directory.
+**Runtime data isolation:** All ephemeral runtime data lives in `.cronstate/` within the personal repo — a directory that is always gitignored. This includes `state.json`, `scheduler.log`, and all run directories under `runs/`. Clean separation from `.cronagents/` (which contains version-controlled agent definitions and scheduling configs) eliminates mixed git semantics within a single directory.
 
 **Shared module architecture** — `scheduler/lib/` is a single PowerShell module (`CronAgents.psd1` manifest) that all scripts import. This prevents duplicated logic between the scheduler, CLI wrapper, health check, and tests. Each `.ps1` in `lib/` is a nested module exporting specific functions:
 
@@ -127,14 +105,14 @@ CronAgents/
 | `StateManager.ps1` | `Get-AgentState`, `Set-AgentState`, `Reset-AgentState` | Scheduler, CLI wrapper (pause/resume/status), tests |
 | `ScheduleParser.ps1` | `Test-AgentDue`, `Get-NextRunTime` | Scheduler, CLI wrapper (status/list), tests |
 | `RunManager.ps1` | `New-RunDirectory`, `Write-RunMetadata`, `Get-RunHistory` | `Invoke-ScheduledAgent.ps1`, `Update-Dashboard.ps1`, CLI wrapper, tests |
-| `GitHelpers.ps1` | `Get-CronAgentsBranch`, `Get-BranchDivergence`, `Invoke-BranchSync`, `New-FeedbackCommit`, `Initialize-UserBranch` | Scheduler (feedback-commit hook, sync), CLI wrapper (sync/branch/install), tests |
+| `GitHelpers.ps1` | `Get-PersonalRepoPath`, `Test-PersonalRepoValid`, `Initialize-PersonalRepo`, `New-FeedbackCommit`, `Resolve-CronAgentsUserName` | Scheduler (feedback-commit hook), CLI wrapper (install/migrate), tests |
 | `PowerHelpers.ps1` | `Test-OnBatteryPower` | Scheduler (skipOnBattery check), tests |
 | `Logger.ps1` | `Write-CronAgentsLog`, `Initialize-RunLog` | Everything — all scripts and modules log through this |
 | `RetentionCleanup.ps1` | `Invoke-RetentionCleanup` | Scheduler (daily cleanup), tests |
 
 The top-level scripts (`Start-CronAgents.ps1`, `Invoke-ScheduledAgent.ps1`, `Update-Dashboard.ps1`, `cronagents.ps1`, `Test-CronAgentsHealth.ps1`) are thin orchestrators that import the module and call its functions. `tests/TestHelpers.psm1` also imports `CronAgents.psd1`, ensuring tests exercise the same code paths as production.
 
-**Step 2** — `.gitignore` should ignore the entire `.cronstate/` directory on all branches (runtime data). The `.cronagents/` directory is **tracked on user branches** (`personal-agents/<username>`) — this is where user agent definitions and scheduling configs live. On `master`, `.cronagents/` can be empty or absent. Scaffold-internal agents under `scheduler/agents/` are committed on `master`. Examples and templates remain committed on `master`. The per-user branch model, sync policies, auto-bootstrap, and pre-edit snapshot design are detailed in [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
+**Step 2** — `.gitignore` should ignore the entire `.cronstate/` directory (runtime data). The personal repo at `~/.cronagents/` is a separate git repository — user agent definitions and scheduling configs live there. On the infra repo's `master`, `.cronagents/` can be empty or absent. Scaffold-internal agents under `scheduler/agents/` are committed on `master`. Examples and templates remain committed on `master`. The personal repo model, auto-bootstrap, and pre-edit snapshot design are detailed in [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
 
 ---
 
@@ -154,11 +132,11 @@ If cron syntax is added, it should be treated as a normalized internal represent
 
 Settings include `autoFeedback` toggle, `maxRunHistory`, `copilotPath` (defaults to `copilot`), `retentionDays` (default 14 — run directories older than this are deleted; set to 0 to disable), `startupDelay` (default `5m` — how long the scheduler waits after process start before the first evaluation tick; set to `0` to disable), `logLevel` (default `"info"`, also `"debug"`, `"warn"`, `"error"` — controls verbosity of scheduler log output), `quietHours` (optional — time window during which no agents are started; due agents queue until the window ends), and optional overrides for Copilot CLI environment.
 
-Agent versioning settings (in a `versioning` block):
-- `syncPolicy` — `"notify"` (default), `"auto"`, or `"manual"`. Controls how scaffold updates from master are handled. See [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
-- `userName` — explicit override for branch name (`personal-agents/<userName>`). When omitted, auto-detected from `git config github.user`, `gh auth status`, `git config user.name` (slugified), or `$env:USERNAME`.
-- `autoCommitFeedback` — when `true` (default), the scheduler commits evaluator edits to the user branch automatically.
-- `branchPrefix` — branch naming prefix. Default `"personal-agents"` → branches named `personal-agents/<userName>`.
+Personal repo settings (in a `personalRepo` block):
+- `path` — path to the personal repo. Default `null` (= `~/.cronagents/`).
+- `userName` — explicit override for identification. When omitted, auto-detected from `git config github.user`, `gh auth status`, `git config user.name` (slugified), or `$env:USERNAME`.
+- `autoCommitFeedback` — when `true` (default), the scheduler commits evaluator edits to the personal repo automatically.
+- `defaultWorkingDirectory` — default CWD for agent runs. Default `null` (= personal repo root with `--allow-all`).
 
 #### Global config example
 
@@ -173,11 +151,11 @@ Agent versioning settings (in a `versioning` block):
   "logLevel": "info",
   "quietHours": { "start": "22:00", "end": "06:00" },
 
-  "versioning": {
-    "syncPolicy": "notify",
+  "personalRepo": {
+    "path": null,
     "userName": null,
     "autoCommitFeedback": true,
-    "branchPrefix": "personal-agents"
+    "defaultWorkingDirectory": null
   }
 }
 ```
@@ -186,9 +164,9 @@ All fields are optional — sensible defaults apply.
 
 ### Step 3b — Per-agent scheduling configs
 
-Each user agent has a `.agent-registration.json` file in `.cronagents/agents/`, plus an optional `.agent.md` custom agent profile in `.github/agents/` or `~/.copilot/agents/`. The **filename stem is the stable agent ID** — used in `state.json` keys, run directory names, CLI arguments, and future `dependsOn` references. The `name` field inside the file is a human-readable display label that can be changed freely without breaking history.
+Each user agent has a `.agent-registration.json` file in the personal repo's `.cronagents/agents/`, plus an optional `.agent.md` custom agent profile in the personal repo's `.github/agents/` or `~/.copilot/agents/`. The **filename stem is the stable agent ID** — used in `state.json` keys, run directory names, CLI arguments, and future `dependsOn` references. The `name` field inside the file is a human-readable display label that can be changed freely without breaking history.
 
-Agent discovery: the scheduler scans `.cronagents/agents/*.agent-registration.json` (and any additional directories from config) on startup. Each matching file found is an agent registration. No central registration step — drop files in the right place and they're discovered.
+Agent discovery: the scheduler scans the personal repo's `.cronagents/agents/*.agent-registration.json` (and any additional directories from config) on startup. Each matching file found is an agent registration. No central registration step — drop files in the right place and they're discovered.
 
 Per-agent scheduling config fields:
 - `name` — human-readable display name (mutable, display-only). Default: the agent ID (filename stem).
@@ -267,7 +245,7 @@ Per-agent fields `timeout`, `skipOnBattery`, `retryCount`, `model`, `denyTools`,
 
 ### Why split config?
 
-The git branch model has master owning global settings and user branches owning agent definitions. A single `cronagents.json` containing both would cause merge conflicts every time master changes a default while the user has agents defined. With the split, master's `cronagents.json` and users' `.cronagents/agents/*.agent-registration.json` files are in completely separate paths — structurally impossible to conflict. The split also enables future features naturally: config profiles (#15) only overlay global settings, remote config (#17) can push agent definitions independently, and agent sharing is just copying a `.agent-registration.json` + `.agent.md` pair.
+The personal repo model separates global settings (infra repo's `cronagents.json`) from agent definitions (personal repo's `.cronagents/agents/*.agent-registration.json`), making conflicts structurally impossible. The split also enables future features naturally: config profiles (#15) only overlay global settings, remote config (#17) can push agent definitions independently, and agent sharing is just copying a `.agent-registration.json` + `.agent.md` pair.
 
 ### Agent resolution model
 
@@ -370,17 +348,16 @@ Simplified, leveraging native Copilot CLI resolution:
   - `feedback [agent-id]` — open the most recent unprocessed `feedback.md` in `$EDITOR` / VS Code
   - `evaluate` — manually trigger feedback evaluator for all pending feedback
   - `doctor` — health check: verify exactly one Task Scheduler entry under `\CronAgents\`, config is valid, `.cronstate/state.json` is not corrupted, scheduler process is running, and no orphaned run directories exist
-  - `install` — register (or update) the at-logon Task Scheduler entry. Auto-bootstrap the `personal-agents/<username>` branch if it doesn't exist. Idempotent.
+  - `install` — register (or update) the at-logon Task Scheduler entry. Initialize the personal repo at `~/.cronagents/` if it doesn't exist. Idempotent.
   - `uninstall` — remove the Task Scheduler entry cleanly
-  - `sync` — manually trigger merge from `master` into user branch. Reports clean merge or conflict status.
-  - `branch` — show current branch, commits ahead/behind master, last sync date
+  - `migrate` — copy agent definitions from the infra repo to the personal repo (for users migrating from the old branch model)
 
   These are convenience wrappers around the same scripts the scheduler calls. No new logic, just ergonomics.
 
   When invoked with **no subcommand** (`cronagents.ps1`), launch an interactive text menu. The menu is a numbered-option loop that calls the same subcommands above:
 
   ```
-  CronAgents (branch: personal-agents/<user>, N behind master)
+  CronAgents — Interactive Menu
   ──────────────────────────
    1) Status & upcoming runs
    2) Trigger ad-hoc run
@@ -388,11 +365,9 @@ Simplified, leveraging native Copilot CLI resolution:
    4) View run history
    5) Submit feedback
    6) Health check (doctor)
-   7) Sync from master
-   8) Branch info
-   9) Exit
+   7) Exit
   ──────────────────────────
-  Select [1-9]:
+  Select [1-7]:
   ```
 
   Layered navigation where needed — e.g. option 2 lists agents and lets you pick one, option 3 shows current pause state and offers global vs. per-agent toggle. Each action returns to the main menu after completion. This is day 0 — the menu is the primary management surface until the HTML dashboard is built.
@@ -424,7 +399,7 @@ Simplified, leveraging native Copilot CLI resolution:
 
 Feedback is always a **separate file per run**, never part of the dashboard.
 
-**Step 9a** — Feedback-commit hook — after the evaluator edits files and writes `feedback-result.md`, the scheduler commits the changes to the user's `personal-agents/<username>` branch with a structured message (`feedback: <agent-id> — <summary>`). Pre-edit snapshots are written to the run directory's `backup/` folder (in `.cronstate/runs/`) **before** edits are applied, providing immediate rollback regardless of git state. Full design in [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
+**Step 9a** — Feedback-commit hook — after the evaluator edits files and writes `feedback-result.md`, the scheduler commits the changes in the personal repo with a structured message (`feedback: <agent-id> — <summary>`). Pre-edit snapshots are written to the run directory's `backup/` folder (in `.cronstate/runs/`) **before** edits are applied, providing immediate rollback regardless of git state. Full design in [AGENT-VERSIONING.md](AGENT-VERSIONING.md).
 
 **Step 10** — `run-feedback.prompt.md` — Invokable as `/run-feedback` to trigger feedback processing for recent runs.
 
@@ -449,7 +424,7 @@ Three tiers, three audiences:
 - `cli-reference.md` — all `cronagents.ps1` subcommands, TUI menu, `--help` examples
 - `writing-agents.md` — how to create an `.agent.md` + `.agent-registration.json` registration file, test it manually
 - `feedback-system.md` — how the feedback loop works, editing `feedback.md`, auto-feedback
-- `branching-and-sync.md` — user branch model, sync commands, conflict resolution
+- `branching-and-sync.md` — personal repo model, shared dev workflow
 - `troubleshooting.md` — common issues, `cronagents.ps1 doctor`, reading logs
 
 **Step 13a** — `README.md` — project overview, feature bullets, quick-start teaser (link to `guide/getting-started.md`), docs map table linking every `guide/` page, badges, license.
@@ -475,15 +450,15 @@ All tests use **Pester** (ships with PowerShell, zero install). Detailed test pl
 - `ConfigValidation.Tests.ps1` — valid/invalid config handling, schema self-validation
 - `Dashboard.Tests.ps1` — markdown generation from sample run data, snapshot comparison
 - `StateManagement.Tests.ps1` — state.json read/write/recovery
-- `AgentVersioning.Tests.ps1` — branch detection, username resolution/slugification, divergence calculation, commit message formatting
+- `AgentVersioning.Tests.ps1` — personal repo validation, username resolution/slugification, commit message formatting
 
 **Integration tests** (mock Copilot CLI via `copilotPath` config key):
 - `InvokeAgent.Tests.ps1` — full invocation flow, verifies exact CLI flags passed
 - `FeedbackFlow.Tests.ps1` — feedback lifecycle from stub to evaluator processing
-- `CliWrapper.Tests.ps1` — all `cronagents.ps1` subcommands (including `sync`, `branch`, `install`)
+- `CliWrapper.Tests.ps1` — all `cronagents.ps1` subcommands (including `migrate`, `install`)
 - `SchedulerLoop.Tests.ps1` — single-heartbeat behavior, pause/resume, duplicate prevention, startupDelay
 - `RetentionCleanup.Tests.ps1` — run directory cleanup respecting `retentionDays` and unprocessed feedback
-- `SyncWorkflow.Tests.ps1` — auto-bootstrap, clean merge, conflict merge (agent-assisted + failure), feedback-commit hook, dirty-tree abort
+- `SyncWorkflow.Tests.ps1` — auto-bootstrap, feedback-commit hook, personal repo initialization
 - `BackupRestore.Tests.ps1` — pre-edit snapshot creation, path mirroring, snapshot survival on git failure, retention interaction
 
 **E2E smoke test** (requires real Copilot CLI + auth, excluded from default runs via Pester tag `E2E`):
@@ -503,8 +478,8 @@ Run all tests except E2E: `Invoke-Pester ./tests/ -ExcludeTag 'E2E'`
 5. Edit a run's `feedback.md`, run `cronagents.ps1 evaluate` → verify `feedback-result.md` written
 6. Set `autoFeedback: true`, run an agent → verify auto-feedback applied
 7. `cronagents.ps1 pause <agent>` → verify scheduler skips it on next tick
-8. `git branch` → on `personal-agents/<username>`, user agents tracked. `git log --oneline -5` → feedback commits visible
-9. `cronagents.ps1 sync` → merges master cleanly, scaffold files updated, user agents preserved
+8. Personal repo at `~/.cronagents/` exists, user agents tracked. `git -C ~/.cronagents log --oneline -5` → feedback commits visible
+9. `cronagents.ps1 migrate` → copies agents from infra repo to personal repo
 10. Run `Invoke-Pester ./tests/` → all tests pass
 
 ---
