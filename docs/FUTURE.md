@@ -24,9 +24,9 @@ Baseline `runIf` support now exists with `"git-dirty"`, `"file-changed:<path>"`,
 
 A config-level `editScope` per agent restricting which paths the evaluator can modify when processing feedback for that agent. Currently enforced only by the evaluator's prompt instructions ("cannot edit scheduler scripts"). A config allowlist (e.g., `"editScope": [".cronagents/agents/daily-review*"]`) lets the scheduler validate the evaluator's edits after the fact and reject out-of-scope changes before committing.
 
-### 5. Windows Notifications
+### 5. Windows Notifications ✅ Implemented
 
-Per-agent `"notifyOnFailure": true` that triggers a Windows toast notification (`New-BurntToastNotification` or native `[Windows.UI.Notifications]`) when an agent errors. Users may not check the dashboard for hours. Opt-in and gracefully degrade if the notification module isn't installed.
+Per-agent `"notifyOnFailure": true` that triggers a Windows toast notification (`New-BurntToastNotification` or native `[Windows.UI.Notifications]`) when an agent errors or times out. Opt-in per agent; disabled globally with `"notifications": false` in `cronagents.json`. Gracefully degrades: BurntToast → native WinRT → silent no-op.
 
 ### 6. GitHub Remote for Personal Repo
 

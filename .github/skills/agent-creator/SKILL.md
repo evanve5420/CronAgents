@@ -48,7 +48,7 @@ Skip anything already clear from context:
    - Shell access: `tools: [read, shell]` — use `denyTools` to block destructive ops (`shell(rm)`, `shell(git push)`)
    - `--allow-all-tools` only when genuinely needed — confirm with the user
 5. **Model preference?**
-6. **Execution policies?** — timeout, skip on battery, retry on failure, `runIf`
+6. **Execution policies?** — timeout, skip on battery, retry on failure, `runIf`, notify on failure (`notifyOnFailure`)
 7. **Agent profile placement (agent mode only)** — personal repo `.github/agents/` (default) or user-global `~/.copilot/agents/`
 8. **Working directory?** — which project directory the agent should run in (null = allow all via `--allow-all`)
 
@@ -80,7 +80,7 @@ CronAgents registration file — **filename stem = stable agent ID**:
   "agent": "<agent-name>",
   "prompt": "<run prompt>",
   "schedule": { "type": "daily", "time": "09:00" },
-  // Optional: runIf, timeout, skipOnBattery, retryCount, model, denyTools, extraCliFlags, envVars, workingDirectory
+  // Optional: runIf, timeout, skipOnBattery, retryCount, model, denyTools, extraCliFlags, envVars, workingDirectory, notifyOnFailure
 }
 ```
 

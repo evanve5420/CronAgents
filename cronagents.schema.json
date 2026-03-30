@@ -67,6 +67,11 @@
       "default": null,
       "description": "Time window during which no agents are run. Null to disable."
     },
+    "notifications": {
+      "type": "boolean",
+      "default": true,
+      "description": "Global toggle for Windows toast notifications. When false, all per-agent notifyOnFailure settings are ignored."
+    },
     "personalRepo": {
       "type": "object",
       "properties": {

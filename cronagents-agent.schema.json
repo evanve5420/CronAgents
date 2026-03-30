@@ -157,6 +157,11 @@
       "additionalProperties": { "type": "string" },
       "default": {},
       "description": "Environment variables to set for the agent run."
+    },
+    "notifyOnFailure": {
+      "type": "boolean",
+      "default": false,
+      "description": "Show a Windows toast notification when the agent fails or times out."
     }
   },
   "additionalProperties": false,
