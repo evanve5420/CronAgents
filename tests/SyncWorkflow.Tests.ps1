@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
-    Pester 5 integration tests for git sync workflows.
-    Tests Initialize-UserBranch and Invoke-BranchSync
-    against temporary git repositories.
+    Pester 5 integration tests for personal repo workflows.
+    Tests Initialize-PersonalRepo and agent discovery against
+    temporary git repositories.
 #>
 
 BeforeAll {
@@ -10,30 +10,17 @@ BeforeAll {
     Import-Module (Join-Path $repoRoot 'scheduler/lib/CronAgents.psd1') -Force
     Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
 
-    # Helper: create a temp git repo with an initial commit on master
-    function New-TempGitRepo {
-        param([string]$Name)
+    # Helper: create a temp personal repo with full structure
+    function New-TempPersonalRepo {
+        param([string]$Name, [string]$UserName = 'test-user')
         $random = [System.IO.Path]::GetRandomFileName().Replace('.', '')
-        $dir = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-Git-$Name-$random"
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $dir = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-PR-$Name-$random"
 
-        Push-Location $dir
-        try {
-            git init --initial-branch master 2>&1 | Out-Null
-            git config user.email 'test@test.com' 2>&1 | Out-Null
-            git config user.name 'Test User' 2>&1 | Out-Null
-            Set-Content -Path (Join-Path $dir 'README.md') -Value '# Test Repo' -Encoding UTF8
-            git add . 2>&1 | Out-Null
-            git commit -m 'Initial commit' 2>&1 | Out-Null
-        }
-        finally {
-            Pop-Location
-        }
-
+        $result = Initialize-PersonalRepo -Path $dir -UserName $UserName
         return $dir
     }
 
-    function Remove-TempGitRepo {
+    function Remove-TempRepo {
         param([string]$Path)
         if ($Path -and (Test-Path $Path)) {
             Remove-Item -Path $Path -Recurse -Force -ErrorAction SilentlyContinue
@@ -41,120 +28,110 @@ BeforeAll {
     }
 }
 
-Describe 'Sync Workflow — Initialize-UserBranch' {
+Describe 'Personal Repo Workflow — Initialize-PersonalRepo' {
     BeforeEach {
-        $script:gitRepo = New-TempGitRepo -Name 'SyncInit'
+        $random = [System.IO.Path]::GetRandomFileName().Replace('.', '')
+        $script:repoDir = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-PRWorkflow-$random"
     }
     AfterEach {
-        Remove-TempGitRepo -Path $script:gitRepo
+        Remove-TempRepo -Path $script:repoDir
     }
 
-    It 'Creates branch from master when none exists' {
-        $result = Initialize-UserBranch -RepoRoot $script:gitRepo `
-            -BranchPrefix 'personal-agents' -UserName 'test-user'
+    It 'Creates personal repo from scratch' {
+        $result = Initialize-PersonalRepo -Path $script:repoDir -UserName 'test-user'
 
-        $result.Created    | Should -Be $true
-        $result.BranchName | Should -Be 'personal-agents/test-user'
-        $result.Message    | Should -Match 'Created new branch'
+        $result.Created | Should -Be $true
+        $result.Path    | Should -Be $script:repoDir
 
-        # Verify we're on the new branch
-        Push-Location $script:gitRepo
-        try {
-            $currentBranch = (git rev-parse --abbrev-ref HEAD 2>&1).Trim()
-            $currentBranch | Should -Be 'personal-agents/test-user'
-        }
-        finally {
-            Pop-Location
-        }
+        # Verify git repo
+        (Test-Path (Join-Path $script:repoDir '.git')) | Should -Be $true
+
+        # Verify full directory structure
+        (Test-Path (Join-Path $script:repoDir '.github' 'agents'))     | Should -Be $true
+        (Test-Path (Join-Path $script:repoDir '.github' 'skills'))     | Should -Be $true
+        (Test-Path (Join-Path $script:repoDir '.cronagents' 'agents')) | Should -Be $true
+        (Test-Path (Join-Path $script:repoDir '.cronstate' 'runs'))    | Should -Be $true
+
+        # Verify validation passes
+        $validation = Test-PersonalRepoValid -Path $script:repoDir
+        $validation.Valid | Should -Be $true
     }
 
-    It 'Checks out existing branch' {
-        # Create the branch first
-        Push-Location $script:gitRepo
-        try {
-            git checkout -b 'personal-agents/test-user' 2>&1 | Out-Null
-            git checkout master 2>&1 | Out-Null
-        }
-        finally {
-            Pop-Location
-        }
+    It 'Is idempotent — second call returns Created=false' {
+        $first = Initialize-PersonalRepo -Path $script:repoDir -UserName 'test-user'
+        $first.Created | Should -Be $true
 
-        $result = Initialize-UserBranch -RepoRoot $script:gitRepo `
-            -BranchPrefix 'personal-agents' -UserName 'test-user'
-
-        $result.Created    | Should -Be $false
-        $result.BranchName | Should -Be 'personal-agents/test-user'
-        $result.Message    | Should -Match 'existing branch'
+        $second = Initialize-PersonalRepo -Path $script:repoDir -UserName 'test-user'
+        $second.Created | Should -Be $false
+        $second.Path    | Should -Be $script:repoDir
     }
 
-    It 'Aborts on dirty working tree' {
-        # Create an uncommitted file
-        Set-Content -Path (Join-Path $script:gitRepo 'dirty.txt') -Value 'uncommitted' -Encoding UTF8
+    It 'Configures git user from environment' {
+        Initialize-PersonalRepo -Path $script:repoDir -UserName 'test-user' | Out-Null
 
-        $result = Initialize-UserBranch -RepoRoot $script:gitRepo `
-            -BranchPrefix 'personal-agents' -UserName 'test-user'
+        $gitUserName  = & git -C $script:repoDir config user.name 2>&1
+        $gitUserEmail = & git -C $script:repoDir config user.email 2>&1
 
-        $result.Created | Should -Be $false
-        $result.Message | Should -Match 'uncommitted changes'
+        $gitUserName  | Should -Not -BeNullOrEmpty
+        $gitUserEmail | Should -Not -BeNullOrEmpty
     }
 }
 
-Describe 'Sync Workflow — Invoke-BranchSync' {
-    BeforeEach {
-        # Create a "remote" bare repo and a "local" clone
+Describe 'Personal Repo Workflow — Agent Discovery' {
+    BeforeAll {
+        # Create an infra repo with a .cronagents/agents dir and one agent
         $random = [System.IO.Path]::GetRandomFileName().Replace('.', '')
-        $script:bareRepo  = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-Bare-$random"
-        $script:localRepo = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-Local-$random"
+        $script:infraRepo = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-Infra-$random"
+        New-Item -ItemType Directory -Path (Join-Path $script:infraRepo '.cronagents' 'agents') -Force | Out-Null
 
-        # Init bare repo
-        New-Item -ItemType Directory -Path $script:bareRepo -Force | Out-Null
-        Push-Location $script:bareRepo
-        try { git init --bare 2>&1 | Out-Null } finally { Pop-Location }
-
-        # Clone it
-        git clone $script:bareRepo $script:localRepo 2>&1 | Out-Null
-
-        Push-Location $script:localRepo
-        try {
-            git config user.email 'test@test.com' 2>&1 | Out-Null
-            git config user.name 'Test User' 2>&1 | Out-Null
-            # Create master with a commit
-            git checkout -b master 2>&1 | Out-Null
-            Set-Content -Path (Join-Path $script:localRepo 'README.md') -Value '# Base' -Encoding UTF8
-            git add . 2>&1 | Out-Null
-            git commit -m 'Base commit' 2>&1 | Out-Null
-            git push origin master 2>&1 | Out-Null
-
-            # Create user branch
-            git checkout -b 'personal-agents/test-user' 2>&1 | Out-Null
-            Set-Content -Path (Join-Path $script:localRepo 'agent.txt') -Value 'agent work' -Encoding UTF8
-            git add . 2>&1 | Out-Null
-            git commit -m 'Agent work' 2>&1 | Out-Null
+        $infraAgent = [ordered]@{
+            name     = 'Shared Agent'
+            schedule = [ordered]@{ type = 'daily'; time = '09:00' }
+            prompt   = 'Do shared things'
         }
-        finally { Pop-Location }
+        $infraAgent | ConvertTo-Json | Set-Content -Path (Join-Path $script:infraRepo '.cronagents' 'agents' 'shared-agent.agent-registration.json') -Encoding UTF8
+    }
+
+    AfterAll {
+        Remove-TempRepo -Path $script:infraRepo
+        Remove-TempRepo -Path $script:personalRepo
+    }
+
+    BeforeEach {
+        $random = [System.IO.Path]::GetRandomFileName().Replace('.', '')
+        $script:personalRepo = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-PersonalDisc-$random"
+        New-Item -ItemType Directory -Path (Join-Path $script:personalRepo '.cronagents' 'agents') -Force | Out-Null
     }
 
     AfterEach {
-        Remove-TempGitRepo -Path $script:localRepo
-        Remove-TempGitRepo -Path $script:bareRepo
+        Remove-TempRepo -Path $script:personalRepo
     }
 
-    It 'Clean merge succeeds' {
-        # Push a new commit to master in the bare repo via the local clone
-        Push-Location $script:localRepo
-        try {
-            git checkout master 2>&1 | Out-Null
-            Set-Content -Path (Join-Path $script:localRepo 'master-update.txt') -Value 'new on master' -Encoding UTF8
-            git add . 2>&1 | Out-Null
-            git commit -m 'Master update' 2>&1 | Out-Null
-            git push origin master 2>&1 | Out-Null
-            git checkout 'personal-agents/test-user' 2>&1 | Out-Null
+    It 'Discovers agents from personal repo' {
+        $personalAgent = [ordered]@{
+            name     = 'My Agent'
+            schedule = [ordered]@{ type = 'daily'; time = '08:00' }
+            prompt   = 'Do personal things'
         }
-        finally { Pop-Location }
+        $personalAgent | ConvertTo-Json | Set-Content -Path (Join-Path $script:personalRepo '.cronagents' 'agents' 'my-agent.agent-registration.json') -Encoding UTF8
 
-        $result = Invoke-BranchSync -RepoRoot $script:localRepo -BaseBranch 'master'
+        $agents = Get-AgentConfigs -RepoRoot $script:infraRepo -PersonalRepoPath $script:personalRepo
+        $agentIds = $agents | ForEach-Object { $_.Id }
+        $agentIds | Should -Contain 'my-agent'
+    }
 
-        $result.Success    | Should -Be $true
-        $result.CleanMerge | Should -Be $true
+    It 'Personal repo agents take precedence over infra repo' {
+        # Create an agent in personal repo with same ID as infra repo
+        $overrideAgent = [ordered]@{
+            name     = 'My Shared Override'
+            schedule = [ordered]@{ type = 'daily'; time = '10:00' }
+            prompt   = 'Personal override of shared agent'
+        }
+        $overrideAgent | ConvertTo-Json | Set-Content -Path (Join-Path $script:personalRepo '.cronagents' 'agents' 'shared-agent.agent-registration.json') -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $script:infraRepo -PersonalRepoPath $script:personalRepo
+        $sharedAgent = $agents | Where-Object { $_.Id -eq 'shared-agent' }
+        $sharedAgent | Should -Not -BeNullOrEmpty
+        $sharedAgent.Config.prompt | Should -Be 'Personal override of shared agent'
     }
 }
