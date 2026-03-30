@@ -36,6 +36,8 @@ Allow agent entries to specify a `script` path instead of `agent`+`prompt`, so t
 
 A scaffold-internal agent that reviews recent diffs to agent definitions, skills, config, and feedback for harmful patterns. Runs after the feedback-commit hook but before the next scheduled agents execute, so poisoned edits are caught before they take effect. Would watch for: prompt injection in agent definitions, unexpected tool additions/`--deny-tool` removals, feedback content attempting to manipulate the evaluator, and anomalous output patterns suggesting data exfiltration. Flagged issues auto-pause the affected agent and notify via dashboard/TUI. The infrastructure for this already exists: git branch diffs from agent versioning, pre-edit snapshots, and feedback-result.md changelogs provide structured input. Attack pattern knowledge would accumulate in a dedicated skill file (`scheduler/skills/security-reviewer/SKILL.md`) that can be community-contributed.
 
+Bonus 1:  set up capability for certain agents to be able to request actions or ask questions of the user. For instance, an inbox tidying agent which asks the user, "Is it okay if I move these seven items to this directory?" The user should have a whole new space to be able to respond to that. On the next turn, the next cron job, that agent should be able to pick that up and apply it. 
+
 ---
 
 ## Medium-Term
