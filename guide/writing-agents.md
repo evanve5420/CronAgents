@@ -100,6 +100,7 @@ Everything after the frontmatter is the **system prompt** that defines the agent
   "agent": "security-scan",
   "prompt": "Scan the repository for security vulnerabilities",
   "schedule": { "type": "daily", "time": "06:00" },
+  "runIf": "git-dirty",
   "timeout": "15m",
   "retryCount": 1
 }
@@ -207,6 +208,30 @@ Runs once a day at the specified time (24-hour format). If the scheduler starts 
 ```
 
 Runs once a week on the specified day and time. Day names must be lowercase.
+
+## Conditional execution with `runIf`
+
+Use `runIf` when an agent should run only after something meaningful changed in its execution root.
+
+Built-ins:
+
+```json
+"runIf": "git-dirty"
+```
+
+```json
+"runIf": "file-changed:package.json"
+```
+
+`git-dirty` compares the current `HEAD` to the last observed `HEAD` for that agent. `file-changed:<path>` compares the last-write time of a repo-relative file. The base directory is `workingDirectory` when set, otherwise the personal repo root, otherwise the infra repo root.
+
+For custom logic, use a PowerShell script:
+
+```json
+"runIf": { "script": ".cronagents/scripts/should-run.ps1" }
+```
+
+CronAgents calls the script with `-RepoRoot`, `-AgentId`, and `-StateFile`. The script must write `true` or `false` to stdout and exit successfully.
 
 ---
 

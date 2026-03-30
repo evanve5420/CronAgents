@@ -172,6 +172,7 @@ Each agent has a JSON config file. The filename stem (for example, `daily-review
   "agent": "daily-review",
   "prompt": "Review yesterday's code changes and report findings",
   "schedule": { "type": "daily", "time": "09:00" },
+  "runIf": "git-dirty",
   "timeout": "10m",
   "skipOnBattery": false,
   "retryCount": 1,
@@ -255,6 +256,36 @@ Each agent has a JSON config file. The filename stem (for example, `daily-review
 | `interval` | `type`, `every` | `every`: `^[0-9]+(h\|m)$`, min 30m |
 | `daily` | `type`, `time` | `time`: `HH:MM` (24h) |
 | `weekly` | `type`, `day`, `time` | `day`: lowercase day name, `time`: `HH:MM` |
+
+#### `runIf`
+
+| | |
+|---|---|
+| **Type** | `string` or `object` |
+| **Required** | No |
+| **Description** | Optional execution condition evaluated after the schedule says the agent is due. The base directory is the agent execution root: `workingDirectory` when set, otherwise the personal repo root, otherwise the infra repo root. |
+
+Built-in predicates:
+
+```json
+"runIf": "git-dirty"
+```
+
+Runs only when the current git `HEAD` differs from the last observed `HEAD` for that agent.
+
+```json
+"runIf": "file-changed:package.json"
+```
+
+Runs only when the tracked file's last-write time differs from the last observed value for that agent. Paths must be relative to the execution root and cannot escape it.
+
+Custom PowerShell script:
+
+```json
+"runIf": { "script": ".cronagents/scripts/should-run.ps1" }
+```
+
+CronAgents invokes the script with named parameters `-RepoRoot`, `-AgentId`, and `-StateFile`. The script must exit with code `0` and write `true` or `false` to stdout.
 
 #### `timeout`
 

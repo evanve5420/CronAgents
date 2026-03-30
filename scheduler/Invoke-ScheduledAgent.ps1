@@ -34,6 +34,7 @@ param(
     [Parameter(Mandatory)] [PSCustomObject]$GlobalConfig,
     [Parameter(Mandatory)] [string]$RepoRoot,
     [string]$PersonalRepoPath,
+    [hashtable]$RunIfSnapshot,
     [string]$RunsRoot
 )
 
@@ -44,12 +45,13 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'lib\CronAgents.psd1') -Force
 
 # --- Defaults ---
+$stateRoot = if ($PersonalRepoPath) { Join-Path $PersonalRepoPath '.cronstate' } else { Join-Path $RepoRoot '.cronstate' }
 if (-not $RunsRoot) {
-    $RunsRoot = Join-Path $RepoRoot '.cronstate\runs'
+    $RunsRoot = Join-Path $stateRoot 'runs'
 }
 
 # --- State file path ---
-$stateFile = Join-Path $RepoRoot '.cronstate\state.json'
+$stateFile = Join-Path $stateRoot 'state.json'
 
 # --- Result tracking ---
 $exitCode     = -1
@@ -59,6 +61,65 @@ $endTime      = $null
 $retryAttempt = 0
 $runDir       = $null
 $envKeys      = @()
+
+function Split-CommandLine {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$CommandLine
+    )
+
+    $errors = $null
+    $tokens = [System.Management.Automation.PSParser]::Tokenize($CommandLine, [ref]$errors) |
+        Where-Object { $_.Type -notin @('NewLine', 'LineContinuation', 'Comment') }
+
+    if ($errors -and $errors.Count -gt 0) {
+        throw "Unable to parse command line '$CommandLine'."
+    }
+
+    $parts = @($tokens | ForEach-Object { $_.Content } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($parts.Count -eq 0) {
+        throw "Command line '$CommandLine' did not contain an executable."
+    }
+
+    return [string[]]$parts
+}
+
+function New-CommandProcessStartInfo {
+    [CmdletBinding()]
+    [OutputType([System.Diagnostics.ProcessStartInfo])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$CommandLine,
+
+        [Parameter(Mandatory)]
+        [string]$WorkingDirectory,
+
+        [string[]]$Arguments
+    )
+
+    $commandParts = Split-CommandLine -CommandLine $CommandLine
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $commandParts[0]
+    $psi.WorkingDirectory = $WorkingDirectory
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+
+    if ($commandParts.Count -gt 1) {
+        foreach ($part in $commandParts[1..($commandParts.Count - 1)]) {
+            $psi.ArgumentList.Add($part)
+        }
+    }
+
+    foreach ($argument in @($Arguments)) {
+        $psi.ArgumentList.Add($argument)
+    }
+
+    return $psi
+}
 
 function Invoke-CopilotRun {
     <#
@@ -78,14 +139,9 @@ function Invoke-CopilotRun {
 
     Write-CronAgentsLog -Level 'debug' -Message "Copilot command: $copilotPath $($Arguments -join ' ')"
 
-    $psi = [System.Diagnostics.ProcessStartInfo]::new()
-    $psi.FileName               = $copilotPath
-    $psi.Arguments              = $Arguments -join ' '
-    $psi.WorkingDirectory       = if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }
-    $psi.UseShellExecute        = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError  = $true
-    $psi.CreateNoWindow         = $true
+    $psi = New-CommandProcessStartInfo -CommandLine $copilotPath `
+        -WorkingDirectory $(if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }) `
+        -Arguments $Arguments
 
     $proc = [System.Diagnostics.Process]::new()
     $proc.StartInfo = $psi
@@ -145,7 +201,8 @@ function Build-CopilotArguments {
     $args_ = [System.Collections.Generic.List[string]]::new()
 
     # Prompt (always)
-    $args_.Add("-p `"$($AgentConfig.prompt)`"")
+    $args_.Add('-p')
+    $args_.Add($AgentConfig.prompt)
 
     # Silent mode
     $args_.Add('--silent')
@@ -162,7 +219,7 @@ function Build-CopilotArguments {
 
     # Session share file
     $sharePath = Join-Path $runDir 'session.md'
-    $args_.Add("--share=`"$sharePath`"")
+    $args_.Add("--share=$sharePath")
 
     # Model override
     if ($AgentConfig.PSObject.Properties['model'] -and
@@ -350,24 +407,20 @@ try {
 
         $summaryArgs = @(
             "--agent=run-summarizer"
-            "-p `"$summaryPrompt`""
+            '-p'
+            $summaryPrompt
             '--silent'
             "--add-dir=$schedulerDir"
             '--allow-all-tools'
-            "--share=`"$summaryShare`""
+            "--share=$summaryShare"
             '--no-ask-user'
         )
 
         Write-CronAgentsLog -Level 'debug' -Message "Invoking run-summarizer for '$AgentId'."
 
-        $sumPsi = [System.Diagnostics.ProcessStartInfo]::new()
-        $sumPsi.FileName               = $copilotPath
-        $sumPsi.Arguments              = $summaryArgs -join ' '
-        $sumPsi.WorkingDirectory       = if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }
-        $sumPsi.UseShellExecute        = $false
-        $sumPsi.RedirectStandardOutput = $true
-        $sumPsi.RedirectStandardError  = $true
-        $sumPsi.CreateNoWindow         = $true
+        $sumPsi = New-CommandProcessStartInfo -CommandLine $copilotPath `
+            -WorkingDirectory $(if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }) `
+            -Arguments $summaryArgs
 
         $sumProc = [System.Diagnostics.Process]::new()
         $sumProc.StartInfo = $sumPsi
@@ -394,7 +447,14 @@ try {
     # ------------------------------------------------------------------
     # Step 8 — Update agent state
     # ------------------------------------------------------------------
-    Set-AgentState -StateFile $stateFile -AgentId $AgentId -LastRun ([datetime]::UtcNow)
+    if ($AgentConfig.PSObject.Properties['runIf'] -and
+        $null -ne $AgentConfig.runIf -and
+        -not $PSBoundParameters.ContainsKey('RunIfSnapshot')) {
+        $executionRoot = Get-AgentRunIfExecutionRoot -AgentConfig $AgentConfig -RepoRoot $RepoRoot -PersonalRepoPath $PersonalRepoPath
+        $RunIfSnapshot = (Get-AgentRunIfSnapshot -RunIf $AgentConfig.runIf -ExecutionRoot $executionRoot).Snapshot
+    }
+
+    Set-AgentState -StateFile $stateFile -AgentId $AgentId -LastRun ([datetime]::UtcNow) -RunIfState $RunIfSnapshot
     Write-CronAgentsLog -Level 'debug' -Message "Agent state updated for '$AgentId'."
 
     # ------------------------------------------------------------------

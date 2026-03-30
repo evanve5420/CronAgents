@@ -12,6 +12,72 @@ function Get-DefaultState {
     }
 }
 
+function ConvertTo-StateHashtable {
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [AllowNull()]
+        $Value
+    )
+
+    if ($null -eq $Value) {
+        return $null
+    }
+
+    if ($Value -is [hashtable]) {
+        $copy = @{}
+        foreach ($key in $Value.Keys) {
+            $copy[$key] = ConvertTo-StateHashtable -Value $Value[$key]
+        }
+        return $copy
+    }
+
+    if ($Value -is [PSCustomObject]) {
+        $copy = @{}
+        foreach ($prop in $Value.PSObject.Properties) {
+            $copy[$prop.Name] = ConvertTo-StateHashtable -Value $prop.Value
+        }
+        return $copy
+    }
+
+    if ($Value -is [datetime]) {
+        return $Value.ToString('o')
+    }
+
+    return $Value
+}
+
+function ConvertTo-OrderedStateValue {
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [AllowNull()]
+        $Value
+    )
+
+    if ($null -eq $Value) {
+        return $null
+    }
+
+    if ($Value -is [hashtable]) {
+        $ordered = [ordered]@{}
+        foreach ($key in ($Value.Keys | Sort-Object)) {
+            $ordered[$key] = ConvertTo-OrderedStateValue -Value $Value[$key]
+        }
+        return $ordered
+    }
+
+    if ($Value -is [PSCustomObject]) {
+        $ordered = [ordered]@{}
+        foreach ($prop in $Value.PSObject.Properties) {
+            $ordered[$prop.Name] = ConvertTo-OrderedStateValue -Value $prop.Value
+        }
+        return $ordered
+    }
+
+    return $Value
+}
+
 function Initialize-StateFile {
     [CmdletBinding()]
     param(
@@ -58,6 +124,11 @@ function Read-StateFromStream {
             $state.agents[$prop.Name] = @{
                 lastRun = if ($prop.Value.lastRun) { $prop.Value.lastRun } else { $null }
                 enabled = if ($null -ne $prop.Value.enabled) { [bool]$prop.Value.enabled } else { $true }
+                runIfState = if ($prop.Value.PSObject.Properties['runIfState'] -and $null -ne $prop.Value.runIfState) {
+                    ConvertTo-StateHashtable -Value $prop.Value.runIfState
+                } else {
+                    @{}
+                }
             }
         }
     }
@@ -82,6 +153,9 @@ function Write-StateAtomically {
         $ordered.agents[$key] = [ordered]@{
             lastRun = $agent.lastRun
             enabled = $agent.enabled
+        }
+        if ($agent.ContainsKey('runIfState') -and $null -ne $agent.runIfState -and $agent.runIfState.Count -gt 0) {
+            $ordered.agents[$key].runIfState = ConvertTo-OrderedStateValue -Value $agent.runIfState
         }
     }
 
@@ -140,12 +214,14 @@ function Set-AgentState {
         [Parameter()][string]$AgentId,
         [Parameter()][datetime]$LastRun,
         [Parameter()][bool]$Enabled,
-        [Parameter()][bool]$SchedulerPaused
+        [Parameter()][bool]$SchedulerPaused,
+        [Parameter()][hashtable]$RunIfState
     )
 
     $hasLastRun = $PSBoundParameters.ContainsKey('LastRun')
     $hasEnabled = $PSBoundParameters.ContainsKey('Enabled')
     $hasPaused  = $PSBoundParameters.ContainsKey('SchedulerPaused')
+    $hasRunIfState = $PSBoundParameters.ContainsKey('RunIfState')
 
     try {
         Initialize-StateFile -Path $StateFile
@@ -168,6 +244,7 @@ function Set-AgentState {
                     $state.agents[$AgentId] = @{
                         lastRun = $null
                         enabled = $true
+                        runIfState = @{}
                     }
                 }
 
@@ -177,6 +254,14 @@ function Set-AgentState {
 
                 if ($hasEnabled) {
                     $state.agents[$AgentId].enabled = $Enabled
+                }
+
+                if ($hasRunIfState) {
+                    $state.agents[$AgentId].runIfState = if ($null -ne $RunIfState) {
+                        ConvertTo-StateHashtable -Value $RunIfState
+                    } else {
+                        @{}
+                    }
                 }
             }
         }

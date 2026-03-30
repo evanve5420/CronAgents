@@ -6,6 +6,7 @@
     RootModule        = ''
     NestedModules     = @(
         'Logger.ps1',
+        'RunIf.ps1',
         'ConfigLoader.ps1',
         'StateManager.ps1',
         'ScheduleParser.ps1',
@@ -25,6 +26,11 @@
         'Import-CronAgentsConfig',
         'Test-CronAgentsConfig',
         'Get-AgentConfigs',
+        # RunIf
+        'ConvertTo-AgentRunIfDefinition',
+        'Get-AgentRunIfExecutionRoot',
+        'Get-AgentRunIfSnapshot',
+        'Test-AgentRunIf',
         # StateManager
         'Get-AgentState',
         'Set-AgentState',

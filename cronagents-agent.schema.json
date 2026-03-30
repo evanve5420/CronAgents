@@ -65,6 +65,18 @@
         { "$ref": "#/definitions/scheduleWeekly" }
       ],
       "description": "When and how often the agent runs."
+    },
+    "runIfScript": {
+      "type": "object",
+      "properties": {
+        "script": {
+          "type": "string",
+          "minLength": 1,
+          "description": "PowerShell script path relative to the execution root. The script must write true or false to stdout."
+        }
+      },
+      "required": ["script"],
+      "additionalProperties": false
     }
   },
   "properties": {
@@ -88,6 +100,14 @@
     },
     "schedule": {
       "$ref": "#/definitions/schedule"
+    },
+    "runIf": {
+      "oneOf": [
+        { "type": "string", "const": "git-dirty" },
+        { "type": "string", "pattern": "^file-changed:.+" },
+        { "$ref": "#/definitions/runIfScript" }
+      ],
+      "description": "Optional execution condition. Use git-dirty, file-changed:<path>, or { \"script\": \"relative/path.ps1\" }."
     },
     "timeout": {
       "type": "string",

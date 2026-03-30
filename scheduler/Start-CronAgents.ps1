@@ -306,6 +306,21 @@ try {
 
                 # Check if due
                 if (Test-AgentDue -Schedule $schedule -LastRun $lastRun -Now $now) {
+                    $executionRoot = Get-AgentRunIfExecutionRoot -AgentConfig $agent.Config -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath
+                    $runIfState = if ($agentState -and $agentState.runIfState) { $agentState.runIfState } else { @{} }
+                    if (-not (Test-AgentRunIf -RunIf $agent.Config.runIf -ExecutionRoot $executionRoot -AgentId $agentId -StateFile $stateFile -RunIfState $runIfState)) {
+                        Write-CronAgentsLog -Level 'info' -Message "Agent '$agentId' is due but runIf evaluated to false — skipping."
+                        continue
+                    }
+
+                    $runIfSnapshot = (Get-AgentRunIfSnapshot -RunIf $agent.Config.runIf -ExecutionRoot $executionRoot).Snapshot
+                    if ($agent.PSObject.Properties['RunIfSnapshot']) {
+                        $agent.RunIfSnapshot = $runIfSnapshot
+                    }
+                    else {
+                        $agent | Add-Member -NotePropertyName 'RunIfSnapshot' -NotePropertyValue $runIfSnapshot
+                    }
+
                     Write-CronAgentsLog -Level 'info' -Message "Agent '$agentId' is due"
                     $queue.Add($agent)
                 }
@@ -321,11 +336,12 @@ try {
 
                 try {
                     if (Test-Path $invokeScript) {
-                        & $invokeScript -AgentConfig $agent `
-                            -Config $config `
+                        & $invokeScript -AgentId $agent.Id `
+                            -AgentConfig $agent.Config `
+                            -GlobalConfig $config `
                             -RepoRoot $RepoRoot `
                             -PersonalRepoPath $personalRepoPath `
-                            -StateFile $stateFile `
+                            -RunIfSnapshot $agent.RunIfSnapshot `
                             -RunsRoot $runsRoot
                     }
                     else {

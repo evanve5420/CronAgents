@@ -492,6 +492,40 @@ Describe 'Get-AgentConfigs' {
         $agents[0].Config.skipOnBattery | Should -Be $true
     }
 
+    It 'Parses built-in and script runIf values' {
+        $repoRoot = Join-Path $TestDrive 'repo-runif'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+
+        $gitJson = '{ "prompt": "go", "schedule": { "type": "daily", "time": "07:00" }, "runIf": "git-dirty" }'
+        $scriptJson = @'
+{
+  "prompt": "go",
+  "schedule": { "type": "interval", "every": "1h" },
+  "runIf": { "script": ".cronagents/scripts/should-run.ps1" }
+}
+'@
+
+        Set-Content -Path (Join-Path $agentDir 'git.agent-registration.json') -Value $gitJson -Encoding UTF8
+        Set-Content -Path (Join-Path $agentDir 'script.agent-registration.json') -Value $scriptJson -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 2
+        ($agents | Where-Object Id -eq 'git').Config.runIf.type | Should -Be 'git-dirty'
+        ($agents | Where-Object Id -eq 'script').Config.runIf.script | Should -Be '.cronagents/scripts/should-run.ps1'
+    }
+
+    It 'Rejects invalid runIf values' {
+        $repoRoot = Join-Path $TestDrive 'repo-bad-runif'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "go", "schedule": { "type": "daily", "time": "07:00" }, "runIf": { "script": "C:/bad.ps1" } }'
+        Set-Content -Path (Join-Path $agentDir 'bad.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 0
+    }
+
     It 'Validates prompt-only mode (no agent field)' {
         $repoRoot = Join-Path $TestDrive 'repo-promptonly'
         $agentDir = Join-Path $repoRoot '.cronagents\agents'

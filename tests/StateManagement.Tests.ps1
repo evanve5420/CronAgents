@@ -159,6 +159,25 @@ Describe 'Set-AgentState' {
         ([datetime]$state.agents['new-agent'].lastRun).Hour | Should -Be 10
         $state.agents['new-agent'].enabled | Should -Be $true
     }
+
+    It 'Persists nested runIf state' {
+        $stateDir  = Join-Path $TestDrive 'runif-state\.cronstate'
+        $stateFile = Join-Path $stateDir 'state.json'
+        $runIfState = @{
+            gitDirty = @{
+                head = 'abc123'
+            }
+            fileChanged = @{
+                'package.json' = '2026-03-30T20:00:00.0000000Z'
+            }
+        }
+
+        Set-AgentState -StateFile $stateFile -AgentId 'runif-agent' -RunIfState $runIfState
+
+        $state = Get-AgentState -StateFile $stateFile
+        $state.agents['runif-agent'].runIfState.gitDirty.head | Should -Be 'abc123'
+        $state.agents['runif-agent'].runIfState.fileChanged['package.json'] | Should -Be '2026-03-30T20:00:00.0000000Z'
+    }
 }
 
 # ===== Corrupted state recovery =====

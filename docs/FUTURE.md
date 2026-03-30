@@ -14,7 +14,7 @@ Requirements captured in [UX-REQUIREMENTS.md](UX-REQUIREMENTS.md). Only worth do
 
 ### 2. Conditional Execution
 
-A `runIf` predicate per agent: only run when a condition is met. Day-0 candidates: `"runIf": "git-dirty"` (new commits since last run), `"runIf": "file-changed:package.json"`. Avoids burning tokens on no-op runs where nothing in the repo changed. The scheduler already tracks state — adding a "last seen commit hash" or file mtime check is lightweight.
+Baseline `runIf` support now exists with `"git-dirty"`, `"file-changed:<path>"`, and `{ "script": "relative/path.ps1" }`. Future expansion here would mean adding richer predicates (for example branch-aware checks, multiple files, or compound conditions) without giving up the current lightweight state model.
 
 ### 3. Agent Tags / Groups
 

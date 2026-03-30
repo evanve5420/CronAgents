@@ -158,7 +158,8 @@ function New-TestAgentConfig {
         [Parameter(Mandatory)][string]$Prompt,
         [string]$Agent,
         [string]$Timeout,
-        [string]$Name
+        [string]$Name,
+        $RunIf
     )
 
     $agentConfig = [ordered]@{
@@ -169,6 +170,7 @@ function New-TestAgentConfig {
 
     if ($Agent) { $agentConfig['agent'] = $Agent }
     if ($Timeout) { $agentConfig['timeout'] = $Timeout }
+    if ($PSBoundParameters.ContainsKey('RunIf')) { $agentConfig['runIf'] = $RunIf }
 
     $filePath = Join-Path $TestEnv.AgentsDir "$AgentId.agent-registration.json"
     $agentConfig | ConvertTo-Json -Depth 5 | Out-File -FilePath $filePath -Encoding utf8
