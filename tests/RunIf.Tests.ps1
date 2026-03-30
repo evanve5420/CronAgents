@@ -56,15 +56,21 @@ Describe 'ConvertTo-AgentRunIfDefinition' {
 
 Describe 'Get-AgentRunIfExecutionRoot' {
     It 'Prefers workingDirectory when set' {
+        $infraRoot = Join-Path $TestDrive 'infra'
+        $personalRoot = Join-Path $TestDrive 'personal'
+        New-Item -ItemType Directory -Path $infraRoot, $personalRoot -Force | Out-Null
         $agentConfig = [PSCustomObject]@{ workingDirectory = '.\project' }
-        $root = Get-AgentRunIfExecutionRoot -AgentConfig $agentConfig -RepoRoot 'C:\infra' -PersonalRepoPath 'C:\personal'
-        $root | Should -Be ([System.IO.Path]::GetFullPath('C:\personal\project'))
+        $root = Get-AgentRunIfExecutionRoot -AgentConfig $agentConfig -RepoRoot $infraRoot -PersonalRepoPath $personalRoot
+        $root | Should -Be ([System.IO.Path]::GetFullPath((Join-Path $personalRoot 'project')))
     }
 
     It 'Falls back to personal repo then repo root' {
+        $infraRoot = Join-Path $TestDrive 'infra'
+        $personalRoot = Join-Path $TestDrive 'personal'
+        New-Item -ItemType Directory -Path $infraRoot, $personalRoot -Force | Out-Null
         $agentConfig = [PSCustomObject]@{ workingDirectory = $null }
-        (Get-AgentRunIfExecutionRoot -AgentConfig $agentConfig -RepoRoot 'C:\infra' -PersonalRepoPath 'C:\personal') | Should -Be ([System.IO.Path]::GetFullPath('C:\personal'))
-        (Get-AgentRunIfExecutionRoot -AgentConfig $agentConfig -RepoRoot 'C:\infra' -PersonalRepoPath $null) | Should -Be ([System.IO.Path]::GetFullPath('C:\infra'))
+        (Get-AgentRunIfExecutionRoot -AgentConfig $agentConfig -RepoRoot $infraRoot -PersonalRepoPath $personalRoot) | Should -Be ([System.IO.Path]::GetFullPath($personalRoot))
+        (Get-AgentRunIfExecutionRoot -AgentConfig $agentConfig -RepoRoot $infraRoot -PersonalRepoPath $null) | Should -Be ([System.IO.Path]::GetFullPath($infraRoot))
     }
 }
 

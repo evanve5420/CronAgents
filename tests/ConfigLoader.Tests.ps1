@@ -519,7 +519,8 @@ Describe 'Get-AgentConfigs' {
         $repoRoot = Join-Path $TestDrive 'repo-bad-runif'
         $agentDir = Join-Path $repoRoot '.cronagents\agents'
         New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
-        $json = '{ "prompt": "go", "schedule": { "type": "daily", "time": "07:00" }, "runIf": { "script": "C:/bad.ps1" } }'
+        $absoluteScript = if ($IsWindows) { 'C:/bad.ps1' } else { '/bad.ps1' }
+        $json = '{ "prompt": "go", "schedule": { "type": "daily", "time": "07:00" }, "runIf": { "script": "' + $absoluteScript + '" } }'
         Set-Content -Path (Join-Path $agentDir 'bad.agent-registration.json') -Value $json -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
