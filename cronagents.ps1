@@ -620,6 +620,27 @@ function Invoke-MigrateCommand {
     Write-Host ""
 }
 
+# ── Subcommand: dashboard ─────────────────────────────────────────────
+
+function Invoke-DashboardCommand {
+    [CmdletBinding()]
+    param()
+
+    $dashboardScript = Join-Path $RepoRoot 'scheduler/Start-DashboardServer.ps1'
+    if (-not (Test-Path $dashboardScript)) {
+        Write-Host "Start-DashboardServer.ps1 not found at: $dashboardScript" -ForegroundColor Red
+        return
+    }
+
+    Write-Host "Starting HTML dashboard..." -ForegroundColor Cyan
+    try {
+        & $dashboardScript -RepoRoot $RepoRoot
+    }
+    catch {
+        Write-Host "Dashboard failed: $_" -ForegroundColor Red
+    }
+}
+
 # ── Help ─────────────────────────────────────────────────────────────
 
 function Show-Usage {
@@ -637,6 +658,7 @@ function Show-Usage {
     Write-Host "  feedback [agent-id]  Open most recent pending feedback"
     Write-Host "  evaluate             Process all pending feedback"
     Write-Host "  questions [agent-id] View and answer pending agent questions"
+    Write-Host "  dashboard             Open the HTML dashboard in a browser"
     Write-Host "  doctor               Run health checks"
     Write-Host "  install              Register scheduled task & init personal repo"
     Write-Host "  uninstall            Remove scheduled task"
@@ -673,10 +695,11 @@ function Show-InteractiveMenu {
         Write-Host " 5) Submit feedback"
         Write-Host " 6) Pending questions$qBadge"
         Write-Host " 7) Health check (doctor)"
-        Write-Host " 8) Exit"
+        Write-Host " 8) Open HTML dashboard"
+        Write-Host " 9) Exit"
         Write-Host ([char]0x2500 * 30)
 
-        $choice = Read-Host "Select [1-8]"
+        $choice = Read-Host "Select [1-9]"
 
         switch ($choice) {
             '1' { Invoke-StatusCommand }
@@ -686,8 +709,9 @@ function Show-InteractiveMenu {
             '5' { Invoke-TuiFeedback }
             '6' { Invoke-TuiQuestions }
             '7' { Invoke-DoctorCommand }
-            '8' { Write-Host "Goodbye." -ForegroundColor Cyan; return }
-            default { Write-Host "Invalid selection. Please enter 1-8." -ForegroundColor Yellow }
+            '8' { Invoke-DashboardCommand }
+            '9' { Write-Host "Goodbye." -ForegroundColor Cyan; return }
+            default { Write-Host "Invalid selection. Please enter 1-9." -ForegroundColor Yellow }
         }
     }
 }
@@ -953,6 +977,7 @@ try {
         'feedback'  { Invoke-FeedbackCommand -AgentId $Argument }
         'evaluate'  { Invoke-EvaluateCommand }
         'questions' { Invoke-QuestionsCommand -AgentId $Argument }
+        'dashboard' { Invoke-DashboardCommand }
         'doctor'    { Invoke-DoctorCommand }
         'install'   { Invoke-InstallCommand }
         'uninstall' { Invoke-UninstallCommand }

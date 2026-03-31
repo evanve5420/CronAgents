@@ -8,9 +8,11 @@ Items are grouped by expected timeframe: **near-term** (natural next steps once 
 
 ## Near-Term
 
-### 1. HTML Dashboard
+### 1. HTML Dashboard ✅
 
-Requirements captured in [UX-REQUIREMENTS.md](UX-REQUIREMENTS.md). Only worth doing after the CLI wrapper proves the command set.
+> **Implemented.** See `scheduler/Start-DashboardServer.ps1`, `scheduler/dashboard.html`, and `cronagents.ps1 dashboard`.
+
+Requirements originally captured in [UX-REQUIREMENTS.md](UX-REQUIREMENTS.md). The dashboard is a PowerShell `System.Net.HttpListener` micro-server on `localhost:9077` serving a single-file vanilla HTML/JS/CSS frontend. It exposes a JSON API mirroring the CLI commands (status, agents, runs, pause/resume, trigger runs, feedback, questions) and auto-refreshes every 5 seconds. Launch via `cronagents.ps1 dashboard` or TUI menu option 8.
 
 ### 2. Agent Tags / Groups
 

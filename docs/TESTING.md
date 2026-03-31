@@ -74,6 +74,7 @@ Use the mock Copilot CLI. The mock's invocation log lets tests verify exact CLI 
 | `SyncWorkflow.Tests.ps1` | Branch bootstrap, clean/conflict merge workflows, feedback-commit hooks, and failure recovery against temp git repos |
 | `BackupRestore.Tests.ps1` | Pre-edit snapshot creation, path mirroring, survival across git failures, and retention cleanup interaction |
 | `HealthCheck.Tests.ps1` | `cronagents.ps1 doctor` — task registration checks, config validity, and state integrity reporting |
+| `Dashboard.Tests.ps1` | HTML dashboard — data layer unit tests, HTTP server lifecycle, all API endpoints (GET + POST), HTML serving, error handling, CLI integration, and file integrity |
 
 ### E2E smoke test
 
