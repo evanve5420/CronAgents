@@ -345,6 +345,9 @@ try {
     $runDir = New-RunDirectory -RunsRoot $RunsRoot -AgentId $AgentId
     Write-CronAgentsLog -Level 'debug' -Message "Run directory created: $runDir"
 
+    Initialize-RunMetadata -RunDirectory $runDir -AgentId $AgentId `
+        -AgentName $AgentConfig.name -Prompt $AgentConfig.prompt
+
     Initialize-RunLog -RunDirectory $runDir | Out-Null
     Write-CronAgentsLog -Level 'info' -Message "Starting agent '$AgentId' — run dir: $runDir"
 

@@ -44,6 +44,7 @@
         'ConvertTo-Seconds',
         # RunManager
         'New-RunDirectory',
+        'Initialize-RunMetadata',
         'Write-RunMetadata',
         'Get-RunHistory',
         'Test-FeedbackPresent',
