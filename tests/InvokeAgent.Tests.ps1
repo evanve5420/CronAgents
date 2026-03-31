@@ -225,13 +225,17 @@ Describe 'Invoke-ScheduledAgent — Single-Word CopilotPath (Issue #15 Bug 1)' {
         $mockCopilotPath = Join-Path $PSScriptRoot 'mocks' 'copilot.ps1'
         $wrapperDir  = Join-Path $testEnv.Root '.mock-bin'
         New-Item -ItemType Directory -Path $wrapperDir -Force | Out-Null
-        $wrapperPath = Join-Path $wrapperDir 'mock-copilot.cmd'
 
-        # Create a .cmd wrapper that delegates to the real mock via pwsh
-        Set-Content -Path $wrapperPath -Encoding UTF8 -Value @"
-@echo off
-pwsh -NoProfile -File "$mockCopilotPath" %*
-"@
+        # Create a platform-appropriate wrapper
+        if ($IsWindows -or $env:OS -eq 'Windows_NT') {
+            $wrapperPath = Join-Path $wrapperDir 'mock-copilot.cmd'
+            Set-Content -Path $wrapperPath -Encoding UTF8 -Value "@echo off`r`npwsh -NoProfile -File `"$mockCopilotPath`" %*"
+        }
+        else {
+            $wrapperPath = Join-Path $wrapperDir 'mock-copilot'
+            Set-Content -Path $wrapperPath -Encoding UTF8 -NoNewline -Value "#!/bin/sh`npwsh -NoProfile -File '$mockCopilotPath' `"`$@`"`n"
+            & chmod +x $wrapperPath
+        }
 
         # Overwrite config with the single-word path (no spaces, no flags)
         $config = [ordered]@{
