@@ -233,8 +233,8 @@ Describe 'Invoke-ScheduledAgent — Single-Word CopilotPath (Issue #15 Bug 1)' {
         }
         else {
             $wrapperPath = Join-Path $wrapperDir 'mock-copilot'
-            Set-Content -Path $wrapperPath -Encoding UTF8 -NoNewline -Value "#!/bin/sh`npwsh -NoProfile -File '$mockCopilotPath' `"`$@`"`n"
-            & chmod +x $wrapperPath
+            Set-Content -Path $wrapperPath -Encoding UTF8 -Value "#!/usr/bin/env pwsh`n& '$mockCopilotPath' @args"
+            & chmod +x -- $wrapperPath
         }
 
         # Overwrite config with the single-word path (no spaces, no flags)
@@ -321,13 +321,17 @@ Describe 'Invoke-ScheduledAgent — Failure Metadata (Issue #15 Bug 2)' {
         $result.ExitCode | Should -Be -1
 
         # The key assertion: meta.json must exist with valid timestamps
-        if ($result.RunDirectory -and (Test-Path $result.RunDirectory)) {
-            $metaPath = Join-Path $result.RunDirectory 'meta.json'
-            Test-Path $metaPath | Should -BeTrue
-            $meta = Get-Content $metaPath -Raw | ConvertFrom-Json
-            $meta.exitCode  | Should -Be -1
-            $meta.startTime | Should -Not -BeNullOrEmpty
-            $meta.endTime   | Should -Not -BeNullOrEmpty
-        }
+        $result.RunDirectory | Should -Not -BeNullOrEmpty
+        Test-Path $result.RunDirectory | Should -BeTrue
+
+        $metaPath = Join-Path $result.RunDirectory 'meta.json'
+        Test-Path $metaPath | Should -BeTrue
+        $meta = Get-Content $metaPath -Raw | ConvertFrom-Json
+        $meta.exitCode  | Should -Be -1
+        $meta.startTime | Should -Not -BeNullOrEmpty
+        $meta.endTime   | Should -Not -BeNullOrEmpty
+
+        { [DateTime]::Parse($meta.startTime) } | Should -Not -Throw
+        { [DateTime]::Parse($meta.endTime) }   | Should -Not -Throw
     }
 }

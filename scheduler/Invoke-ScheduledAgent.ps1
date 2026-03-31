@@ -563,6 +563,7 @@ catch {
     if ($runDir -and (Test-Path $runDir)) {
         try {
             $effectiveStart = if ($null -eq $startTime) { [datetime]::UtcNow } else { $startTime }
+            $startTime = $effectiveStart
             Write-RunMetadata -RunDirectory $runDir -AgentId $AgentId `
                 -AgentName $AgentConfig.name -Prompt $AgentConfig.prompt `
                 -ExitCode -1 -TimedOut $false `
