@@ -1,0 +1,4 @@
+reviews:
+  auto:
+    paths:
+      - "**"
