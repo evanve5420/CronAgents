@@ -83,7 +83,8 @@ function Split-CommandLine {
         throw "Command line '$CommandLine' did not contain an executable."
     }
 
-    return [string[]]$parts
+    # Unary comma prevents PowerShell from unwrapping single-element arrays
+    return , [string[]]$parts
 }
 
 function New-CommandProcessStartInfo {
@@ -114,8 +115,10 @@ function New-CommandProcessStartInfo {
         }
     }
 
-    foreach ($argument in @($Arguments)) {
-        $psi.ArgumentList.Add($argument)
+    if ($Arguments) {
+        foreach ($argument in $Arguments) {
+            $psi.ArgumentList.Add($argument)
+        }
     }
 
     return $psi
@@ -562,10 +565,12 @@ catch {
 
     if ($runDir -and (Test-Path $runDir)) {
         try {
+            $effectiveStart = if ($null -eq $startTime) { [datetime]::UtcNow } else { $startTime }
+            $startTime = $effectiveStart
             Write-RunMetadata -RunDirectory $runDir -AgentId $AgentId `
                 -AgentName $AgentConfig.name -Prompt $AgentConfig.prompt `
                 -ExitCode -1 -TimedOut $false `
-                -StartTime $startTime -EndTime ([datetime]::UtcNow) `
+                -StartTime $effectiveStart -EndTime ([datetime]::UtcNow) `
                 -RetryAttempt $retryAttempt
         }
         catch {
