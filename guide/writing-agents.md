@@ -33,15 +33,11 @@ The filename stem (e.g., `daily-review` from `daily-review.agent-registration.js
 
 ---
 
-## Branch safety first
+## Personal repo
 
-Tracked agent registrations belong on your personal CronAgents branch, not `master` / `main`.
+Agent registrations and profiles live in the user's **personal repo** (`~/.cronagents/`), not in the infra repo. If the personal repo doesn't exist yet, run `.\cronagents.ps1 install` to initialize it.
 
-Before creating or editing files in `.cronagents/agents/`:
-
-1. Check `.\cronagents.ps1 branch`
-2. If you are on `master` / `main`, switch to the expected `personal-agents/<user>` branch first
-3. `.\cronagents.ps1 install` bootstraps the user branch during initial setup
+No branch switching is needed — the personal repo is a standalone git repository. The paths shown in the examples below (`.cronagents/agents/`, `.github/agents/`) are relative to the personal repo root.
 
 ## Agent mode
 

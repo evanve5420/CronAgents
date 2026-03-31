@@ -8,13 +8,6 @@ argument-hint: "Describe what the agent should do (e.g., 'review PRs every morni
 
 Create a CronAgents scheduled entry: either a custom agent (`.agent.md` + `.agent-registration.json`) or a prompt-only invocation (`.agent-registration.json` only).
 
-## Gather Context
-
-Read these for current structure and options (fall back to [docs/PLAN.md](../../../docs/PLAN.md) if they don't exist yet):
-
-1. [guide/writing-agents.md](../../../guide/writing-agents.md)
-2. [guide/configuration.md](../../../guide/configuration.md)
-
 ## Personal Repo Setup — Do This Before Creating Anything
 
 Agent definitions and registrations live in the user's **personal repo** (`~/.cronagents/`), not in the infra repo.
@@ -42,21 +35,19 @@ Skip anything already clear from context:
 1. **What should it do?**
 2. **Schedule** — daily at 9am, every 4h, weekly Monday, etc.
 3. **Agent or prompt-only?** — Prompt-only is simpler when no custom system instructions or tool scoping is needed. Agent mode when the task needs custom behavior, tool restrictions, or a system prompt.
-4. **What tools does it need?** — Scope to the **minimum required**. Start restrictive; the user can expand later.
-   - Read-only: `tools: [read]` or `[read, search]`
-   - Edits files: `tools: [read, edit, search]`
-   - Shell access: `tools: [read, shell]` — use `denyTools` to block destructive ops (`shell(rm)`, `shell(git push)`)
-   - `--allow-all-tools` only when genuinely needed — confirm with the user
+4. **What tools does it need?** — Scope to the **minimum required**. Start restrictive; the user can expand later. See [AGENT-PROFILE.md](references/AGENT-PROFILE.md) for common tool sets.
 5. **Model preference?**
-6. **Execution policies?** — timeout, skip on battery, retry on failure, `runIf`, notify on failure (`notifyOnFailure`)
+6. **Execution policies?** — timeout, skip on battery, retry on failure, `runIf` (see [RUNIF.md](references/RUNIF.md)), notify on failure (`notifyOnFailure`)
 7. **Agent profile placement (agent mode only)** — personal repo `.github/agents/` (default) or user-global `~/.copilot/agents/`
 8. **Working directory?** — which project directory the agent should run in (null = allow all via `--allow-all`)
 
 ## Create
 
+For field details, see [REGISTRATION-FIELDS.md](references/REGISTRATION-FIELDS.md).
+
 ### Agent mode
 
-Custom agent profile in the personal repo — scope `tools` to what the task actually needs:
+Custom agent profile — see [AGENT-PROFILE.md](references/AGENT-PROFILE.md) for format and tool scoping:
 
 ```markdown
 # ~/.cronagents/.github/agents/<agent-name>.agent.md
@@ -79,8 +70,7 @@ CronAgents registration file — **filename stem = stable agent ID**:
   "name": "<Display Name>",
   "agent": "<agent-name>",
   "prompt": "<run prompt>",
-  "schedule": { "type": "daily", "time": "09:00" },
-  // Optional: runIf, timeout, skipOnBattery, retryCount, model, denyTools, extraCliFlags, envVars, workingDirectory, notifyOnFailure
+  "schedule": { "type": "daily", "time": "09:00" }
 }
 ```
 
@@ -98,14 +88,6 @@ No `.agent.md`. Omit `agent` field — scheduler invokes `copilot -p` with `--al
   "denyTools": ["shell(rm)", "shell(git push)"]
 }
 ```
-
-`runIf` may be one of:
-
-- `"git-dirty"`
-- `"file-changed:package.json"` (path relative to the execution root)
-- `{ "script": ".cronagents/scripts/should-run.ps1" }`
-
-For script predicates, CronAgents passes `-RepoRoot`, `-AgentId`, and `-StateFile`. The script must write `true` or `false` to stdout and exit with code `0`.
 
 ### Companion SKILL.md (optional, agent mode only)
 
