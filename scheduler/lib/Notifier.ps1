@@ -199,7 +199,7 @@ function Send-AgentFailureNotification {
         The parsed global config object. Must have a 'notifications' property.
 
     .PARAMETER AgentConfig
-        The parsed per-agent config object. Must have a 'notifyOnFailure' property.
+        The parsed per-agent config object. If 'notifyOnFailure' is missing or $false, the failure toast is skipped.
     #>
     [CmdletBinding()]
     param(
@@ -250,7 +250,7 @@ function Send-AgentSuccessNotification {
         The parsed global config object. Must have a 'notifications' property.
 
     .PARAMETER AgentConfig
-        The parsed per-agent config object. Must have a 'notifyOnSuccess' property.
+        The parsed per-agent config object. If 'notifyOnSuccess' is missing or $false, the success toast is skipped.
     #>
     [CmdletBinding()]
     param(
