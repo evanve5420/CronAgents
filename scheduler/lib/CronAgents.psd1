@@ -62,6 +62,7 @@
         'Invoke-RetentionCleanup',
         # Notifier
         'Send-AgentFailureNotification',
+        'Send-AgentSuccessNotification',
         'Send-SchedulerErrorNotification',
         'Start-SchedulerErrorBatch',
         'Complete-SchedulerErrorBatch',

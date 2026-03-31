@@ -1,9 +1,10 @@
 # -----------------------------------------------------------------------
-# Notifier.ps1 — Windows toast notifications for agent failures and
-# scheduler errors.
+# Notifier.ps1 — Windows toast notifications for agent failures, successes,
+# and scheduler errors.
 #
 # Provides Send-AgentFailureNotification (fires a toast when an agent
-# errors), Send-SchedulerErrorNotification (fires a toast for scheduler
+# errors), Send-AgentSuccessNotification (fires a toast when an agent
+# succeeds), Send-SchedulerErrorNotification (fires a toast for scheduler
 # infrastructure errors with per-tick batching and cooldown), and
 # Test-NotificationAvailable (probes whether any notification backend
 # is usable). Gracefully degrades:
@@ -198,7 +199,7 @@ function Send-AgentFailureNotification {
         The parsed global config object. Must have a 'notifications' property.
 
     .PARAMETER AgentConfig
-        The parsed per-agent config object. Must have a 'notifyOnFailure' property.
+        The parsed per-agent config object. If 'notifyOnFailure' is missing or $false, the failure toast is skipped.
     #>
     [CmdletBinding()]
     param(
@@ -230,6 +231,54 @@ function Send-AgentFailureNotification {
     $body   = "Agent '$AgentId' $reason. Check the dashboard or run directory for details."
 
     Send-ToastWithFallback -Title $title -Body $body -LogContext "agent '$AgentId'"
+}
+
+function Send-AgentSuccessNotification {
+    <#
+    .SYNOPSIS
+        Shows a Windows toast notification for a successful agent run. Respects
+        both the global notifications toggle and per-agent notifyOnSuccess.
+        Silently degrades if no backend is available.
+
+    .PARAMETER AgentId
+        The agent identifier (e.g. 'daily-review').
+
+    .PARAMETER AgentName
+        Human-friendly display name.
+
+    .PARAMETER GlobalConfig
+        The parsed global config object. Must have a 'notifications' property.
+
+    .PARAMETER AgentConfig
+        The parsed per-agent config object. If 'notifyOnSuccess' is missing or $false, the success toast is skipped.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$AgentId,
+        [Parameter(Mandatory)][string]$AgentName,
+        [Parameter(Mandatory)][PSCustomObject]$GlobalConfig,
+        [Parameter(Mandatory)][PSCustomObject]$AgentConfig
+    )
+
+    # Gate 1: global toggle
+    if ($GlobalConfig.PSObject.Properties['notifications'] -and
+        $GlobalConfig.notifications -eq $false) {
+        Write-CronAgentsLog -Level 'debug' -Message "Notifications disabled globally — skipping success toast for '$AgentId'."
+        return
+    }
+
+    # Gate 2: per-agent opt-in
+    if (-not $AgentConfig.PSObject.Properties['notifyOnSuccess'] -or
+        -not $AgentConfig.notifyOnSuccess) {
+        Write-CronAgentsLog -Level 'debug' -Message "notifyOnSuccess not enabled for '$AgentId' — skipping toast."
+        return
+    }
+
+    # Build message
+    $title = "CronAgents: $AgentName completed successfully"
+    $body  = "Agent '$AgentId' finished without errors."
+
+    Send-ToastWithFallback -Title $title -Body $body -LogContext "agent '$AgentId' success"
 }
 
 function Start-SchedulerErrorBatch {

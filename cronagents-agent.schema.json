@@ -162,6 +162,11 @@
       "type": "boolean",
       "default": false,
       "description": "Show a Windows toast notification when the agent fails or times out."
+    },
+    "notifyOnSuccess": {
+      "type": "boolean",
+      "default": false,
+      "description": "Show a Windows toast notification when the agent completes successfully."
     }
   },
   "additionalProperties": false,
