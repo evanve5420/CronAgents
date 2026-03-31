@@ -53,7 +53,11 @@ if ($ExtraArgs) {
         else { $remaining.Add($arg) }
     }
     $ExtraArgs = if ($remaining.Count) { $remaining.ToArray() } else { @() }
-    $addDirResolved = if ($addDirs.Count) { @($addDirs) } else { @($AddDir) }
+    $addDirResolved = if ($addDirs.Count) {
+        $addDirs.ToArray()
+    } else {
+        @()
+    }
 }
 
 # --- Invocation logging ---

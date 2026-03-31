@@ -22,9 +22,9 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'lib/CronAgents.psd1') -Force
 
 # ── Defaults ────────────────────────────────────────────────────────
-if (-not $RunsRoot)   { $RunsRoot   = Join-Path $RepoRoot '.cronstate/runs' }
-if (-not $OutputPath) { $OutputPath = Join-Path $RepoRoot 'dashboard.md' }
 $stateRoot = if ($PersonalRepoPath) { Join-Path $PersonalRepoPath '.cronstate' } else { Join-Path $RepoRoot '.cronstate' }
+if (-not $RunsRoot)   { $RunsRoot   = Join-Path $stateRoot 'runs' }
+if (-not $OutputPath) { $OutputPath = Join-Path $RepoRoot 'dashboard.md' }
 
 # ── Helpers ─────────────────────────────────────────────────────────
 

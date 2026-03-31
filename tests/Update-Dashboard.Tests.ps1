@@ -430,4 +430,39 @@ Describe 'Update-Dashboard' {
             $script:RunningDash | Should -Match 'Running Agent'
         }
     }
+
+    Context 'Personal repo defaults when RunsRoot is omitted' {
+        BeforeAll {
+            $personalRepoRoot = Join-Path $TestDrive 'dashboard-personal-repo'
+            $repoRoot = Join-Path $TestDrive 'dashboard-infra-repo'
+            $personalRuns = Join-Path $personalRepoRoot '.cronstate' 'runs'
+            $personalStateRoot = Join-Path $personalRepoRoot '.cronstate'
+            $outputPath = Join-Path $repoRoot 'dashboard.md'
+            New-Item -Path $personalRuns -ItemType Directory -Force | Out-Null
+            New-Item -Path $repoRoot -ItemType Directory -Force | Out-Null
+
+            New-TestRun -RunsRoot $personalRuns `
+                        -AgentId 'personal-run-agent' `
+                        -AgentName 'Personal Run Agent' `
+                        -Timestamp ([datetime]::UtcNow.AddMinutes(-4)) `
+                        -ExitCode 0 `
+                        -SummaryContent 'Personal repo run summary'
+
+            Save-AgentQuestions -StateRoot $personalStateRoot -AgentId 'personal-run-agent' -RunId 'test-run' `
+                -Questions @(@{ id = 'q1'; question = 'Use personal repo roots?'; choices = @(); recommended = $null; context = $null })
+
+            & $script:DashboardScript -RepoRoot $repoRoot -PersonalRepoPath $personalRepoRoot -OutputPath $outputPath
+            $script:PersonalDefaultDash = Get-Content -LiteralPath $outputPath -Raw -Encoding UTF8
+        }
+
+        It 'Loads run history from the personal repo by default' {
+            $script:PersonalDefaultDash | Should -Match 'Personal Run Agent'
+            $script:PersonalDefaultDash | Should -Match 'Personal repo run summary'
+        }
+
+        It 'Uses the same personal state root for pending questions' {
+            $script:PersonalDefaultDash | Should -Match '1 pending'
+            Test-Path (Join-Path $TestDrive 'dashboard-infra-repo' 'questions.md') | Should -Be $true
+        }
+    }
 }

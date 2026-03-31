@@ -168,10 +168,10 @@ function Test-AgentConfigs {
 # Check 4: State File
 # ===================================================================
 function Test-StateFile {
-    param([string]$RepoRoot)
+    param([string]$StateRoot)
 
     try {
-        $stateFile = Join-Path $RepoRoot '.cronstate\state.json'
+        $stateFile = Join-Path $StateRoot 'state.json'
 
         if (-not (Test-Path $stateFile)) {
             return New-CheckResult -Name 'State File' -Status 'Warn' `
@@ -316,10 +316,13 @@ function Test-BranchState {
 # Check 7: Orphaned Runs
 # ===================================================================
 function Test-OrphanedRuns {
-    param([string]$RepoRoot)
+    param(
+        [string]$RepoRoot,
+        [string]$PersonalRepoPath,
+        [string]$RunsRoot
+    )
 
     try {
-        $runsRoot = Join-Path $RepoRoot '.cronstate\runs'
         if (-not (Test-Path $runsRoot)) {
             return New-CheckResult -Name 'Run Directories' -Status 'Pass' `
                 -Message 'No run directory yet'
@@ -330,7 +333,7 @@ function Test-OrphanedRuns {
             [System.StringComparer]::OrdinalIgnoreCase
         )
         try {
-            $agents = @(Get-AgentConfigs -RepoRoot $RepoRoot)
+            $agents = @(Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $PersonalRepoPath)
             foreach ($a in $agents) { [void]$knownIds.Add($a.Id) }
         }
         catch { }
@@ -426,11 +429,18 @@ catch {
     $personalRepoPath = $null
 }
 
+$stateRoot = if ($personalRepoPath) {
+    Join-Path $personalRepoPath '.cronstate'
+} else {
+    Join-Path $RepoRoot '.cronstate'
+}
+$runsRoot = Join-Path $stateRoot 'runs'
+
 $checks.Add((Test-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath))
-$checks.Add((Test-StateFile -RepoRoot $RepoRoot))
+$checks.Add((Test-StateFile -StateRoot $stateRoot))
 $checks.Add((Test-SchedulerProcess))
 $checks.Add((Test-BranchState -RepoRoot $RepoRoot))
-$checks.Add((Test-OrphanedRuns -RepoRoot $RepoRoot))
+$checks.Add((Test-OrphanedRuns -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath -RunsRoot $runsRoot))
 $checks.Add((Test-NotificationBackend -RepoRoot $RepoRoot))
 
 # ===================================================================

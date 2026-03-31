@@ -142,7 +142,12 @@ function script:Get-StatusPayload {
 function script:Get-RunsPayload {
     [OutputType([object[]])]
     param([string]$AgentId)
-    $params = @{ RunsRoot = $RunsRoot; MaxResults = 50 }
+    $maxRunHistory = if ($GlobalConfig.PSObject.Properties['maxRunHistory'] -and $null -ne $GlobalConfig.maxRunHistory) {
+        [int]$GlobalConfig.maxRunHistory
+    } else {
+        50
+    }
+    $params = @{ RunsRoot = $RunsRoot; MaxResults = $maxRunHistory }
     if ($AgentId) { $params['AgentId'] = $AgentId }
     $runs = @(Get-RunHistory @params)
 

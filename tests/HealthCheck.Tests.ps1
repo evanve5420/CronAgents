@@ -16,7 +16,7 @@ Describe 'Health Check — Valid Config' -Tag 'WindowsOnly' {
     BeforeEach {
         $testEnv = New-TestEnvironment -Name 'HealthValid'
         # Ensure state file exists and is valid
-        $stateFile = Join-Path $testEnv.StatePath 'state.json'
+        $stateFile = Join-Path $testEnv.PersonalRepoRoot '.cronstate' 'state.json'
         $state = @{
             schemaVersion   = 1
             schedulerPaused = $false
@@ -46,7 +46,7 @@ Describe 'Health Check — Valid Config' -Tag 'WindowsOnly' {
 Describe 'Health Check — Corrupted State' -Tag 'WindowsOnly' {
     BeforeEach {
         $testEnv = New-TestEnvironment -Name 'HealthCorrupt'
-        $stateFile = Join-Path $testEnv.StatePath 'state.json'
+        $stateFile = Join-Path $testEnv.PersonalRepoRoot '.cronstate' 'state.json'
         Set-Content -LiteralPath $stateFile -Value 'NOT VALID JSON {{{{' -Encoding UTF8
     }
     AfterEach {
@@ -177,6 +177,53 @@ Describe 'Health Check — Agent Config Discovery' -Tag 'WindowsOnly' {
         $agentCheck.Status | Should -Be 'Warn'
         # Message should mention both scanned locations
         $agentCheck.Message | Should -Match ([regex]::Escape($personalRoot))
+    }
+}
+
+Describe 'Health Check — Personal Repo State and Runs' -Tag 'WindowsOnly' {
+    BeforeEach {
+        $testEnv = New-TestEnvironment -Name 'HealthPersonalPaths'
+        $script:externalPersonalRoot = Join-Path $TestDrive ([System.IO.Path]::GetRandomFileName())
+        New-Item -Path (Join-Path $script:externalPersonalRoot '.cronagents' 'agents') -ItemType Directory -Force | Out-Null
+        New-Item -Path (Join-Path $script:externalPersonalRoot '.cronstate' 'runs') -ItemType Directory -Force | Out-Null
+
+        $cfg = Get-Content -LiteralPath $testEnv.ConfigPath -Raw | ConvertFrom-Json
+        $cfg.personalRepo.path = $script:externalPersonalRoot
+        $cfg | ConvertTo-Json -Depth 5 | Out-File -FilePath $testEnv.ConfigPath -Encoding utf8
+
+        $state = @{
+            schemaVersion   = 1
+            schedulerPaused = $false
+            agents          = @{}
+        }
+        $state | ConvertTo-Json -Depth 10 |
+            Set-Content -LiteralPath (Join-Path $script:externalPersonalRoot '.cronstate' 'state.json') -Encoding UTF8
+
+        @{
+            name     = 'Tracked Agent'
+            prompt   = 'Track personal repo state'
+            schedule = @{ type = 'daily'; time = '09:00' }
+        } | ConvertTo-Json -Depth 5 |
+            Set-Content -LiteralPath (Join-Path $script:externalPersonalRoot '.cronagents' 'agents' 'tracked-agent.agent-registration.json') -Encoding UTF8
+
+        New-Item -Path (Join-Path $script:externalPersonalRoot '.cronstate' 'runs' '20260331T230000_orphan-agent_ab12') -ItemType Directory -Force | Out-Null
+    }
+    AfterEach {
+        Remove-TestEnvironment -TestEnv $testEnv
+    }
+
+    It 'Uses personal repo state and runs roots when configured outside RepoRoot' {
+        $result = & $healthScript -RepoRoot $testEnv.Root -TaskPath '\CronAgents-Test\'
+
+        $agentCheck = $result.Checks | Where-Object { $_.Name -eq 'Agent Configs' }
+        $agentCheck.Status | Should -Be 'Pass'
+
+        $stateCheck = $result.Checks | Where-Object { $_.Name -eq 'State File' }
+        $stateCheck.Status | Should -Be 'Pass'
+
+        $runsCheck = $result.Checks | Where-Object { $_.Name -eq 'Run Directories' }
+        $runsCheck.Status | Should -Be 'Warn'
+        $runsCheck.Message | Should -Match 'orphan-agent'
     }
 }
 

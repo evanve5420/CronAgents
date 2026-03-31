@@ -232,21 +232,21 @@ function Resolve-AgentFilePath {
 
     # 1. Sibling file: same directory as the agent .json config
     $sibling = Join-Path $ConfigDir "$AgentRef.agent.md"
-    if (Test-Path $sibling) { return (Resolve-Path $sibling).Path }
+    if (Test-Path -LiteralPath $sibling) { return (Resolve-Path -LiteralPath $sibling).Path }
 
     # 2. Repo-level .github/agents/ directory
     $ghAgents = Join-Path $RepoRoot ".github\agents\$AgentRef.agent.md"
-    if (Test-Path $ghAgents) { return (Resolve-Path $ghAgents).Path }
+    if (Test-Path -LiteralPath $ghAgents) { return (Resolve-Path -LiteralPath $ghAgents).Path }
 
     # 3. Copilot default: .github/copilot-agents/<name>.agent.md
     $copilotDefault = Join-Path $RepoRoot ".github\copilot-agents\$AgentRef.agent.md"
-    if (Test-Path $copilotDefault) { return (Resolve-Path $copilotDefault).Path }
+    if (Test-Path -LiteralPath $copilotDefault) { return (Resolve-Path -LiteralPath $copilotDefault).Path }
 
     # 4. Direct path (the reference itself may be a relative or absolute path)
     # Resolve relative paths from $RepoRoot, not the process CWD
     $resolvedRef = if ([System.IO.Path]::IsPathRooted($AgentRef)) { $AgentRef }
                    else { Join-Path $RepoRoot $AgentRef }
-    if (Test-Path $resolvedRef) { return (Resolve-Path $resolvedRef).Path }
+    if (Test-Path -LiteralPath $resolvedRef) { return (Resolve-Path -LiteralPath $resolvedRef).Path }
 
     return $null
 }
