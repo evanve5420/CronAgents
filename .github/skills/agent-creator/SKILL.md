@@ -102,29 +102,4 @@ Create in `~/.cronagents/.github/skills/<agent-name>/SKILL.md` if the agent need
 
 ## Agent Questions (Deferred Decisions)
 
-Agents can write a `questions.json` file into their run output directory to ask the user operational questions. This is useful when an agent encounters gray-area decisions that need human input (e.g., "Should I move these 7 items to Clients/Acme?").
-
-**How it works:**
-1. Agent writes `questions.json` to its run output directory during the run
-2. After the run completes, the scheduler reads `questions.json` from the run directory and persists it to `.cronstate/pending-questions/<agent-id>.json`
-3. The agent's next scheduled run is **blocked** until all questions are answered
-4. User answers via `cronagents.ps1 questions` or the TUI menu
-5. Answers are injected into the next run via `--share=answers.json`
-6. Unanswered questions auto-expire after `questionExpirationDays` (default 7, configurable in `cronagents.json`, 0 = never)
-
-**Question format** (what the agent writes):
-```json
-[
-  {
-    "id": "unique-question-id",
-    "question": "Should I move these items to Clients/Acme?",
-    "choices": ["Yes, move them", "No, leave them", "Archive instead"],
-    "recommended": "Yes, move them",
-    "context": "Found 7 emails from acme.com dated Jan 10-15"
-  }
-]
-```
-- `id`: stable identifier (agent reuses same id to update the question on re-runs)
-- `choices`: optional array of suggested answers (user can always provide a freeform response)
-- `recommended`: optional — which choice the agent recommends
-- `context`: optional — additional context to help the user decide
+Agents can ask the user operational questions that block the next run until answered. See [QUESTIONS.md](references/QUESTIONS.md) for the question format, lifecycle, and configuration.
