@@ -1,12 +1,21 @@
 # -----------------------------------------------------------------------
-# Notifier.ps1 — Windows toast notifications for agent failures
+# Notifier.ps1 — Windows toast notifications for agent failures and
+# scheduler errors.
 #
 # Provides Send-AgentFailureNotification (fires a toast when an agent
-# errors) and Test-NotificationAvailable (probes whether any notification
-# backend is usable). Gracefully degrades:
+# errors), Send-SchedulerErrorNotification (fires a toast for scheduler
+# infrastructure errors with per-tick batching and cooldown), and
+# Test-NotificationAvailable (probes whether any notification backend
+# is usable). Gracefully degrades:
 #   1. BurntToast module (rich toasts)
 #   2. Native Windows.UI.Notifications API
 #   3. Silent no-op
+#
+# Scheduler-error rate limiting:
+#   - Per-tick batching: Start-SchedulerErrorBatch / Complete-SchedulerErrorBatch
+#     collect errors during a tick and fire a single summary toast.
+#   - Cooldown: After a scheduler-error toast fires, subsequent toasts are
+#     suppressed for 5 minutes (configurable via CooldownSeconds).
 # -----------------------------------------------------------------------
 
 Set-StrictMode -Version Latest
@@ -15,6 +24,13 @@ $ErrorActionPreference = 'Stop'
 # Cache the detected backend so we only probe once per session.
 # Values: 'BurntToast', 'Native', 'None', or $null (not yet probed).
 $script:NotificationBackend = $null
+
+# --- Scheduler-error batching & cooldown state ---
+# When a batch is active, Send-SchedulerErrorNotification collects
+# errors here instead of firing individual toasts.
+$script:SchedulerErrorBatch  = $null   # $null = no active batch; [List] = active
+$script:LastSchedulerToastTime = [datetime]::MinValue
+$script:DefaultCooldownSeconds = 300   # 5 minutes
 
 function Resolve-NotificationBackend {
     <#
@@ -216,12 +232,88 @@ function Send-AgentFailureNotification {
     Send-ToastWithFallback -Title $title -Body $body -LogContext "agent '$AgentId'"
 }
 
+function Start-SchedulerErrorBatch {
+    <#
+    .SYNOPSIS
+        Begins collecting scheduler-error notifications for the current tick.
+        While a batch is active, Send-SchedulerErrorNotification queues errors
+        instead of firing individual toasts.
+    #>
+    [CmdletBinding()]
+    param()
+
+    $script:SchedulerErrorBatch = [System.Collections.Generic.List[string]]::new()
+    Write-CronAgentsLog -Level 'debug' -Message 'Scheduler error notification batch started.'
+}
+
+function Complete-SchedulerErrorBatch {
+    <#
+    .SYNOPSIS
+        Ends the current batch, firing a single summary toast if any errors
+        were collected. Subject to cooldown — if the last scheduler-error
+        toast was sent within the cooldown window the toast is suppressed.
+
+    .PARAMETER GlobalConfig
+        The parsed global config object (for the global notifications toggle).
+
+    .PARAMETER CooldownSeconds
+        Minimum seconds between scheduler-error toasts. Defaults to 300 (5 min).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][PSCustomObject]$GlobalConfig,
+        [int]$CooldownSeconds = $script:DefaultCooldownSeconds
+    )
+
+    $errors = $script:SchedulerErrorBatch
+    $script:SchedulerErrorBatch = $null   # end the batch regardless
+
+    if ($null -eq $errors -or $errors.Count -eq 0) {
+        Write-CronAgentsLog -Level 'debug' -Message 'Scheduler error batch completed — no errors collected.'
+        return
+    }
+
+    Write-CronAgentsLog -Level 'debug' -Message "Scheduler error batch completed — $($errors.Count) error(s) collected."
+
+    # Gate: global toggle
+    if ($GlobalConfig.PSObject.Properties['notifications'] -and
+        $GlobalConfig.notifications -eq $false) {
+        Write-CronAgentsLog -Level 'debug' -Message "Notifications disabled globally — skipping batched scheduler error toast."
+        return
+    }
+
+    # Gate: cooldown
+    $elapsed = ((Get-Date) - $script:LastSchedulerToastTime).TotalSeconds
+    if ($elapsed -lt $CooldownSeconds) {
+        $remaining = [int]($CooldownSeconds - $elapsed)
+        Write-CronAgentsLog -Level 'debug' -Message "Scheduler error toast suppressed by cooldown ($remaining s remaining). $($errors.Count) error(s) dropped."
+        return
+    }
+
+    # Build summary toast
+    if ($errors.Count -eq 1) {
+        $title = "CronAgents: $($errors[0]) failed"
+        $body  = "1 scheduler error this tick. Check the scheduler log for details."
+    }
+    else {
+        $opList = ($errors | Select-Object -First 3) -join ', '
+        if ($errors.Count -gt 3) { $opList += ", +$($errors.Count - 3) more" }
+        $title = "CronAgents: $($errors.Count) errors this tick"
+        $body  = $opList
+    }
+
+    Send-ToastWithFallback -Title $title -Body $body -LogContext "batched scheduler errors ($($errors.Count))"
+    $script:LastSchedulerToastTime = Get-Date
+}
+
 function Send-SchedulerErrorNotification {
     <#
     .SYNOPSIS
         Shows a Windows toast notification for a scheduler infrastructure error.
-        Gated only by the global notifications toggle. Silently degrades if no
-        backend is available.
+        When a batch is active (between Start-SchedulerErrorBatch and
+        Complete-SchedulerErrorBatch) the error is queued instead of firing
+        immediately. Outside a batch, the toast fires directly but is still
+        subject to cooldown.
 
     .PARAMETER Operation
         Short label for what failed (e.g. 'Dashboard update', 'Retention cleanup').
@@ -231,13 +323,25 @@ function Send-SchedulerErrorNotification {
 
     .PARAMETER GlobalConfig
         The parsed global config object. Must have a 'notifications' property.
+
+    .PARAMETER CooldownSeconds
+        Minimum seconds between scheduler-error toasts (only applies outside a
+        batch). Defaults to 300 (5 min).
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Operation,
         [Parameter(Mandatory)][string]$ErrorMessage,
-        [Parameter(Mandatory)][PSCustomObject]$GlobalConfig
+        [Parameter(Mandatory)][PSCustomObject]$GlobalConfig,
+        [int]$CooldownSeconds = $script:DefaultCooldownSeconds
     )
+
+    # If a batch is active, queue the operation name and return.
+    if ($null -ne $script:SchedulerErrorBatch) {
+        $script:SchedulerErrorBatch.Add($Operation)
+        Write-CronAgentsLog -Level 'debug' -Message "Scheduler error queued in batch: $Operation"
+        return
+    }
 
     # Gate: global toggle
     if ($GlobalConfig.PSObject.Properties['notifications'] -and
@@ -246,8 +350,28 @@ function Send-SchedulerErrorNotification {
         return
     }
 
+    # Gate: cooldown
+    $elapsed = ((Get-Date) - $script:LastSchedulerToastTime).TotalSeconds
+    if ($elapsed -lt $CooldownSeconds) {
+        $remaining = [int]($CooldownSeconds - $elapsed)
+        Write-CronAgentsLog -Level 'debug' -Message "Scheduler error toast suppressed by cooldown ($remaining s remaining): $Operation"
+        return
+    }
+
     $title = "CronAgents: $Operation failed"
     $body  = $ErrorMessage
 
     Send-ToastWithFallback -Title $title -Body $body -LogContext "scheduler error ($Operation)"
+    $script:LastSchedulerToastTime = Get-Date
+}
+
+function Reset-SchedulerErrorState {
+    <#
+    .SYNOPSIS
+        Resets batch and cooldown state. Intended for tests.
+    #>
+    [CmdletBinding()]
+    param()
+    $script:SchedulerErrorBatch    = $null
+    $script:LastSchedulerToastTime = [datetime]::MinValue
 }

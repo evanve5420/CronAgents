@@ -231,6 +231,10 @@ try {
     while ($script:running) {
         $tickStart = Get-Date
 
+        # Begin collecting scheduler-error notifications for this tick.
+        # Errors are queued and fired as a single summary toast at tick end.
+        Start-SchedulerErrorBatch
+
         # -----------------------------------------------------------
         # Step 1: Check global pause
         # -----------------------------------------------------------
@@ -465,7 +469,14 @@ try {
         }
 
         # -----------------------------------------------------------
-        # Step 8: Sleep until next tick
+        # Step 8: Flush batched scheduler-error notifications
+        # -----------------------------------------------------------
+        try {
+            Complete-SchedulerErrorBatch -GlobalConfig $config
+        } catch { <# best-effort #> }
+
+        # -----------------------------------------------------------
+        # Step 9: Sleep until next tick
         # -----------------------------------------------------------
         $agents = Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath
         $state  = Get-AgentState -StateFile $stateFile
