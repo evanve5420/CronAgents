@@ -297,6 +297,12 @@ try {
                     continue
                 }
 
+                # Check for unanswered questions blocking this agent
+                if (Test-AgentHasPendingQuestions -StateRoot $cronStateDir -AgentId $agentId) {
+                    Write-CronAgentsLog -Level 'info' -Message "Agent '$agentId' has unanswered questions — blocked until answered"
+                    continue
+                }
+
                 # Parse lastRun
                 $lastRun = $null
                 if ($agentState -and $agentState.lastRun) {
@@ -426,6 +432,7 @@ try {
             if (Test-Path $dashboardScript) {
                 & $dashboardScript -RepoRoot $RepoRoot `
                     -RunsRoot $runsRoot `
+                    -PersonalRepoPath $personalRepoPath `
                     -MaxRunHistory $config.maxRunHistory `
                     -RetentionDays $config.retentionDays
             }
@@ -461,6 +468,14 @@ try {
                     Send-SchedulerErrorNotification -Operation 'Retention cleanup' `
                         -ErrorMessage "$_" -GlobalConfig $config
                 } catch { <# best-effort #> }
+            }
+
+            # Expire old unanswered questions
+            try {
+                Remove-ExpiredQuestions -StateRoot $cronStateDir
+            }
+            catch {
+                Write-CronAgentsLog -Level 'warn' -Message "Question expiration sweep failed: $_"
             }
         }
 

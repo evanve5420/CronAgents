@@ -117,3 +117,32 @@ Create in `~/.cronagents/.github/skills/<agent-name>/SKILL.md` if the agent need
 - Prompt-only: registration has `prompt` + `schedule`, no `agent` field, `denyTools` considered
 - Both: registration file is named `~/.cronagents/.cronagents/agents/<agent-id>.agent-registration.json`
 - Both: schedule type is `interval`/`daily`/`weekly`, test with `cronagents.ps1 run <agent-id>`
+
+## Agent Questions (Deferred Decisions)
+
+Agents can write a `questions.json` file to `.cronstate/pending-questions/<agent-id>.json` to ask the user operational questions. This is useful when an agent encounters gray-area decisions that need human input (e.g., "Should I move these 7 items to Clients/Acme?").
+
+**How it works:**
+1. Agent writes `questions.json` to the well-known path during its run
+2. The scheduler discovers and persists the questions post-run
+3. The agent's next scheduled run is **blocked** until all questions are answered
+4. User answers via `cronagents.ps1 questions` or the TUI menu
+5. Answers are injected into the next run via `--share=answers.json`
+6. Unanswered questions auto-expire after `questionExpirationDays` (default 7, configurable in `cronagents.json`, 0 = never)
+
+**Question format** (what the agent writes):
+```json
+[
+  {
+    "id": "unique-question-id",
+    "question": "Should I move these items to Clients/Acme?",
+    "choices": ["Yes, move them", "No, leave them", "Archive instead"],
+    "recommended": "Yes, move them",
+    "context": "Found 7 emails from acme.com dated Jan 10-15"
+  }
+]
+```
+- `id`: stable identifier (agent reuses same id to update the question on re-runs)
+- `choices`: optional array of suggested answers (user can always provide a freeform response)
+- `recommended`: optional — which choice the agent recommends
+- `context`: optional — additional context to help the user decide

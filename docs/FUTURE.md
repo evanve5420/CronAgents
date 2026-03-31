@@ -36,13 +36,11 @@ Allow agent entries to specify a `script` path instead of `agent`+`prompt`, so t
 
 A scaffold-internal agent that reviews recent diffs to agent definitions, skills, config, and feedback for harmful patterns. Runs after the feedback-commit hook but before the next scheduled agents execute, so poisoned edits are caught before they take effect. Would watch for: prompt injection in agent definitions, unexpected tool additions/`--deny-tool` removals, feedback content attempting to manipulate the evaluator, and anomalous output patterns suggesting data exfiltration. Flagged issues auto-pause the affected agent and notify via dashboard/TUI. The infrastructure for this already exists: git branch diffs from agent versioning, pre-edit snapshots, and feedback-result.md changelogs provide structured input. Attack pattern knowledge would accumulate in a dedicated skill file (`scheduler/skills/security-reviewer/SKILL.md`) that can be community-contributed. See [security-review-agent-landscape.md](security-review-agent-landscape.md) for detailed landscape research and implementation guidance.
 
-### 8. User Questions / Deferred Decisions
+### 8. User Questions / Deferred Decisions ✅
 
-Some agents need a human-in-the-loop inbox, not a feedback-evaluator edit pass. Example: an inbox manager can confidently archive obvious spam, but when it hits gray-area messages it should be able to ask the user a concrete question like "Should I move these seven items to Clients/Acme?" and then resume on the next scheduled run with the user's answer as runtime input.
+> **Implemented.** See `scheduler/lib/QuestionsManager.ps1`, `cronagents.ps1 questions`, and the TUI "Pending questions" menu option.
 
-This is fundamentally different from `feedback.md`. Feedback is retrospective guidance that teaches the evaluator how to edit an agent's `.agent.md` or `SKILL.md`. These questions are operational decisions for the next run. They need their own persisted queue, response UX, and run handoff.
-
-Implementation could be a dedicated questions page or an expanded `dashboard.md` section, plus a TUI/CLI entry point to review and answer pending questions. The scheduler would store question IDs, originating run metadata, and any expiration/skipped state, then inject resolved answers into the next invocation of that same agent so it can continue work without re-asking.
+Agents can write a `questions.json` file to `.cronstate/pending-questions/` with operational questions for the user. The scheduler discovers them post-run, blocks the agent's next scheduled run until all questions are answered, and injects the answers via `--share=answers.json` on the next run. Questions auto-expire after `questionExpirationDays` (default 7, 0 = never). The dashboard summary table shows a Questions column linking to a generated `questions.md` file.
 
 ---
 

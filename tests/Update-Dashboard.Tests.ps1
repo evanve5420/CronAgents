@@ -93,7 +93,7 @@ Describe 'Update-Dashboard' {
         }
 
         It 'Has summary table with correct columns' {
-            $script:EmptyDashboard | Should -Match '\| Agent \| Last Run \| Status \| Feedback \| Detail \|'
+            $script:EmptyDashboard | Should -Match '\| Agent \| Last Run \| Status \| Questions \| Feedback \| Detail \|'
         }
 
         It 'Shows no-runs placeholder in summary table' {
