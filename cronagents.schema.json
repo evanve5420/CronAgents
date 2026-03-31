@@ -72,6 +72,12 @@
       "default": true,
       "description": "Global toggle for Windows toast notifications. When false, all per-agent notifyOnFailure settings are ignored."
     },
+    "questionExpirationDays": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 7,
+      "description": "Days before unanswered agent questions auto-expire and unblock the agent. 0 = never expire."
+    },
     "personalRepo": {
       "type": "object",
       "properties": {

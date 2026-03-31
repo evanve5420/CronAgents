@@ -14,7 +14,8 @@
         'PersonalRepo.ps1',
         'PowerHelpers.ps1',
         'RetentionCleanup.ps1',
-        'Notifier.ps1'
+        'Notifier.ps1',
+        'QuestionsManager.ps1'
     )
     FunctionsToExport = @(
         # Logger
@@ -66,7 +67,16 @@
         'Complete-SchedulerErrorBatch',
         'Reset-SchedulerErrorState',
         'Test-NotificationAvailable',
-        'Resolve-NotificationBackend'
+        'Resolve-NotificationBackend',
+        # QuestionsManager
+        'Save-AgentQuestions',
+        'Get-PendingQuestions',
+        'Get-AnsweredQuestions',
+        'Set-QuestionAnswer',
+        'Clear-AnsweredQuestions',
+        'Remove-ExpiredQuestions',
+        'Test-AgentHasPendingQuestions',
+        'Write-AnswersFile'
     )
     CmdletsToExport   = @()
     VariablesToExport  = @()

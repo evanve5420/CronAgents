@@ -99,3 +99,7 @@ Create in `~/.cronagents/.github/skills/<agent-name>/SKILL.md` if the agent need
 - Prompt-only: registration has `prompt` + `schedule`, no `agent` field, `denyTools` considered
 - Both: registration file is named `~/.cronagents/.cronagents/agents/<agent-id>.agent-registration.json`
 - Both: schedule type is `interval`/`daily`/`weekly`, test with `cronagents.ps1 run <agent-id>`
+
+## Agent Questions (Deferred Decisions)
+
+Agents can ask the user operational questions that block the next run until answered. See [QUESTIONS.md](references/QUESTIONS.md) for the question format, lifecycle, and configuration.
