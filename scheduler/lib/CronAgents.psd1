@@ -62,6 +62,9 @@
         # Notifier
         'Send-AgentFailureNotification',
         'Send-SchedulerErrorNotification',
+        'Start-SchedulerErrorBatch',
+        'Complete-SchedulerErrorBatch',
+        'Reset-SchedulerErrorState',
         'Test-NotificationAvailable',
         'Resolve-NotificationBackend'
     )
