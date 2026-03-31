@@ -242,7 +242,7 @@ function Start-SchedulerErrorBatch {
     [CmdletBinding()]
     param()
 
-    $script:SchedulerErrorBatch = [System.Collections.Generic.List[string]]::new()
+    $script:SchedulerErrorBatch = [System.Collections.Generic.List[hashtable]]::new()
     Write-CronAgentsLog -Level 'debug' -Message 'Scheduler error notification batch started.'
 }
 
@@ -292,11 +292,11 @@ function Complete-SchedulerErrorBatch {
 
     # Build summary toast
     if ($errors.Count -eq 1) {
-        $title = "CronAgents: $($errors[0]) failed"
-        $body  = "1 scheduler error this tick. Check the scheduler log for details."
+        $title = "CronAgents: $($errors[0].Operation) failed"
+        $body  = $errors[0].ErrorMessage
     }
     else {
-        $opList = ($errors | Select-Object -First 3) -join ', '
+        $opList = ($errors | Select-Object -First 3 | ForEach-Object { $_.Operation }) -join ', '
         if ($errors.Count -gt 3) { $opList += ", +$($errors.Count - 3) more" }
         $title = "CronAgents: $($errors.Count) errors this tick"
         $body  = $opList
@@ -336,9 +336,9 @@ function Send-SchedulerErrorNotification {
         [int]$CooldownSeconds = $script:DefaultCooldownSeconds
     )
 
-    # If a batch is active, queue the operation name and return.
+    # If a batch is active, queue the operation name and error message, then return.
     if ($null -ne $script:SchedulerErrorBatch) {
-        $script:SchedulerErrorBatch.Add($Operation)
+        $script:SchedulerErrorBatch.Add(@{ Operation = $Operation; ErrorMessage = $ErrorMessage })
         Write-CronAgentsLog -Level 'debug' -Message "Scheduler error queued in batch: $Operation"
         return
     }

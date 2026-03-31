@@ -429,13 +429,15 @@ Describe 'Scheduler error batching — Start / Complete lifecycle' {
         Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 0
     }
 
-    It 'Fires a single toast when batch contains one error' {
+    It 'Fires a single toast when batch contains one error — preserves error message' {
         $global = New-MockGlobalConfig -Notifications $true
 
         $capturedTitle = $null
+        $capturedBody  = $null
         Mock -ModuleName CronAgents Send-BurntToastNotification {
             param($Title, $Body)
             Set-Variable -Name capturedTitle -Value $Title -Scope 2
+            Set-Variable -Name capturedBody  -Value $Body  -Scope 2
         }
 
         Start-SchedulerErrorBatch
@@ -445,6 +447,7 @@ Describe 'Scheduler error batching — Start / Complete lifecycle' {
         Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 1
         $capturedTitle | Should -Match 'Dashboard update'
         $capturedTitle | Should -Match 'failed'
+        $capturedBody  | Should -Match 'disk full'
     }
 
     It 'Fires a single summary toast when batch contains multiple errors' {
