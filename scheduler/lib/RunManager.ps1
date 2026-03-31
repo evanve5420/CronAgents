@@ -10,6 +10,17 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function ConvertTo-CronAgentsIsoTimestamp {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [datetime]$Time
+    )
+
+    return $Time.ToUniversalTime().ToString('o')
+}
+
 # -------------------------------------------------------------------
 # New-RunDirectory
 # -------------------------------------------------------------------
@@ -82,7 +93,7 @@ function Initialize-RunMetadata {
         agentId           = $AgentId
         agentName         = $AgentName
         prompt            = $Prompt
-        startTime         = [datetime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss')
+        startTime         = ConvertTo-CronAgentsIsoTimestamp -Time ([datetime]::UtcNow)
         endTime           = $null
         exitCode          = $null
         timedOut          = $false
@@ -133,8 +144,8 @@ function Write-RunMetadata {
         agentId           = $AgentId
         agentName         = $AgentName
         prompt            = $Prompt
-        startTime         = $StartTime.ToString('yyyy-MM-ddTHH:mm:ss')
-        endTime           = $EndTime.ToString('yyyy-MM-ddTHH:mm:ss')
+        startTime         = ConvertTo-CronAgentsIsoTimestamp -Time $StartTime
+        endTime           = ConvertTo-CronAgentsIsoTimestamp -Time $EndTime
         exitCode          = $ExitCode
         timedOut          = $TimedOut
         retryAttempt      = $RetryAttempt
@@ -212,6 +223,7 @@ function Get-RunHistory {
         $parsedTime = $null
         try {
             $parsedTime = [datetime]::ParseExact($tsRaw, 'yyyyMMddTHHmmss', [System.Globalization.CultureInfo]::InvariantCulture)
+            $parsedTime = [datetime]::SpecifyKind($parsedTime, [System.DateTimeKind]::Utc)
         }
         catch {
             Write-CronAgentsLog -Level 'warn' -Message "Could not parse timestamp from directory: $($dir.Name)"
