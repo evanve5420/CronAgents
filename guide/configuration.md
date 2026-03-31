@@ -22,8 +22,10 @@ Located at the repository root. Controls scheduler-wide behavior.
   "startupDelay": "5m",
   "logLevel": "info",
   "quietHours": null,
+  "notifications": true,
+  "questionExpirationDays": 7,
   "personalRepo": {
-    "path": null,
+    "path": "~/.cronagents",
     "userName": null,
     "autoCommitFeedback": true,
     "defaultWorkingDirectory": null
@@ -133,16 +135,41 @@ Located at the repository root. Controls scheduler-wide behavior.
 | `start` | `string` | `HH:MM` (24h) | Start of quiet window |
 | `end` | `string` | `HH:MM` (24h) | End of quiet window |
 
+#### `notifications`
+
+| | |
+|---|---|
+| **Type** | `boolean` |
+| **Default** | `true` |
+| **Description** | Global toggle for Windows toast notifications. When `false`, per-agent `notifyOnFailure` and `notifyOnSuccess` settings are ignored. |
+
+```json
+"notifications": false
+```
+
+#### `questionExpirationDays`
+
+| | |
+|---|---|
+| **Type** | `integer` |
+| **Default** | `7` |
+| **Min** | `0` |
+| **Description** | Number of days before unanswered agent questions auto-expire and unblock the next run. Set to `0` to disable expiration. |
+
+```json
+"questionExpirationDays": 14
+```
+
 #### `personalRepo`
 
 Controls the separate personal repository for user agent definitions.
 
 | Sub-field | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `path` | `string` or `null` | `null` | Path to the personal repo. `null` = `~/.cronagents/`. |
+| `path` | `string` | `"~/.cronagents"` | Path to the personal repo. `~` expands to the current user's home directory. |
 | `userName` | `string` or `null` | `null` | Override username for the personal repo. `null` = auto-detect from `git config github.user`, `gh auth status`, `git config user.name`, or `$env:USERNAME`. |
 | `autoCommitFeedback` | `boolean` | `true` | Automatically `git commit` after the feedback evaluator edits agent files in the personal repo. |
-| `defaultWorkingDirectory` | `string` or `null` | `null` | Default working directory for agent runs. `null` = scheduler runs copilot with `--allow-all` from the personal repo root. |
+| `defaultWorkingDirectory` | `string` or `null` | `null` | Optional default project directory stored in global config. Per-agent `workingDirectory` controls actual run scoping; when no per-agent value is set, the scheduler currently runs from the personal repo root if available, otherwise the infra repo root. |
 
 ```json
 "personalRepo": {
@@ -179,7 +206,9 @@ Each agent has a JSON config file. The filename stem (for example, `daily-review
   "model": null,
   "denyTools": [],
   "extraCliFlags": [],
-  "envVars": {}
+  "envVars": {},
+  "notifyOnFailure": true,
+  "notifyOnSuccess": false
 }
 ```
 
@@ -368,13 +397,29 @@ CronAgents invokes the script with named parameters `-RepoRoot`, `-AgentId`, and
 }
 ```
 
+#### `notifyOnFailure`
+
+| | |
+|---|---|
+| **Type** | `boolean` |
+| **Default** | `false` |
+| **Description** | Show a Windows toast notification when the agent fails or times out. Requires global `notifications` to be `true`. |
+
+#### `notifyOnSuccess`
+
+| | |
+|---|---|
+| **Type** | `boolean` |
+| **Default** | `false` |
+| **Description** | Show a Windows toast notification when the agent completes successfully. Requires global `notifications` to be `true`. |
+
 #### `workingDirectory`
 
 | | |
 |---|---|
 | **Type** | `string` or `null` |
 | **Default** | `null` |
-| **Description** | Override the working directory for this agent's Copilot CLI invocation. When `null`, uses the personal repo root (with `--allow-all`). Set to a specific project directory to restrict the agent's scope. |
+| **Description** | Override the working directory and scope for this agent's Copilot CLI invocation. When set, the scheduler grants access to that directory plus the personal repo and infra repo with `--add-dir`. When `null`, the scheduler runs from the personal repo root if available, otherwise the infra repo root, with `--allow-all`. |
 
 ```json
 "workingDirectory": "C:\\Projects\\my-app"

@@ -39,7 +39,7 @@ Skip anything already clear from context:
 5. **Model preference?**
 6. **Execution policies?** — timeout, skip on battery, retry on failure, `runIf` (see [RUNIF.md](references/RUNIF.md)), notify on failure (`notifyOnFailure`), notify on success (`notifyOnSuccess`)
 7. **Agent profile placement (agent mode only)** — personal repo `.github/agents/` (default) or user-global `~/.copilot/agents/`
-8. **Working directory?** — which project directory the agent should run in (null = allow all via `--allow-all`)
+8. **Working directory?** — which project directory the agent should run in. If omitted, the scheduler runs from the personal repo root when available (otherwise the infra repo root) with `--allow-all`.
 
 ## Create
 
