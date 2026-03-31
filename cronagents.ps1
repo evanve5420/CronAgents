@@ -178,9 +178,11 @@ function Invoke-StatusCommand {
     }
 
     # Table header
-    Write-Host ("  {0,-20} {1,-10} {2,-22} {3,-22} {4,-22} {5}" -f `
-        'Agent', 'Status', 'Schedule', 'Last Run', 'Next Run', 'Feedback')
-    Write-Host ("  " + ("-" * 105))
+    Write-Host ("  {0,-20} {1,-10} {2,-22} {3,-22} {4,-22} {5,-15} {6}" -f `
+        'Agent', 'Status', 'Schedule', 'Last Run', 'Next Run', 'Questions', 'Feedback')
+    Write-Host ("  " + ("-" * 120))
+
+    $stateRoot = Join-Path $PersonalRepoPath '.cronstate'
 
     foreach ($a in $agents) {
         $agentState = if ($state.agents.ContainsKey($a.Id)) { $state.agents[$a.Id] } else { $null }
@@ -210,6 +212,20 @@ function Invoke-StatusCommand {
         }
         catch { }
 
+        # Pending questions
+        $qCount = 0
+        try {
+            $qCount = (Get-PendingQuestions -StateRoot $stateRoot -AgentId $a.Id).Count
+        }
+        catch { }
+        $qStr = if ($qCount -gt 0) { "❓ $qCount pending" } else { '-' }
+
+        # Check if blocked by questions
+        if ($qCount -gt 0 -and $enabled) {
+            $statusStr = 'Blocked'
+            $statusColor = 'Yellow'
+        }
+
         # Pending feedback
         $feedbackCount = 0
         try {
@@ -219,8 +235,8 @@ function Invoke-StatusCommand {
         catch { }
         $fbStr = if ($feedbackCount -gt 0) { "$feedbackCount pending" } else { '-' }
 
-        $line = "  {0,-20} {1,-10} {2,-22} {3,-22} {4,-22} {5}" -f `
-            $a.Id, $statusStr, $schedStr, $lastRunStr, $nextRunStr, $fbStr
+        $line = "  {0,-20} {1,-10} {2,-22} {3,-22} {4,-22} {5,-15} {6}" -f `
+            $a.Id, $statusStr, $schedStr, $lastRunStr, $nextRunStr, $qStr, $fbStr
         Write-Host $line -ForegroundColor $statusColor
     }
 }
@@ -388,6 +404,141 @@ function Invoke-EvaluateCommand {
     }
 }
 
+# ── Subcommand: questions ────────────────────────────────────────────
+
+function Invoke-QuestionsCommand {
+    [CmdletBinding()]
+    param([string]$AgentId)
+
+    $stateRoot = Join-Path $PersonalRepoPath '.cronstate'
+    $pending = Get-PendingQuestions -StateRoot $stateRoot -AgentId $AgentId
+
+    if ($pending.Count -eq 0) {
+        Write-Host "No pending questions." -ForegroundColor Yellow
+        return
+    }
+
+    # Group by agent
+    $byAgent = @{}
+    foreach ($q in $pending) {
+        $aid = if ([string]::IsNullOrWhiteSpace($q.agentId)) {
+            if (-not [string]::IsNullOrWhiteSpace($AgentId)) { $AgentId } else { 'unknown' }
+        } else { $q.agentId }
+        if (-not $byAgent.ContainsKey($aid)) { $byAgent[$aid] = @() }
+        $byAgent[$aid] += $q
+    }
+
+    Write-Host ""
+    Write-Host "Pending questions ($($pending.Count) total):" -ForegroundColor Cyan
+    Write-Host ""
+
+    $allQuestions = @()
+    $idx = 1
+    foreach ($aid in $byAgent.Keys) {
+        Write-Host "  Agent: $aid" -ForegroundColor White
+        foreach ($q in $byAgent[$aid]) {
+            $allQuestions += $q
+            $expStr = ''
+            if ($q.expiresAt) {
+                try {
+                    $exp = [datetime]::Parse($q.expiresAt)
+                    $daysLeft = [math]::Ceiling(($exp - [datetime]::UtcNow).TotalDays)
+                    if ($daysLeft -gt 0) { $expStr = " (expires in ${daysLeft}d)" }
+                    else { $expStr = " (expiring soon)" }
+                }
+                catch { }
+            }
+            Write-Host "    $idx) $($q.question)$expStr" -ForegroundColor Gray
+            if ($q.context) {
+                Write-Host "       Context: $($q.context)" -ForegroundColor DarkGray
+            }
+            $idx++
+        }
+        Write-Host ""
+    }
+
+    Write-Host "  0) Back (answer later)"
+    $pick = Read-Host "Select a question to answer"
+
+    if ($pick -eq '0' -or [string]::IsNullOrWhiteSpace($pick)) { return }
+
+    $qIdx = 0
+    if (-not [int]::TryParse($pick, [ref]$qIdx) -or $qIdx -lt 1 -or $qIdx -gt $allQuestions.Count) {
+        Write-Host "Invalid selection." -ForegroundColor Yellow
+        return
+    }
+
+    $selected = $allQuestions[$qIdx - 1]
+    Invoke-AnswerQuestion -Question $selected -StateRoot $stateRoot
+}
+
+function Invoke-AnswerQuestion {
+    <#
+    .SYNOPSIS
+        Presents a single question to the user with choices + freeform option.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][hashtable]$Question,
+        [Parameter(Mandatory)][string]$StateRoot
+    )
+
+    Write-Host ""
+    Write-Host "Question: $($Question.question)" -ForegroundColor Cyan
+    if ($Question.context) {
+        Write-Host "Context: $($Question.context)" -ForegroundColor DarkGray
+    }
+    Write-Host ""
+
+    $choices = @($Question.choices)
+    $hasChoices = $choices.Count -gt 0
+
+    if ($hasChoices) {
+        for ($i = 0; $i -lt $choices.Count; $i++) {
+            $label = $choices[$i]
+            $rec = ''
+            if ($Question.recommended -and $label -eq $Question.recommended) {
+                $rec = ' (Recommended)'
+            }
+            Write-Host "  $($i + 1)) $label$rec"
+        }
+        Write-Host "  $($choices.Count + 1)) Custom response..."
+        Write-Host ""
+
+        $pick = Read-Host "Select"
+        $pickIdx = 0
+        if ([int]::TryParse($pick, [ref]$pickIdx)) {
+            if ($pickIdx -ge 1 -and $pickIdx -le $choices.Count) {
+                $answer = $choices[$pickIdx - 1]
+            }
+            elseif ($pickIdx -eq $choices.Count + 1) {
+                $answer = Read-Host "Your response"
+            }
+            else {
+                Write-Host "Invalid selection." -ForegroundColor Yellow
+                return
+            }
+        }
+        else {
+            Write-Host "Invalid selection." -ForegroundColor Yellow
+            return
+        }
+    }
+    else {
+        $answer = Read-Host "Your response"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($answer)) {
+        Write-Host "No answer provided. Question left unanswered." -ForegroundColor Yellow
+        return
+    }
+
+    Set-QuestionAnswer -StateRoot $StateRoot -AgentId $Question.agentId `
+        -QuestionId $Question.id -Answer $answer
+
+    Write-Host "Answer recorded. The agent will receive it on its next run." -ForegroundColor Green
+}
+
 # ── Subcommand: doctor ───────────────────────────────────────────────
 
 function Invoke-DoctorCommand {
@@ -485,6 +636,7 @@ function Show-Usage {
     Write-Host "  resume [agent-id]    Resume scheduler or enable an agent"
     Write-Host "  feedback [agent-id]  Open most recent pending feedback"
     Write-Host "  evaluate             Process all pending feedback"
+    Write-Host "  questions [agent-id] View and answer pending agent questions"
     Write-Host "  doctor               Run health checks"
     Write-Host "  install              Register scheduled task & init personal repo"
     Write-Host "  uninstall            Remove scheduled task"
@@ -502,6 +654,15 @@ function Show-InteractiveMenu {
     param()
 
     while ($true) {
+        # Count pending questions for menu badge
+        $questionCount = 0
+        try {
+            $stateRoot = Join-Path $PersonalRepoPath '.cronstate'
+            $questionCount = (Get-PendingQuestions -StateRoot $stateRoot).Count
+        }
+        catch { }
+        $qBadge = if ($questionCount -gt 0) { " ($questionCount pending)" } else { '' }
+
         Write-Host ""
         Write-Host (Get-SafeHeader) -ForegroundColor Cyan
         Write-Host ([char]0x2500 * 30)
@@ -510,11 +671,12 @@ function Show-InteractiveMenu {
         Write-Host " 3) Pause / Resume"
         Write-Host " 4) View run history"
         Write-Host " 5) Submit feedback"
-        Write-Host " 6) Health check (doctor)"
-        Write-Host " 7) Exit"
+        Write-Host " 6) Pending questions$qBadge"
+        Write-Host " 7) Health check (doctor)"
+        Write-Host " 8) Exit"
         Write-Host ([char]0x2500 * 30)
 
-        $choice = Read-Host "Select [1-7]"
+        $choice = Read-Host "Select [1-8]"
 
         switch ($choice) {
             '1' { Invoke-StatusCommand }
@@ -522,9 +684,10 @@ function Show-InteractiveMenu {
             '3' { Invoke-TuiPauseResume }
             '4' { Invoke-TuiRunHistory }
             '5' { Invoke-TuiFeedback }
-            '6' { Invoke-DoctorCommand }
-            '7' { Write-Host "Goodbye." -ForegroundColor Cyan; return }
-            default { Write-Host "Invalid selection. Please enter 1-7." -ForegroundColor Yellow }
+            '6' { Invoke-TuiQuestions }
+            '7' { Invoke-DoctorCommand }
+            '8' { Write-Host "Goodbye." -ForegroundColor Cyan; return }
+            default { Write-Host "Invalid selection. Please enter 1-8." -ForegroundColor Yellow }
         }
     }
 }
@@ -732,6 +895,42 @@ function Invoke-TuiFeedback {
     }
 }
 
+# ── TUI: Pending questions ──────────────────────────────────────────
+
+function Invoke-TuiQuestions {
+    [CmdletBinding()]
+    param()
+
+    $stateRoot = Join-Path $PersonalRepoPath '.cronstate'
+    $pending = Get-PendingQuestions -StateRoot $stateRoot
+
+    if ($pending.Count -eq 0) {
+        Write-Host "  No pending questions." -ForegroundColor Yellow
+        return
+    }
+
+    Write-Host ""
+    Write-Host "Pending questions:" -ForegroundColor Cyan
+    for ($i = 0; $i -lt $pending.Count; $i++) {
+        $q = $pending[$i]
+        $agentLabel = if ($q.agentId) { "[$($q.agentId)]" } else { '' }
+        Write-Host "  $($i + 1)) $agentLabel $($q.question)"
+    }
+    Write-Host "  0) Back"
+
+    $pick = Read-Host "Select a question to answer"
+    if ($pick -eq '0' -or [string]::IsNullOrWhiteSpace($pick)) { return }
+
+    $idx = 0
+    if (-not [int]::TryParse($pick, [ref]$idx) -or $idx -lt 1 -or $idx -gt $pending.Count) {
+        Write-Host "Invalid selection." -ForegroundColor Yellow
+        return
+    }
+
+    $selected = $pending[$idx - 1]
+    Invoke-AnswerQuestion -Question $selected -StateRoot $stateRoot
+}
+
 # ── Dispatch ─────────────────────────────────────────────────────────
 
 if ($Help -or $Command -eq '--help' -or $Command -eq 'help') {
@@ -753,6 +952,7 @@ try {
         'resume'    { Invoke-ResumeCommand -AgentId $Argument }
         'feedback'  { Invoke-FeedbackCommand -AgentId $Argument }
         'evaluate'  { Invoke-EvaluateCommand }
+        'questions' { Invoke-QuestionsCommand -AgentId $Argument }
         'doctor'    { Invoke-DoctorCommand }
         'install'   { Invoke-InstallCommand }
         'uninstall' { Invoke-UninstallCommand }

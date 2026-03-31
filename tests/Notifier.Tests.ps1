@@ -241,10 +241,18 @@ Describe 'Send-AgentFailureNotification — timeout message' {
 # ---------------------------------------------------------------------------
 Describe 'Send-SchedulerErrorNotification — gating logic' {
     BeforeEach {
-        InModuleScope CronAgents { $script:NotificationBackend = 'None' }
+        InModuleScope CronAgents {
+            $script:NotificationBackend = 'None'
+            $script:SchedulerErrorBatch = $null
+            $script:LastSchedulerToastTime = [datetime]::MinValue
+        }
     }
     AfterEach {
-        InModuleScope CronAgents { $script:NotificationBackend = $null }
+        InModuleScope CronAgents {
+            $script:NotificationBackend = $null
+            $script:SchedulerErrorBatch = $null
+            $script:LastSchedulerToastTime = [datetime]::MinValue
+        }
     }
 
     It 'Does nothing when global notifications = false' {
@@ -265,10 +273,18 @@ Describe 'Send-SchedulerErrorNotification — gating logic' {
 # ---------------------------------------------------------------------------
 Describe 'Send-SchedulerErrorNotification — toast content' {
     BeforeEach {
-        InModuleScope CronAgents { $script:NotificationBackend = 'BurntToast' }
+        InModuleScope CronAgents {
+            $script:NotificationBackend = 'BurntToast'
+            $script:SchedulerErrorBatch = $null
+            $script:LastSchedulerToastTime = [datetime]::MinValue
+        }
     }
     AfterEach {
-        InModuleScope CronAgents { $script:NotificationBackend = $null }
+        InModuleScope CronAgents {
+            $script:NotificationBackend = $null
+            $script:SchedulerErrorBatch = $null
+            $script:LastSchedulerToastTime = [datetime]::MinValue
+        }
     }
 
     It 'Includes operation name in the title' {
@@ -382,5 +398,249 @@ Describe 'ConfigLoader — global notifications parsing' {
 
         $config = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
         $config.notifications | Should -Be $false
+    }
+}
+
+# ---------------------------------------------------------------------------
+Describe 'Scheduler error batching — Start / Complete lifecycle' {
+    BeforeEach {
+        InModuleScope CronAgents {
+            $script:NotificationBackend = 'BurntToast'
+            $script:SchedulerErrorBatch = $null
+            $script:LastSchedulerToastTime = [datetime]::MinValue
+        }
+    }
+    AfterEach {
+        InModuleScope CronAgents {
+            $script:NotificationBackend = $null
+            $script:SchedulerErrorBatch = $null
+            $script:LastSchedulerToastTime = [datetime]::MinValue
+        }
+    }
+
+    It 'Fires no toast when batch contains zero errors' {
+        $global = New-MockGlobalConfig -Notifications $true
+
+        Mock -ModuleName CronAgents Send-BurntToastNotification {}
+
+        Start-SchedulerErrorBatch
+        Complete-SchedulerErrorBatch -GlobalConfig $global
+
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 0
+    }
+
+    It 'Fires a single toast when batch contains one error — preserves error message' {
+        $global = New-MockGlobalConfig -Notifications $true
+
+        $capturedTitle = $null
+        $capturedBody  = $null
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body)
+            Set-Variable -Name capturedTitle -Value $Title -Scope 2
+            Set-Variable -Name capturedBody  -Value $Body  -Scope 2
+        }
+
+        Start-SchedulerErrorBatch
+        Send-SchedulerErrorNotification -Operation 'Dashboard update' -ErrorMessage 'disk full' -GlobalConfig $global
+        Complete-SchedulerErrorBatch -GlobalConfig $global
+
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 1
+        $capturedTitle | Should -Match 'Dashboard update'
+        $capturedTitle | Should -Match 'failed'
+        $capturedBody  | Should -Match 'disk full'
+    }
+
+    It 'Fires a single summary toast when batch contains multiple errors' {
+        $global = New-MockGlobalConfig -Notifications $true
+
+        $capturedTitle = $null
+        $capturedBody  = $null
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body)
+            Set-Variable -Name capturedTitle -Value $Title -Scope 2
+            Set-Variable -Name capturedBody  -Value $Body  -Scope 2
+        }
+
+        Start-SchedulerErrorBatch
+        Send-SchedulerErrorNotification -Operation 'Dashboard update' -ErrorMessage 'disk full' -GlobalConfig $global
+        Send-SchedulerErrorNotification -Operation 'Retention cleanup' -ErrorMessage 'access denied' -GlobalConfig $global
+        Send-SchedulerErrorNotification -Operation 'Feedback sweep' -ErrorMessage 'timeout' -GlobalConfig $global
+        Complete-SchedulerErrorBatch -GlobalConfig $global
+
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 1
+        $capturedTitle | Should -Match '3 errors this tick'
+        $capturedBody  | Should -Match 'Dashboard update'
+        $capturedBody  | Should -Match 'Retention cleanup'
+        $capturedBody  | Should -Match 'Feedback sweep'
+    }
+
+    It 'Truncates operation list in body when batch has more than 3 errors' {
+        $global = New-MockGlobalConfig -Notifications $true
+
+        $capturedBody = $null
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body)
+            Set-Variable -Name capturedBody -Value $Body -Scope 2
+        }
+
+        Start-SchedulerErrorBatch
+        1..5 | ForEach-Object {
+            Send-SchedulerErrorNotification -Operation "Op$_" -ErrorMessage 'err' -GlobalConfig $global
+        }
+        Complete-SchedulerErrorBatch -GlobalConfig $global
+
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 1
+        $capturedBody | Should -Match '\+2 more'
+    }
+
+    It 'Does not fire individual toasts while batch is active' {
+        $global = New-MockGlobalConfig -Notifications $true
+
+        Mock -ModuleName CronAgents Send-BurntToastNotification {}
+
+        Start-SchedulerErrorBatch
+        Send-SchedulerErrorNotification -Operation 'Op1' -ErrorMessage 'err' -GlobalConfig $global
+        Send-SchedulerErrorNotification -Operation 'Op2' -ErrorMessage 'err' -GlobalConfig $global
+
+        # Before Complete, no toasts should have fired
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 0
+
+        Complete-SchedulerErrorBatch -GlobalConfig $global
+
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 1
+    }
+
+    It 'Respects global notifications = false when completing batch' {
+        $global = New-MockGlobalConfig -Notifications $false
+
+        Mock -ModuleName CronAgents Send-BurntToastNotification {}
+
+        Start-SchedulerErrorBatch
+        Send-SchedulerErrorNotification -Operation 'Op1' -ErrorMessage 'err' -GlobalConfig $global
+        Complete-SchedulerErrorBatch -GlobalConfig $global
+
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 0
+    }
+}
+
+# ---------------------------------------------------------------------------
+Describe 'Scheduler error cooldown' {
+    BeforeEach {
+        InModuleScope CronAgents {
+            $script:NotificationBackend = 'BurntToast'
+            $script:SchedulerErrorBatch = $null
+            $script:LastSchedulerToastTime = [datetime]::MinValue
+        }
+    }
+    AfterEach {
+        InModuleScope CronAgents {
+            $script:NotificationBackend = $null
+            $script:SchedulerErrorBatch = $null
+            $script:LastSchedulerToastTime = [datetime]::MinValue
+        }
+    }
+
+    It 'Suppresses batched toast when within cooldown window' {
+        $global = New-MockGlobalConfig -Notifications $true
+
+        Mock -ModuleName CronAgents Send-BurntToastNotification {}
+
+        # Simulate a recent toast
+        InModuleScope CronAgents {
+            $script:LastSchedulerToastTime = Get-Date
+        }
+
+        Start-SchedulerErrorBatch
+        Send-SchedulerErrorNotification -Operation 'Op1' -ErrorMessage 'err' -GlobalConfig $global
+        Complete-SchedulerErrorBatch -GlobalConfig $global -CooldownSeconds 300
+
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 0
+    }
+
+    It 'Allows batched toast after cooldown expires' {
+        $global = New-MockGlobalConfig -Notifications $true
+
+        Mock -ModuleName CronAgents Send-BurntToastNotification {}
+
+        # Simulate an old toast (10 minutes ago)
+        InModuleScope CronAgents {
+            $script:LastSchedulerToastTime = (Get-Date).AddSeconds(-600)
+        }
+
+        Start-SchedulerErrorBatch
+        Send-SchedulerErrorNotification -Operation 'Op1' -ErrorMessage 'err' -GlobalConfig $global
+        Complete-SchedulerErrorBatch -GlobalConfig $global -CooldownSeconds 300
+
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 1
+    }
+
+    It 'Suppresses unbatched toast when within cooldown window' {
+        $global = New-MockGlobalConfig -Notifications $true
+
+        Mock -ModuleName CronAgents Send-BurntToastNotification {}
+
+        # Simulate a recent toast
+        InModuleScope CronAgents {
+            $script:LastSchedulerToastTime = Get-Date
+        }
+
+        # No batch active — direct call
+        Send-SchedulerErrorNotification -Operation 'Op1' -ErrorMessage 'err' `
+            -GlobalConfig $global -CooldownSeconds 300
+
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 0
+    }
+
+    It 'Allows unbatched toast after cooldown expires' {
+        $global = New-MockGlobalConfig -Notifications $true
+
+        Mock -ModuleName CronAgents Send-BurntToastNotification {}
+
+        InModuleScope CronAgents {
+            $script:LastSchedulerToastTime = (Get-Date).AddSeconds(-600)
+        }
+
+        Send-SchedulerErrorNotification -Operation 'Op1' -ErrorMessage 'err' `
+            -GlobalConfig $global -CooldownSeconds 300
+
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 1
+    }
+
+    It 'Respects custom CooldownSeconds parameter' {
+        $global = New-MockGlobalConfig -Notifications $true
+
+        Mock -ModuleName CronAgents Send-BurntToastNotification {}
+
+        # Toast 2 seconds ago, cooldown 1 second → should pass
+        InModuleScope CronAgents {
+            $script:LastSchedulerToastTime = (Get-Date).AddSeconds(-2)
+        }
+
+        Send-SchedulerErrorNotification -Operation 'Op1' -ErrorMessage 'err' `
+            -GlobalConfig $global -CooldownSeconds 1
+
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+Describe 'Reset-SchedulerErrorState' {
+    It 'Clears batch and cooldown state' {
+        InModuleScope CronAgents {
+            $script:NotificationBackend     = 'BurntToast'
+            $script:SchedulerErrorBatch     = [System.Collections.Generic.List[string]]::new()
+            $script:LastSchedulerToastTime  = Get-Date
+        }
+
+        Reset-SchedulerErrorState
+
+        InModuleScope CronAgents {
+            $script:SchedulerErrorBatch    | Should -BeNullOrEmpty
+            $script:LastSchedulerToastTime | Should -Be ([datetime]::MinValue)
+        }
+
+        InModuleScope CronAgents {
+            $script:NotificationBackend = $null
+        }
     }
 }

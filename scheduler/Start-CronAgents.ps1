@@ -231,6 +231,10 @@ try {
     while ($script:running) {
         $tickStart = Get-Date
 
+        # Begin collecting scheduler-error notifications for this tick.
+        # Errors are queued and fired as a single summary toast at tick end.
+        Start-SchedulerErrorBatch
+
         # -----------------------------------------------------------
         # Step 1: Check global pause
         # -----------------------------------------------------------
@@ -294,6 +298,15 @@ try {
                 $agentState = if ($state.agents.ContainsKey($agentId)) { $state.agents[$agentId] } else { $null }
                 if ($agentState -and $agentState.enabled -eq $false) {
                     Write-CronAgentsLog -Level 'debug' -Message "Agent '$agentId' is disabled — skipping"
+                    continue
+                }
+
+                # Expire stale questions for this agent before checking
+                try { Remove-ExpiredQuestions -StateRoot $cronStateDir -AgentId $agentId } catch { }
+
+                # Check for unanswered questions blocking this agent
+                if (Test-AgentHasPendingQuestions -StateRoot $cronStateDir -AgentId $agentId) {
+                    Write-CronAgentsLog -Level 'info' -Message "Agent '$agentId' has unanswered questions — blocked until answered"
                     continue
                 }
 
@@ -426,6 +439,7 @@ try {
             if (Test-Path $dashboardScript) {
                 & $dashboardScript -RepoRoot $RepoRoot `
                     -RunsRoot $runsRoot `
+                    -PersonalRepoPath $personalRepoPath `
                     -MaxRunHistory $config.maxRunHistory `
                     -RetentionDays $config.retentionDays
             }
@@ -462,10 +476,22 @@ try {
                         -ErrorMessage "$_" -GlobalConfig $config
                 } catch { <# best-effort #> }
             }
+
+            # Note: per-agent question expiration runs each tick (before blocking check above).
+            # A full sweep here catches agents not evaluated this tick.
+            try { Remove-ExpiredQuestions -StateRoot $cronStateDir }
+            catch { Write-CronAgentsLog -Level 'warn' -Message "Question expiration sweep failed: $_" }
         }
 
         # -----------------------------------------------------------
-        # Step 8: Sleep until next tick
+        # Step 8: Flush batched scheduler-error notifications
+        # -----------------------------------------------------------
+        try {
+            Complete-SchedulerErrorBatch -GlobalConfig $config
+        } catch { <# best-effort #> }
+
+        # -----------------------------------------------------------
+        # Step 9: Sleep until next tick
         # -----------------------------------------------------------
         $agents = Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath
         $state  = Get-AgentState -StateFile $stateFile

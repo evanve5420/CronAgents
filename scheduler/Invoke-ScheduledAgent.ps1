@@ -262,6 +262,18 @@ function Build-CopilotArguments {
     # Unattended execution
     $args_.Add('--no-ask-user')
 
+    # Inject answered questions as a shared file
+    try {
+        $answersPath = Write-AnswersFile -StateRoot $stateRoot -AgentId $AgentId -RunDirectory $runDir
+        if ($answersPath) {
+            $args_.Add("--share=$answersPath")
+            Write-CronAgentsLog -Level 'info' -Message "Injecting answers from previous questions into agent '$AgentId'"
+        }
+    }
+    catch {
+        Write-CronAgentsLog -Level 'warn' -Message "Failed to inject answers for '$AgentId': $_ — continuing without answers."
+    }
+
     return [string[]]$args_.ToArray()
 }
 
@@ -407,6 +419,35 @@ try {
         }
         catch {
             Write-CronAgentsLog -Level 'warn' -Message "Failure notification error for '$AgentId': $_ — continuing."
+        }
+    }
+
+    # ------------------------------------------------------------------
+    # Step 6c — Clear consumed answers and pick up new questions
+    # ------------------------------------------------------------------
+    try {
+        Clear-AnsweredQuestions -StateRoot $stateRoot -AgentId $AgentId
+    }
+    catch {
+        Write-CronAgentsLog -Level 'warn' -Message "Failed to clear answered questions for '$AgentId': $_ — continuing."
+    }
+
+    # Pick up questions the agent may have written
+    $runQuestionsPath = Join-Path $runDir 'questions.json'
+    if (Test-Path -LiteralPath $runQuestionsPath) {
+        try {
+            $rawQuestions = Get-Content -LiteralPath $runQuestionsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $expirationDays = if ($GlobalConfig.PSObject.Properties['questionExpirationDays']) {
+                [int]$GlobalConfig.questionExpirationDays
+            } else { 7 }
+            $runDirName = Split-Path $runDir -Leaf
+            Save-AgentQuestions -StateRoot $stateRoot -AgentId $AgentId `
+                -RunId $runDirName -Questions @($rawQuestions) `
+                -ExpirationDays $expirationDays
+            Write-CronAgentsLog -Level 'info' -Message "Picked up $(@($rawQuestions).Count) question(s) from agent '$AgentId'"
+        }
+        catch {
+            Write-CronAgentsLog -Level 'warn' -Message "Failed to process questions from '$AgentId': $_ — continuing."
         }
     }
 

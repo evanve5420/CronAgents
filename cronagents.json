@@ -8,6 +8,7 @@
   "logLevel": "info",
   "quietHours": null,
   "notifications": true,
+  "questionExpirationDays": 7,
   "personalRepo": {
     "path": "~/.cronagents",
     "userName": null,

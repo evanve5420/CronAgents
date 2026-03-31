@@ -139,6 +139,9 @@ function Import-CronAgentsConfig {
         notifications = if ($null -ne $parsed.PSObject.Properties['notifications'] -and
                             $null -ne $parsed.notifications)
                         { [bool]$parsed.notifications } else { $true }
+        questionExpirationDays = if ($null -ne $parsed.PSObject.Properties['questionExpirationDays'] -and
+                            $null -ne $parsed.questionExpirationDays)
+                        { [int]$parsed.questionExpirationDays } else { 7 }
         personalRepo  = $personalRepo
     }
 
