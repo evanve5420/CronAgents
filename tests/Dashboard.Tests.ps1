@@ -104,8 +104,9 @@ Describe 'Dashboard — HTTP Server' {
             -EndTime ([datetime]::UtcNow) -ExitCode 0
         $script:runId = Split-Path $script:runDir -Leaf
 
-        # Create a summary
-        Set-Content -LiteralPath (Join-Path $script:runDir 'summary.md') -Value '# Run Summary' -Encoding UTF8
+        # Create a multi-line summary to test excerpt vs full content
+        Set-Content -LiteralPath (Join-Path $script:runDir 'summary.md') `
+            -Value "# Run Summary`nDetailed line two`nLine three with more info" -Encoding UTF8
 
         # Save a pending question
         $qStateRoot = $script:testEnv.StatePath
@@ -245,6 +246,13 @@ Describe 'Dashboard — HTTP Server' {
             $run.summary | Should -Match 'Run Summary'
         }
 
+        It 'Run list returns only first line of summary (not full content)' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs" -ErrorAction Stop
+            $run = $data | Where-Object { $_.agentId -eq 'http-agent' } | Select-Object -First 1
+            $run.summary | Should -Be '# Run Summary'
+            $run.summary | Should -Not -Match 'Detailed line two'
+        }
+
         It 'Filters by agent query parameter' {
             $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs?agent=http-agent" -ErrorAction Stop
             @($data).Count | Should -BeGreaterOrEqual 1
@@ -263,6 +271,13 @@ Describe 'Dashboard — HTTP Server' {
             $data.id | Should -Be $script:runId
             $data.meta | Should -Not -BeNullOrEmpty
             $data.summary | Should -Match 'Run Summary'
+        }
+
+        It 'Returns full multi-line summary (not truncated)' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/$($script:runId)" -ErrorAction Stop
+            $data.summary | Should -Match 'Run Summary'
+            $data.summary | Should -Match 'Detailed line two'
+            $data.summary | Should -Match 'Line three with more info'
         }
 
         It 'Returns 404 for non-existent run' {
