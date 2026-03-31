@@ -132,8 +132,11 @@ function Test-AgentConfigs {
         $agents = @(Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $PersonalRepoPath)
 
         if ($agents.Count -eq 0) {
+            $locations = @("$RepoRoot\.cronagents\agents\")
+            if ($PersonalRepoPath) { $locations += "$PersonalRepoPath\.cronagents\agents\" }
+            $scanned = $locations -join ', '
             return New-CheckResult -Name 'Agent Configs' -Status 'Warn' `
-                -Message 'No agents discovered in .cronagents/agents/'
+                -Message "No agents discovered in: $scanned"
         }
 
         # Check for agents that reference .agent.md files that don't exist
