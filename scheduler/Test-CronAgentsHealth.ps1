@@ -126,14 +126,17 @@ function Test-GlobalConfig {
 # Check 3: Agent Configs
 # ===================================================================
 function Test-AgentConfigs {
-    param([string]$RepoRoot)
+    param([string]$RepoRoot, [string]$PersonalRepoPath)
 
     try {
-        $agents = @(Get-AgentConfigs -RepoRoot $RepoRoot)
+        $agents = @(Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $PersonalRepoPath)
 
         if ($agents.Count -eq 0) {
+            $locations = @("$RepoRoot\.cronagents\agents\")
+            if ($PersonalRepoPath) { $locations += "$PersonalRepoPath\.cronagents\agents\" }
+            $scanned = $locations -join ', '
             return New-CheckResult -Name 'Agent Configs' -Status 'Warn' `
-                -Message 'No agents discovered in .cronagents/agents/'
+                -Message "No agents discovered in: $scanned"
         }
 
         # Check for agents that reference .agent.md files that don't exist
@@ -399,7 +402,9 @@ function Test-NotificationBackend {
 
 $checks.Add((Test-TaskScheduler -TaskName $TaskName -TaskPath $TaskPath))
 $checks.Add((Test-GlobalConfig -RepoRoot $RepoRoot))
-$checks.Add((Test-AgentConfigs -RepoRoot $RepoRoot))
+try { $personalRepoConfigPath = (Import-CronAgentsConfig -ConfigPath (Join-Path $RepoRoot 'cronagents.json')).personalRepo.path } catch { $personalRepoConfigPath = $null }
+$personalRepoPath = Get-PersonalRepoPath -ConfigPath $personalRepoConfigPath
+$checks.Add((Test-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath))
 $checks.Add((Test-StateFile -RepoRoot $RepoRoot))
 $checks.Add((Test-SchedulerProcess))
 $checks.Add((Test-BranchState -RepoRoot $RepoRoot))

@@ -106,6 +106,76 @@ Describe 'Health Check — Task Path' -Tag 'WindowsOnly' {
     }
 }
 
+Describe 'Health Check — Agent Config Discovery' -Tag 'WindowsOnly' {
+    BeforeEach {
+        $testEnv = New-TestEnvironment -Name 'HealthAgents'
+    }
+    AfterEach {
+        Remove-TestEnvironment -TestEnv $testEnv
+    }
+
+    It 'Reports Warn with scanned locations when no agents exist' {
+        $result = & $healthScript -RepoRoot $testEnv.Root -TaskPath '\CronAgents-Test\'
+        $agentCheck = $result.Checks | Where-Object { $_.Name -eq 'Agent Configs' }
+        $agentCheck.Status | Should -Be 'Warn'
+        $agentCheck.Message | Should -Match 'No agents discovered in:'
+        $agentCheck.Message | Should -Match '\.cronagents[\\/]agents'
+    }
+
+    It 'Reports Pass when agents exist in infra repo' {
+        New-TestAgentConfig -TestEnv $testEnv -AgentId 'test-agent' `
+            -Schedule @{ type = 'daily'; time = '09:00' } `
+            -Prompt 'Test prompt'
+
+        $result = & $healthScript -RepoRoot $testEnv.Root -TaskPath '\CronAgents-Test\'
+        $agentCheck = $result.Checks | Where-Object { $_.Name -eq 'Agent Configs' }
+        $agentCheck.Status | Should -Be 'Pass'
+        $agentCheck.Message | Should -Match '1 agents? discovered'
+    }
+
+    It 'Reports Pass when agents exist only in personal repo' {
+        # Point personalRepo.path at a temp directory within the test env
+        $personalRoot = Join-Path $testEnv.Root 'personal-repo'
+        $personalAgentsDir = Join-Path $personalRoot '.cronagents' 'agents'
+        New-Item -Path $personalAgentsDir -ItemType Directory -Force | Out-Null
+
+        # Update cronagents.json to point at the temp personal repo
+        $cfg = Get-Content $testEnv.ConfigPath -Raw | ConvertFrom-Json
+        $cfg.personalRepo.path = $personalRoot
+        $cfg | ConvertTo-Json -Depth 5 | Out-File -FilePath $testEnv.ConfigPath -Encoding utf8
+
+        # Create an agent registration in the personal repo only
+        $agentReg = [ordered]@{
+            name     = 'personal-agent'
+            prompt   = 'Personal test prompt'
+            schedule = @{ type = 'daily'; time = '10:00' }
+        }
+        $agentReg | ConvertTo-Json -Depth 5 |
+            Out-File -FilePath (Join-Path $personalAgentsDir 'personal-agent.agent-registration.json') -Encoding utf8
+
+        $result = & $healthScript -RepoRoot $testEnv.Root -TaskPath '\CronAgents-Test\'
+        $agentCheck = $result.Checks | Where-Object { $_.Name -eq 'Agent Configs' }
+        $agentCheck.Status | Should -Be 'Pass'
+        $agentCheck.Message | Should -Match '1 agents? discovered'
+    }
+
+    It 'Warn message includes personal repo path when configured' {
+        $personalRoot = Join-Path $testEnv.Root 'personal-repo-empty'
+        $personalAgentsDir = Join-Path $personalRoot '.cronagents' 'agents'
+        New-Item -Path $personalAgentsDir -ItemType Directory -Force | Out-Null
+
+        $cfg = Get-Content $testEnv.ConfigPath -Raw | ConvertFrom-Json
+        $cfg.personalRepo.path = $personalRoot
+        $cfg | ConvertTo-Json -Depth 5 | Out-File -FilePath $testEnv.ConfigPath -Encoding utf8
+
+        $result = & $healthScript -RepoRoot $testEnv.Root -TaskPath '\CronAgents-Test\'
+        $agentCheck = $result.Checks | Where-Object { $_.Name -eq 'Agent Configs' }
+        $agentCheck.Status | Should -Be 'Warn'
+        # Message should mention both scanned locations
+        $agentCheck.Message | Should -Match ([regex]::Escape($personalRoot))
+    }
+}
+
 Describe 'Health Check — Notifications' -Tag 'WindowsOnly' {
     BeforeEach {
         $testEnv = New-TestEnvironment -Name 'HealthNotif'
