@@ -40,7 +40,7 @@ A scaffold-internal agent that reviews recent diffs to agent definitions, skills
 
 > **Implemented.** See `scheduler/lib/QuestionsManager.ps1`, `cronagents.ps1 questions`, and the TUI "Pending questions" menu option.
 
-Agents can write a `questions.json` file to `.cronstate/pending-questions/` with operational questions for the user. The scheduler discovers them post-run, blocks the agent's next scheduled run until all questions are answered, and injects the answers via `--share=answers.json` on the next run. Questions auto-expire after `questionExpirationDays` (default 7, 0 = never). The dashboard summary table shows a Questions column linking to a generated `questions.md` file.
+Agents can write a `questions.json` file into their run directory with operational questions for the user. After the run completes, the scheduler (`Invoke-ScheduledAgent.ps1`) discovers this file and persists/merges it into `.cronstate/pending-questions/<agent-id>.json`. It then blocks the agent's next scheduled run until all questions are answered and injects the answers via `--share=answers.json` on the next run. Questions auto-expire after `questionExpirationDays` (default 7, 0 = never). The dashboard summary table shows a Questions column linking to a generated `questions.md` file.
 
 ---
 

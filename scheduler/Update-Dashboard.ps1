@@ -320,29 +320,39 @@ if ($allPendingQuestions.Count -gt 0) {
     [void]$qb.AppendLine("> Last updated: $now")
     [void]$qb.AppendLine()
 
+    # Sanitize agent-controlled strings for safe Markdown embedding
+    function script:ConvertTo-SafeMarkdown {
+        param([string]$Text)
+        if ([string]::IsNullOrEmpty($Text)) { return '' }
+        # Normalize newlines to spaces and escape leading # that could create headings
+        $Text = $Text -replace '(\r\n|\n|\r)', ' '
+        $Text = $Text -replace '^\s*#+', ''
+        return $Text.Trim()
+    }
+
     # Group by agent
     $qByAgent = @{}
     foreach ($q in $allPendingQuestions) {
-        $aid = $q.agentId
+        $aid = if ([string]::IsNullOrWhiteSpace($q.agentId)) { 'unknown' } else { $q.agentId }
         if (-not $qByAgent.ContainsKey($aid)) { $qByAgent[$aid] = @() }
         $qByAgent[$aid] += $q
     }
 
     foreach ($aid in ($qByAgent.Keys | Sort-Object)) {
-        [void]$qb.AppendLine("## $aid")
+        [void]$qb.AppendLine("## $(script:ConvertTo-SafeMarkdown $aid)")
         [void]$qb.AppendLine()
         foreach ($q in $qByAgent[$aid]) {
-            [void]$qb.AppendLine("### $($q.question)")
+            [void]$qb.AppendLine("### $(script:ConvertTo-SafeMarkdown $q.question)")
             [void]$qb.AppendLine()
             if ($q.context) {
-                [void]$qb.AppendLine("**Context:** $($q.context)")
+                [void]$qb.AppendLine("**Context:** $(script:ConvertTo-SafeMarkdown $q.context)")
                 [void]$qb.AppendLine()
             }
             if ($q.choices -and $q.choices.Count -gt 0) {
                 [void]$qb.AppendLine('**Choices:**')
                 foreach ($c in $q.choices) {
                     $rec = if ($q.recommended -and $c -eq $q.recommended) { ' *(Recommended)*' } else { '' }
-                    [void]$qb.AppendLine("- $c$rec")
+                    [void]$qb.AppendLine("- $(script:ConvertTo-SafeMarkdown $c)$rec")
                 }
                 [void]$qb.AppendLine('- *(or provide a custom response)*')
                 [void]$qb.AppendLine()

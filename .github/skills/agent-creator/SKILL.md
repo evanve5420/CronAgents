@@ -120,11 +120,11 @@ Create in `~/.cronagents/.github/skills/<agent-name>/SKILL.md` if the agent need
 
 ## Agent Questions (Deferred Decisions)
 
-Agents can write a `questions.json` file to `.cronstate/pending-questions/<agent-id>.json` to ask the user operational questions. This is useful when an agent encounters gray-area decisions that need human input (e.g., "Should I move these 7 items to Clients/Acme?").
+Agents can write a `questions.json` file into their run output directory to ask the user operational questions. This is useful when an agent encounters gray-area decisions that need human input (e.g., "Should I move these 7 items to Clients/Acme?").
 
 **How it works:**
-1. Agent writes `questions.json` to the well-known path during its run
-2. The scheduler discovers and persists the questions post-run
+1. Agent writes `questions.json` to its run output directory during the run
+2. After the run completes, the scheduler reads `questions.json` from the run directory and persists it to `.cronstate/pending-questions/<agent-id>.json`
 3. The agent's next scheduled run is **blocked** until all questions are answered
 4. User answers via `cronagents.ps1 questions` or the TUI menu
 5. Answers are injected into the next run via `--share=answers.json`

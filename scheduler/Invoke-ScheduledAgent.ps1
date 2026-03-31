@@ -433,8 +433,6 @@ try {
     }
 
     # Pick up questions the agent may have written
-    $questionsDir = Join-Path $stateRoot 'pending-questions'
-    $agentQuestionsPath = Join-Path $questionsDir "$AgentId.json"
     $runQuestionsPath = Join-Path $runDir 'questions.json'
     if (Test-Path -LiteralPath $runQuestionsPath) {
         try {

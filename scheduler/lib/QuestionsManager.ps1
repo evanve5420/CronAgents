@@ -196,6 +196,7 @@ function Save-AgentQuestions {
                 $existing[$i].choices     = $qChoices
                 $existing[$i].recommended = $qRecommended
                 $existing[$i].context     = $qContext
+                $existing[$i].agentId     = $AgentId
                 $existing[$i].runId       = $RunId
                 $existing[$i].askedAt     = $now
                 $existing[$i].expiresAt   = $expiresAt
@@ -333,15 +334,26 @@ function Clear-AnsweredQuestions {
 function Remove-ExpiredQuestions {
     <#
     .SYNOPSIS
-        Removes questions past their expiresAt timestamp across all agents.
+        Removes questions past their expiresAt timestamp.
+        If AgentId is specified, only processes that agent's file; otherwise sweeps all agents.
     #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][string]$StateRoot
+        [Parameter(Mandatory)][string]$StateRoot,
+        [string]$AgentId
     )
 
     $dir = Get-QuestionsDir -StateRoot $StateRoot
-    $files = Get-ChildItem -LiteralPath $dir -Filter '*.json' -ErrorAction SilentlyContinue
+
+    if ($AgentId) {
+        $targetPath = Get-AgentQuestionsPath -StateRoot $StateRoot -AgentId $AgentId
+        if (-not (Test-Path -LiteralPath $targetPath)) { return }
+        $files = @(Get-Item -LiteralPath $targetPath)
+    }
+    else {
+        $files = Get-ChildItem -LiteralPath $dir -Filter '*.json' -ErrorAction SilentlyContinue
+    }
+
     $now = [datetime]::UtcNow
     $totalExpired = 0
 

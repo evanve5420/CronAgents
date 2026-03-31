@@ -297,6 +297,9 @@ try {
                     continue
                 }
 
+                # Expire stale questions for this agent before checking
+                try { Remove-ExpiredQuestions -StateRoot $cronStateDir -AgentId $agentId } catch { }
+
                 # Check for unanswered questions blocking this agent
                 if (Test-AgentHasPendingQuestions -StateRoot $cronStateDir -AgentId $agentId) {
                     Write-CronAgentsLog -Level 'info' -Message "Agent '$agentId' has unanswered questions — blocked until answered"
@@ -470,13 +473,10 @@ try {
                 } catch { <# best-effort #> }
             }
 
-            # Expire old unanswered questions
-            try {
-                Remove-ExpiredQuestions -StateRoot $cronStateDir
-            }
-            catch {
-                Write-CronAgentsLog -Level 'warn' -Message "Question expiration sweep failed: $_"
-            }
+            # Note: per-agent question expiration runs each tick (before blocking check above).
+            # A full sweep here catches agents not evaluated this tick.
+            try { Remove-ExpiredQuestions -StateRoot $cronStateDir }
+            catch { Write-CronAgentsLog -Level 'warn' -Message "Question expiration sweep failed: $_" }
         }
 
         # -----------------------------------------------------------

@@ -421,7 +421,9 @@ function Invoke-QuestionsCommand {
     # Group by agent
     $byAgent = @{}
     foreach ($q in $pending) {
-        $aid = $q.agentId
+        $aid = if ([string]::IsNullOrWhiteSpace($q.agentId)) {
+            if (-not [string]::IsNullOrWhiteSpace($AgentId)) { $AgentId } else { 'unknown' }
+        } else { $q.agentId }
         if (-not $byAgent.ContainsKey($aid)) { $byAgent[$aid] = @() }
         $byAgent[$aid] += $q
     }
