@@ -174,16 +174,16 @@
   <h1><span>⚡</span> CronAgents Dashboard</h1>
   <div class="header-controls">
     <span id="scheduler-status"></span>
-    <button class="pause-btn" id="global-pause-btn" onclick="toggleGlobalPause()"></button>
+    <button class="pause-btn" id="global-pause-btn" data-action="toggleGlobalPause"></button>
     <span id="last-updated"></span>
   </div>
 </header>
 
 <main>
   <div class="tab-bar">
-    <button class="tab active" data-tab="agents" onclick="switchTab('agents')">Agents</button>
-    <button class="tab" data-tab="runs" onclick="switchTab('runs')">Recent Runs</button>
-    <button class="tab" data-tab="questions" onclick="switchTab('questions')">
+    <button class="tab active" data-tab="agents" data-action="switchTab">Agents</button>
+    <button class="tab" data-tab="runs" data-action="switchTab">Recent Runs</button>
+    <button class="tab" data-tab="questions" data-action="switchTab">
       Questions <span id="question-badge"></span>
     </button>
   </div>
@@ -373,10 +373,10 @@ function renderAgents() {
       <td>${relativeTime(a.lastRun)}</td>
       <td>${a.enabled ? timeUntil(a.nextRun) : '—'}</td>
       <td>
-        <button class="btn btn-green" onclick="triggerRun('${esc(a.id)}')" title="Run now">▶</button>
+        <button class="btn btn-green" data-action="triggerRun" data-agent-id="${esc(a.id)}" title="Run now">▶</button>
         ${a.enabled
-          ? `<button class="btn btn-red" onclick="pauseAgent('${esc(a.id)}')" title="Pause">⏸</button>`
-          : `<button class="btn btn-green" onclick="resumeAgent('${esc(a.id)}')" title="Resume">▶️</button>`}
+          ? `<button class="btn btn-red" data-action="pauseAgent" data-agent-id="${esc(a.id)}" title="Pause">⏸</button>`
+          : `<button class="btn btn-green" data-action="resumeAgent" data-agent-id="${esc(a.id)}" title="Resume">▶️</button>`}
       </td>
     </tr>
   `).join('');
@@ -397,7 +397,7 @@ function renderRuns() {
       <td>${formatDuration(r.meta)}</td>
       <td>${feedbackBadge(r)}</td>
       <td>
-        <button class="btn" onclick="showRunDetail('${esc(r.id)}')">Details</button>
+        <button class="btn" data-action="showRunDetail" data-run-id="${esc(r.id)}">Details</button>
       </td>
     </tr>
   `).join('');
@@ -436,7 +436,7 @@ async function showRunDetail(runId) {
         <h3>Feedback</h3>
         <textarea id="feedback-text" placeholder="Write feedback for this run...">${esc(detail.feedback || '')}</textarea>
         <div class="form-actions">
-          <button class="btn btn-primary" onclick="submitFeedback('${esc(runId)}')">Save Feedback</button>
+          <button class="btn btn-primary" data-action="submitFeedback" data-run-id="${esc(runId)}">Save Feedback</button>
         </div>
       </div>`;
 
@@ -462,7 +462,7 @@ function renderQuestions() {
     const choicesHtml = q.choices && q.choices.length > 0
       ? `<div class="choices">${q.choices.map(c =>
           `<button class="choice-btn ${q.recommended === c ? 'recommended' : ''}"
-                   onclick="answerQuestion('${esc(q.agentId)}', '${esc(q.id)}', '${esc(c)}')">${esc(c)}${q.recommended === c ? ' ✓' : ''}</button>`
+                   data-action="answerQuestion" data-agent-id="${esc(q.agentId)}" data-question-id="${esc(q.id)}" data-answer="${esc(c)}">${esc(c)}${q.recommended === c ? ' ✓' : ''}</button>`
         ).join('')}</div>`
       : '';
 
@@ -476,7 +476,7 @@ function renderQuestions() {
           <input type="text" id="answer-${esc(q.id)}" placeholder="Custom answer..." style="
             flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;
             padding:6px 10px;color:var(--text);font-size:0.85rem;">
-          <button class="btn btn-primary" onclick="answerQuestionCustom('${esc(q.agentId)}', '${esc(q.id)}')">Answer</button>
+          <button class="btn btn-primary" data-action="answerQuestionCustom" data-agent-id="${esc(q.agentId)}" data-question-id="${esc(q.id)}">Answer</button>
         </div>
       </div>`;
   }).join('');
@@ -580,6 +580,30 @@ async function refreshQuestions() {
 async function refresh() {
   await Promise.all([refreshStatus(), refreshRuns(), refreshQuestions()]);
 }
+
+// ── Event Delegation ─────────────────────────────────────────────
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const agentId = btn.dataset.agentId;
+  const runId = btn.dataset.runId;
+  const questionId = btn.dataset.questionId;
+  const answer = btn.dataset.answer;
+  const tab = btn.dataset.tab;
+
+  switch (action) {
+    case 'toggleGlobalPause': toggleGlobalPause(); break;
+    case 'switchTab':         switchTab(tab); break;
+    case 'triggerRun':        triggerRun(agentId); break;
+    case 'pauseAgent':        pauseAgent(agentId); break;
+    case 'resumeAgent':       resumeAgent(agentId); break;
+    case 'showRunDetail':     showRunDetail(runId); break;
+    case 'submitFeedback':    submitFeedback(runId); break;
+    case 'answerQuestion':    answerQuestion(agentId, questionId, answer); break;
+    case 'answerQuestionCustom': answerQuestionCustom(agentId, questionId); break;
+  }
+});
 
 // ── Init ────────────────────────────────────────────────────────
 refresh();

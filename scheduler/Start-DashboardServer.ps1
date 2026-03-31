@@ -152,16 +152,41 @@ function script:Get-RunsPayload {
     return $result
 }
 
+function script:Test-SafeRunId {
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$RunId)
+
+    # Strict format: 20240101T123456_<safe-name>_1a2b
+    if ($RunId -notmatch '^[0-9]{8}T[0-9]{6}_[A-Za-z0-9._-]+_[0-9a-f]{4}$') {
+        return $null
+    }
+    # Must not contain directory separators or traversal segments
+    if ($RunId -ne [System.IO.Path]::GetFileName($RunId)) {
+        return $null
+    }
+    $runsRootFull = [System.IO.Path]::GetFullPath($RunsRoot)
+    $runDir = [System.IO.Path]::GetFullPath((Join-Path $RunsRoot $RunId))
+    # Ensure resolved path stays under runs root
+    $prefix = $runsRootFull.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $runDir.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $null
+    }
+    return $runDir
+}
+
+function script:Test-SafeIdentifier {
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][string]$Value)
+    # Only allow filename-safe characters (alphanumeric, hyphens, underscores, dots)
+    return ($Value -match '^[A-Za-z0-9._-]+$' -and $Value -eq [System.IO.Path]::GetFileName($Value))
+}
+
 function script:Get-RunDetailPayload {
     [OutputType([hashtable])]
     param([Parameter(Mandatory)][string]$RunId)
 
-    # Validate RunId format to prevent directory traversal
-    if ($RunId -notmatch '^\d{8}T\d{6}_.+_[0-9a-f]{4}$') {
-        return $null
-    }
-
-    $runDir = Join-Path $RunsRoot $RunId
+    $runDir = script:Test-SafeRunId -RunId $RunId
+    if (-not $runDir) { return $null }
     if (-not (Test-Path -LiteralPath $runDir)) { return $null }
 
     $meta = $null
@@ -339,11 +364,16 @@ function script:Invoke-Route {
 
             # Fire and forget in a background job so we don't block the HTTP response
             $invokeScript = Join-Path $RepoRoot 'scheduler/Invoke-ScheduledAgent.ps1'
-            Start-Job -ScriptBlock {
+            $job = Start-Job -ScriptBlock {
                 param($script, $id, $cfg, $gcfg, $rr, $prp, $rroot)
                 & $script -AgentId $id -AgentConfig $cfg -GlobalConfig $gcfg `
                           -RepoRoot $rr -PersonalRepoPath $prp -RunsRoot $rroot
-            } -ArgumentList $invokeScript, $match.Id, $match.Config, $GlobalConfig, $RepoRoot, $PersonalRepoPath, $RunsRoot | Out-Null
+            } -ArgumentList $invokeScript, $match.Id, $match.Config, $GlobalConfig, $RepoRoot, $PersonalRepoPath, $RunsRoot
+            # Auto-cleanup: remove job once it completes
+            Register-ObjectEvent -InputObject $job -EventName StateChanged -Action {
+                Remove-Job -Id $Sender.Id -Force -ErrorAction SilentlyContinue
+                $eventSubscriber | Unregister-Event
+            } | Out-Null
 
             script:Send-JsonResponse -Response $response -Body ([ordered]@{
                 ok      = $true
@@ -356,6 +386,12 @@ function script:Invoke-Route {
         if ($method -eq 'POST' -and $path -match '^/api/pause(?:/(.+))?$') {
             $agentId = $Matches[1]
             if ($agentId) {
+                $agents  = @(Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $PersonalRepoPath)
+                $match   = $agents | Where-Object { $_.Id -eq $agentId }
+                if (-not $match) {
+                    script:Send-ErrorResponse -Response $response -Message "Unknown agent: $agentId" -StatusCode 404
+                    return
+                }
                 Set-AgentState -StateFile $StateFile -AgentId $agentId -Enabled $false
                 script:Send-JsonResponse -Response $response -Body ([ordered]@{ ok = $true; message = "Agent '$agentId' paused" })
             } else {
@@ -369,6 +405,12 @@ function script:Invoke-Route {
         if ($method -eq 'POST' -and $path -match '^/api/resume(?:/(.+))?$') {
             $agentId = $Matches[1]
             if ($agentId) {
+                $agents  = @(Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $PersonalRepoPath)
+                $match   = $agents | Where-Object { $_.Id -eq $agentId }
+                if (-not $match) {
+                    script:Send-ErrorResponse -Response $response -Message "Unknown agent: $agentId" -StatusCode 404
+                    return
+                }
                 Set-AgentState -StateFile $StateFile -AgentId $agentId -Enabled $true
                 script:Send-JsonResponse -Response $response -Body ([ordered]@{ ok = $true; message = "Agent '$agentId' resumed" })
             } else {
@@ -382,13 +424,12 @@ function script:Invoke-Route {
         if ($method -eq 'POST' -and $path -match '^/api/feedback/(.+)$') {
             $runId = $Matches[1]
 
-            # Validate RunId format
-            if ($runId -notmatch '^\d{8}T\d{6}_.+_[0-9a-f]{4}$') {
+            $runDir = script:Test-SafeRunId -RunId $runId
+            if (-not $runDir) {
                 script:Send-ErrorResponse -Response $response -Message 'Invalid run ID format' -StatusCode 400
                 return
             }
 
-            $runDir = Join-Path $RunsRoot $runId
             if (-not (Test-Path -LiteralPath $runDir)) {
                 script:Send-ErrorResponse -Response $response -Message 'Run not found' -StatusCode 404
                 return
@@ -424,6 +465,12 @@ function script:Invoke-Route {
             $agentId    = $Matches[1]
             $questionId = $Matches[2]
 
+            # Validate identifiers are filename-safe
+            if (-not (script:Test-SafeIdentifier -Value $agentId) -or -not (script:Test-SafeIdentifier -Value $questionId)) {
+                script:Send-ErrorResponse -Response $response -Message 'Invalid agent or question ID' -StatusCode 400
+                return
+            }
+
             $body = script:Read-RequestBody -Request $request
             if (-not $body) {
                 script:Send-ErrorResponse -Response $response -Message 'Request body required' -StatusCode 400
@@ -454,7 +501,7 @@ function script:Invoke-Route {
     } catch {
         Write-CronAgentsLog -Level 'ERROR' -Message "HTTP handler error on $method $path : $_"
         try {
-            script:Send-ErrorResponse -Response $response -Message "Internal server error: $_" -StatusCode 500
+            script:Send-ErrorResponse -Response $response -Message 'Internal server error' -StatusCode 500
         } catch {
             # Response may already be closed
         }
@@ -463,7 +510,7 @@ function script:Invoke-Route {
 
 # ── Server Loop ──────────────────────────────────────────────────────
 
-$prefix = "http://localhost:$Port/"
+$prefix = "http://127.0.0.1:$Port/"
 $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add($prefix)
 

@@ -127,7 +127,7 @@ Describe 'Dashboard — HTTP Server' {
             } catch { continue }
         }
 
-        $script:baseUrl = "http://localhost:$($script:port)"
+        $script:baseUrl = "http://127.0.0.1:$($script:port)"
 
         # Start dashboard server in a background job
         $dashScript = $script:dashboardScript
@@ -168,14 +168,14 @@ Describe 'Dashboard — HTTP Server' {
 
     Context 'Static file serving' {
         It 'GET / returns HTML' {
-            $response = Invoke-WebRequest -Uri "$($script:baseUrl)/" -UseBasicParsing -ErrorAction Stop
+            $response = Invoke-WebRequest -Uri "$($script:baseUrl)/" -ErrorAction Stop
             $response.StatusCode | Should -Be 200
             $response.Headers['Content-Type'] | Should -Match 'text/html'
             $response.Content | Should -Match 'CronAgents Dashboard'
         }
 
         It 'GET /dashboard.html returns HTML' {
-            $response = Invoke-WebRequest -Uri "$($script:baseUrl)/dashboard.html" -UseBasicParsing -ErrorAction Stop
+            $response = Invoke-WebRequest -Uri "$($script:baseUrl)/dashboard.html" -ErrorAction Stop
             $response.StatusCode | Should -Be 200
             $response.Content | Should -Match 'CronAgents Dashboard'
         }
@@ -337,6 +337,30 @@ Describe 'Dashboard — HTTP Server' {
             $agent = $status.agents | Where-Object { $_.id -eq 'http-agent' }
             $agent.enabled | Should -Be $true
         }
+
+        It 'Per-agent pause returns 404 for unknown agent' {
+            $threw = $false
+            try {
+                Invoke-RestMethod -Uri "$($script:baseUrl)/api/pause/nonexistent-agent" `
+                    -Method Post -ErrorAction Stop
+            } catch {
+                $threw = $true
+                $_.Exception.Response.StatusCode.Value__ | Should -Be 404
+            }
+            $threw | Should -Be $true
+        }
+
+        It 'Per-agent resume returns 404 for unknown agent' {
+            $threw = $false
+            try {
+                Invoke-RestMethod -Uri "$($script:baseUrl)/api/resume/nonexistent-agent" `
+                    -Method Post -ErrorAction Stop
+            } catch {
+                $threw = $true
+                $_.Exception.Response.StatusCode.Value__ | Should -Be 404
+            }
+            $threw | Should -Be $true
+        }
     }
 
     Context 'POST /api/feedback/:runId' {
@@ -428,6 +452,16 @@ Describe 'Dashboard — HTTP Server' {
             } catch { $err = $_ }
             $err | Should -Not -BeNullOrEmpty
             $err.Exception.Response.StatusCode.value__ | Should -Be 400
+        }
+
+        It 'Returns 400 for path-traversal agent ID' {
+            $body = @{ answer = 'test' } | ConvertTo-Json
+            $err = $null
+            try {
+                Invoke-RestMethod -Uri "$($script:baseUrl)/api/questions/../etc/test-q1" `
+                    -Method Post -Body $body -ContentType 'application/json' -ErrorAction Stop
+            } catch { $err = $_ }
+            $err | Should -Not -BeNullOrEmpty
         }
     }
 

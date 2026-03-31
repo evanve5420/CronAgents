@@ -17,7 +17,7 @@ Requirements for the interactive HTML dashboard layer on top of the CronAgents s
 
 ## Approach: PowerShell micro HTTP server
 
-The scheduler already runs as a persistent polling process (`Start-CronAgents.ps1`). Adding a `System.Net.HttpListener` on `localhost:9077` is straightforward — `HttpListener` ships with .NET, which PowerShell already requires.
+The scheduler already runs as a persistent polling process (`Start-CronAgents.ps1`). Adding a `System.Net.HttpListener` on `127.0.0.1:9077` is straightforward — `HttpListener` ships with .NET, which PowerShell already requires.
 
 - **Server**: ~50 lines of PowerShell added to `Start-CronAgents.ps1` (or a separate `Start-DashboardServer.ps1` module)
 - **Frontend**: single `dashboard.html` with vanilla JS/CSS, served by the listener. Polls a JSON API endpoint for live state.
