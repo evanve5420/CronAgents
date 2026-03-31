@@ -58,9 +58,9 @@ Local markdown now, but `Update-Dashboard.ps1` is designed to be extensible to w
 
 PowerShell Core runs on macOS/Linux, but initial target is Windows only. macOS would need `launchd` instead of Task Scheduler. Linux would need systemd user services or cron.
 
-### 12. Windows PR Coverage
+### 12. Expand PR Coverage to Windows
 
-The baseline PR gate already exists: `.github/workflows/tests.yml` runs the non-Windows test suite on `ubuntu-latest` for pull requests to `master`. The remaining future work is adding a separate `windows-latest` job so tests tagged `WindowsOnly` (Health Check, CLI doctor) are covered in CI too — acceptable once the project has enough churn to justify the extra Actions cost.
+Pull request test gating already exists: `.github/workflows/tests.yml` runs the non-Windows test suite on `ubuntu-latest` for pull requests to `master`. The remaining future work is adding a separate `windows-latest` job so tests tagged `WindowsOnly` (Health Check, CLI doctor) are covered in CI too — acceptable once the project has enough churn to justify the extra Actions cost.
 
 ### 13. Agent Pipelines
 
