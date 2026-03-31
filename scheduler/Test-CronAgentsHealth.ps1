@@ -355,6 +355,44 @@ function Test-OrphanedRuns {
 }
 
 # ===================================================================
+# Check 8: Notification Backend
+# ===================================================================
+function Test-NotificationBackend {
+    param([string]$RepoRoot)
+
+    try {
+        $configPath = Join-Path $RepoRoot 'cronagents.json'
+        $cfg = Import-CronAgentsConfig -ConfigPath $configPath
+    }
+    catch {
+        Write-CronAgentsLog -Level 'warn' -Message "Notification health check: config parse failed: $_"
+        $cfg = [PSCustomObject]@{ notifications = $true }
+    }
+
+    if ($cfg.PSObject.Properties['notifications'] -and $cfg.notifications -eq $false) {
+        return New-CheckResult -Name 'Notifications' -Status 'Pass' `
+            -Message 'Disabled globally (notifications: false)'
+    }
+
+    $backend = Resolve-NotificationBackend
+
+    switch ($backend) {
+        'BurntToast' {
+            return New-CheckResult -Name 'Notifications' -Status 'Pass' `
+                -Message 'BurntToast module available'
+        }
+        'Native' {
+            return New-CheckResult -Name 'Notifications' -Status 'Pass' `
+                -Message 'Native Windows.UI.Notifications available (BurntToast recommended for richer toasts)'
+        }
+        default {
+            return New-CheckResult -Name 'Notifications' -Status 'Warn' `
+                -Message 'No notification backend available. Install BurntToast: Install-Module BurntToast -Scope CurrentUser'
+        }
+    }
+}
+
+# ===================================================================
 # Run all checks
 # ===================================================================
 [System.Collections.Generic.List[PSCustomObject]]$checks = @()
@@ -366,6 +404,7 @@ $checks.Add((Test-StateFile -RepoRoot $RepoRoot))
 $checks.Add((Test-SchedulerProcess))
 $checks.Add((Test-BranchState -RepoRoot $RepoRoot))
 $checks.Add((Test-OrphanedRuns -RepoRoot $RepoRoot))
+$checks.Add((Test-NotificationBackend -RepoRoot $RepoRoot))
 
 # ===================================================================
 # Compute summary

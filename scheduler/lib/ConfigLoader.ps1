@@ -136,6 +136,9 @@ function Import-CronAgentsConfig {
         quietHours    = if ($null -ne $parsed.PSObject.Properties['quietHours'] -and
                             $null -ne $parsed.quietHours)
                         { $parsed.quietHours } else { $null }
+        notifications = if ($null -ne $parsed.PSObject.Properties['notifications'] -and
+                            $null -ne $parsed.notifications)
+                        { [bool]$parsed.notifications } else { $true }
         personalRepo  = $personalRepo
     }
 
@@ -330,6 +333,8 @@ function Import-SingleAgentConfig {
         workingDirectory = if ($parsed.PSObject.Properties['workingDirectory'])
                            { $parsed.workingDirectory } else { $null }
         runIf         = $runIfDefinition
+        notifyOnFailure = if ($parsed.PSObject.Properties['notifyOnFailure'] -and $null -ne $parsed.notifyOnFailure)
+                          { [bool]$parsed.notifyOnFailure } else { $false }
     }
 
     # Copy agent reference if present

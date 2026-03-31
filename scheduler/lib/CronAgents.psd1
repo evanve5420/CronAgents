@@ -13,7 +13,8 @@
         'RunManager.ps1',
         'PersonalRepo.ps1',
         'PowerHelpers.ps1',
-        'RetentionCleanup.ps1'
+        'RetentionCleanup.ps1',
+        'Notifier.ps1'
     )
     FunctionsToExport = @(
         # Logger
@@ -57,7 +58,12 @@
         # PowerHelpers
         'Test-OnBatteryPower',
         # RetentionCleanup
-        'Invoke-RetentionCleanup'
+        'Invoke-RetentionCleanup',
+        # Notifier
+        'Send-AgentFailureNotification',
+        'Send-SchedulerErrorNotification',
+        'Test-NotificationAvailable',
+        'Resolve-NotificationBackend'
     )
     CmdletsToExport   = @()
     VariablesToExport  = @()

@@ -105,3 +105,37 @@ Describe 'Health Check — Task Path' -Tag 'WindowsOnly' {
         $taskCheck.Status | Should -BeIn @('Warn', 'Pass')
     }
 }
+
+Describe 'Health Check — Notifications' -Tag 'WindowsOnly' {
+    BeforeEach {
+        $testEnv = New-TestEnvironment -Name 'HealthNotif'
+    }
+    AfterEach {
+        Remove-TestEnvironment -TestEnv $testEnv
+    }
+
+    It 'Returns a Notifications check with Pass or Warn status' {
+        $result = & $healthScript -RepoRoot $testEnv.Root -TaskPath '\CronAgents-Test\'
+        $result | Should -Not -BeNullOrEmpty
+
+        $notifCheck = $result.Checks | Where-Object { $_.Name -eq 'Notifications' }
+        $notifCheck | Should -Not -BeNullOrEmpty
+        $notifCheck.Status | Should -BeIn @('Pass', 'Warn')
+    }
+
+    It 'Reports Pass when notifications are globally disabled' {
+        $configContent = [ordered]@{
+            '$schema'     = './cronagents.schema.json'
+            logLevel      = 'info'
+            notifications = $false
+        }
+        $configContent | ConvertTo-Json -Depth 5 |
+            Out-File -FilePath $testEnv.ConfigPath -Encoding utf8
+
+        $result = & $healthScript -RepoRoot $testEnv.Root -TaskPath '\CronAgents-Test\'
+
+        $notifCheck = $result.Checks | Where-Object { $_.Name -eq 'Notifications' }
+        $notifCheck.Status | Should -Be 'Pass'
+        $notifCheck.Message | Should -Match 'Disabled globally'
+    }
+}
