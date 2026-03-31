@@ -174,7 +174,7 @@
   <h1><span>⚡</span> CronAgents Dashboard</h1>
   <div class="header-controls">
     <span id="scheduler-status"></span>
-    <button class="pause-btn" id="global-pause-btn" data-action="toggleGlobalPause"></button>
+    <button class="pause-btn" id="global-pause-btn" data-action="toggleGlobalPause" aria-label="Pause all schedules">Pause all</button>
     <span id="last-updated"></span>
   </div>
 </header>
@@ -250,9 +250,23 @@ async function api(method, path, body) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(path, opts);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  return data;
+  const contentType = res.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return null;
+    }
+    if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
+    return data;
+  }
+
+  const text = await res.text();
+  if (!res.ok) throw new Error(text || `HTTP ${res.status}`);
+  return text ? { message: text } : null;
 }
 
 // ── Toast ────────────────────────────────────────────────────────
@@ -373,10 +387,10 @@ function renderAgents() {
       <td>${relativeTime(a.lastRun)}</td>
       <td>${a.enabled ? timeUntil(a.nextRun) : '—'}</td>
       <td>
-        <button class="btn btn-green" data-action="triggerRun" data-agent-id="${esc(a.id)}" title="Run now">▶</button>
+        <button class="btn btn-green" data-action="triggerRun" data-agent-id="${esc(a.id)}" title="Run now" aria-label="Run ${esc(a.id)} now">▶</button>
         ${a.enabled
-          ? `<button class="btn btn-red" data-action="pauseAgent" data-agent-id="${esc(a.id)}" title="Pause">⏸</button>`
-          : `<button class="btn btn-green" data-action="resumeAgent" data-agent-id="${esc(a.id)}" title="Resume">▶️</button>`}
+          ? `<button class="btn btn-red" data-action="pauseAgent" data-agent-id="${esc(a.id)}" title="Pause" aria-label="Pause ${esc(a.id)}">⏸</button>`
+          : `<button class="btn btn-green" data-action="resumeAgent" data-agent-id="${esc(a.id)}" title="Resume" aria-label="Resume ${esc(a.id)}">▶️</button>`}
       </td>
     </tr>
   `).join('');

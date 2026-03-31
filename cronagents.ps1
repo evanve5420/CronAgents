@@ -627,7 +627,7 @@ function Invoke-DashboardCommand {
     param()
 
     $dashboardScript = Join-Path $RepoRoot 'scheduler/Start-DashboardServer.ps1'
-    if (-not (Test-Path $dashboardScript)) {
+    if (-not (Test-Path -LiteralPath $dashboardScript)) {
         Write-Host "Start-DashboardServer.ps1 not found at: $dashboardScript" -ForegroundColor Red
         return
     }

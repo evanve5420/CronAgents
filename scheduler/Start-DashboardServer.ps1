@@ -128,13 +128,13 @@ function script:Get-RunsPayload {
             }
         }
 
-        # Read summary first line
+        # Read summary first line only (full content available via GET /api/runs/:id)
         $summaryExcerpt = $null
         if ($r.HasSummary) {
             $summaryPath = Join-Path $r.RunDirectory 'summary.md'
             try {
-                $summaryContent = Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8 -ErrorAction Stop
-                $summaryExcerpt = $summaryContent.TrimEnd()
+                $firstLine = Get-Content -LiteralPath $summaryPath -Encoding UTF8 -TotalCount 1 -ErrorAction Stop
+                if ($null -ne $firstLine) { $summaryExcerpt = $firstLine.TrimEnd() }
             } catch { }
         }
 
