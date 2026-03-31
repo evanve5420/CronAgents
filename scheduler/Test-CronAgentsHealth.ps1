@@ -252,13 +252,22 @@ function Test-BranchState {
         }
         catch { }
 
-        $branchPrefix = if ($config -and $config.versioning.branchPrefix) {
-            $config.versioning.branchPrefix
+        $versioningConfig = $null
+        if ($config -and $config.PSObject.Properties['versioning'] -and $null -ne $config.versioning) {
+            $versioningConfig = $config.versioning
+        }
+
+        $branchPrefix = if ($versioningConfig -and
+                            $versioningConfig.PSObject.Properties['branchPrefix'] -and
+                            $versioningConfig.branchPrefix) {
+            $versioningConfig.branchPrefix
         } else { 'agents' }
 
         $userName = $null
-        if ($config -and $config.versioning.userName) {
-            $userName = $config.versioning.userName
+        if ($versioningConfig -and
+            $versioningConfig.PSObject.Properties['userName'] -and
+            $versioningConfig.userName) {
+            $userName = $versioningConfig.userName
         }
 
         $branchInfo = Get-CronAgentsBranch -RepoRoot $RepoRoot -BranchPrefix $branchPrefix -UserName $userName
@@ -402,8 +411,21 @@ function Test-NotificationBackend {
 
 $checks.Add((Test-TaskScheduler -TaskName $TaskName -TaskPath $TaskPath))
 $checks.Add((Test-GlobalConfig -RepoRoot $RepoRoot))
-try { $personalRepoConfigPath = (Import-CronAgentsConfig -ConfigPath (Join-Path $RepoRoot 'cronagents.json')).personalRepo.path } catch { $personalRepoConfigPath = $null }
-$personalRepoPath = Get-PersonalRepoPath -ConfigPath $personalRepoConfigPath
+
+$personalRepoPath = $null
+try {
+    $healthConfig = Import-CronAgentsConfig -ConfigPath (Join-Path $RepoRoot 'cronagents.json')
+    if ($healthConfig.PSObject.Properties['personalRepo'] -and
+        $null -ne $healthConfig.personalRepo -and
+        $healthConfig.personalRepo.PSObject.Properties['path'] -and
+        -not [string]::IsNullOrWhiteSpace($healthConfig.personalRepo.path)) {
+        $personalRepoPath = Get-PersonalRepoPath -ConfigPath $healthConfig.personalRepo.path
+    }
+}
+catch {
+    $personalRepoPath = $null
+}
+
 $checks.Add((Test-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath))
 $checks.Add((Test-StateFile -RepoRoot $RepoRoot))
 $checks.Add((Test-SchedulerProcess))

@@ -84,6 +84,10 @@ Describe 'Health Check — Invalid Config' -Tag 'WindowsOnly' {
 
         $configCheck = $result.Checks | Where-Object { $_.Name -eq 'Global Config' }
         $configCheck.Status | Should -Be 'Fail'
+
+        $agentCheck = $result.Checks | Where-Object { $_.Name -eq 'Agent Configs' }
+        $agentCheck.Status | Should -Be 'Warn'
+        $agentCheck.Message | Should -Match ([regex]::Escape((Join-Path $testEnv.Root '.cronagents' 'agents')))
     }
 }
 
