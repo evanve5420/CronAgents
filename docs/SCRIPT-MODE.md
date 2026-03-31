@@ -35,10 +35,10 @@ A general-purpose scheduler that already handles wake-up, logging, retry, and he
 
 ## Proposed Config
 
-Script mode uses the same per-agent `.json` scheduling config files as prompt mode. The discriminator is the presence of `script` instead of `agent`+`prompt`.
+Script mode uses the same per-agent `.agent-registration.json` scheduling config files as prompt mode. The discriminator is the presence of `script` instead of `agent`+`prompt`.
 
 ```jsonc
-// File: .cronagents/agents/daily-review.json (prompt mode — existing)
+// File: .cronagents/agents/daily-review.agent-registration.json (agent mode — existing)
 {
   "$schema": "../../cronagents-agent.schema.json",
   "name": "Daily Code Review",
@@ -50,7 +50,7 @@ Script mode uses the same per-agent `.json` scheduling config files as prompt mo
 ```
 
 ```jsonc
-// File: .cronagents/agents/mcp-sync.json (script mode)
+// File: .cronagents/agents/mcp-sync.agent-registration.json (script mode)
 {
   "$schema": "../../cronagents-agent.schema.json",
   "name": "MCP Config Sync",
@@ -62,7 +62,7 @@ Script mode uses the same per-agent `.json` scheduling config files as prompt mo
 ```
 
 ```jsonc
-// File: .cronagents/agents/weekly-report.json (script mode — no Copilot CLI inside)
+// File: .cronagents/agents/weekly-report.agent-registration.json (script mode — no Copilot CLI inside)
 {
   "$schema": "../../cronagents-agent.schema.json",
   "name": "Weekly Report",
@@ -72,7 +72,7 @@ Script mode uses the same per-agent `.json` scheduling config files as prompt mo
 }
 ```
 
-**Discrimination:** A per-agent config specifies exactly one of: `agent`+`prompt` (agent mode), `prompt`-only (prompt-only mode), or `script` (script mode). The `cronagents-agent.schema.json` enforces this via `oneOf`.
+**Discrimination:** A per-agent config specifies exactly one of: `agent`+`prompt` (agent mode), `prompt`-only (prompt-only mode), or `script` (script mode). The `cronagents-agent.schema.json` already enforces the first two modes via `oneOf`; script mode will add a third branch.
 
 ---
 
@@ -81,7 +81,7 @@ Script mode uses the same per-agent `.json` scheduling config files as prompt mo
 | Concern | Agent Mode | Prompt-Only Mode | Script Mode |
 |---------|-----------|-----------------|-------------|
 | What runs | `copilot --agent=NAME -p "PROMPT" …` | `copilot -p "PROMPT" --allow-all-tools …` | User-provided `.ps1` / `.sh` / executable |
-| Working directory | Repo root | Repo root | Repo root |
+| Working directory | Repo root (or personal repo) | Repo root (or personal repo) | Repo root |
 | Stdout capture | `output.md` in run directory | `output.md` in run directory | `output.md` in run directory |
 | Exit code | Copilot CLI exit code | Copilot CLI exit code | Script exit code |
 | `--share` transcript | Auto-saved to `session.md` | Auto-saved to `session.md` | N/A (script manages its own Copilot calls) |
@@ -89,6 +89,8 @@ Script mode uses the same per-agent `.json` scheduling config files as prompt mo
 | Retry | Per `retryCount` | Per `retryCount` | Per `retryCount` |
 | `skipOnBattery` | Supported | Supported | Supported |
 | Pause/resume | Supported | Supported | Supported |
+| `envVars` | Set as process env vars | Set as process env vars | Set as process env vars |
+| `notifyOnFailure` | Toast on failure/timeout | Toast on failure/timeout | Toast on failure/timeout |
 | Dashboard | Full integration | Full integration | Full integration |
 | Feedback | `feedback.md` stub created | `feedback.md` stub created | `feedback.md` stub created |
 
@@ -121,14 +123,16 @@ Script-mode runs produce the same run directory structure as prompt-mode runs:
 
 ```
 .cronstate/runs/20260322T0800_mcp-sync_a7f3/
-├── output.md          ← captured stdout
-├── summary.md         ← LLM-generated summary (from run-summarizer agent)
-├── meta.json          ← run metadata (includes "mode": "script")
-├── feedback.md        ← stub for human feedback
-└── feedback-result.md ← written by evaluator if feedback provided
+├── output.md               ← captured stdout
+├── session.md              ← Copilot CLI transcript (agent/prompt modes only)
+├── summary.md              ← LLM-generated summary (from run-summarizer agent)
+├── summarizer-session.md   ← run-summarizer's own Copilot session transcript
+├── meta.json               ← run metadata (includes "mode": "script")
+├── feedback.md             ← stub for human feedback
+└── feedback-result.md      ← written by evaluator if feedback provided
 ```
 
-The `meta.json` includes a `mode` field (`"agent"`, `"prompt"`, or `"script"`) so the run-summarizer agent and dashboard assembly can adjust presentation. `session.md` is omitted for script-mode runs since there's no single Copilot session to capture (the script may invoke zero or many Copilot sessions internally).
+The `meta.json` includes a `mode` field (`"agent"`, `"prompt"`, or `"script"`) so the run-summarizer agent and dashboard assembly can adjust presentation. `session.md` is omitted for script-mode runs since there's no single Copilot session to capture (the script may invoke zero or many Copilot sessions internally). `summarizer-session.md` is present in all modes — the run-summarizer always runs after the primary execution.
 
 ---
 
