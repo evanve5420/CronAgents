@@ -1,6 +1,8 @@
 # UX Requirements — CronAgents Interactive Dashboard
 
-Future-phase requirements for an interactive UI layer on top of the CronAgents scheduler. Not part of the initial implementation — the Phase 1 management surface is the `cronagents.ps1` CLI wrapper plus the read-only `dashboard.md`.
+> **Status: Implemented.** See `scheduler/Start-DashboardServer.ps1` and `scheduler/dashboard.html`.
+
+Requirements for the interactive HTML dashboard layer on top of the CronAgents scheduler. Launched via `cronagents.ps1 dashboard` or TUI menu option 8.
 
 ---
 
@@ -15,7 +17,7 @@ Future-phase requirements for an interactive UI layer on top of the CronAgents s
 
 ## Approach: PowerShell micro HTTP server
 
-The scheduler already runs as a persistent polling process (`Start-CronAgents.ps1`). Adding a `System.Net.HttpListener` on `localhost:9077` is straightforward — `HttpListener` ships with .NET, which PowerShell already requires.
+The scheduler already runs as a persistent polling process (`Start-CronAgents.ps1`). Adding a `System.Net.HttpListener` on `127.0.0.1:9077` is straightforward — `HttpListener` ships with .NET, which PowerShell already requires.
 
 - **Server**: ~50 lines of PowerShell added to `Start-CronAgents.ps1` (or a separate `Start-DashboardServer.ps1` module)
 - **Frontend**: single `dashboard.html` with vanilla JS/CSS, served by the listener. Polls a JSON API endpoint for live state.
@@ -98,4 +100,4 @@ The scheduler already runs as a persistent polling process (`Start-CronAgents.ps
 
 ## When to implement
 
-After the CLI wrapper (`cronagents.ps1`) has been used enough to validate the command set. The HTTP API should exactly mirror the CLI commands — design the CLI first, then wrap it in HTTP, not the other way around.
+Implemented. The HTML dashboard and CLI integration are complete. See `scheduler/Start-DashboardServer.ps1`, `scheduler/dashboard.html`, and the `cronagents.ps1 dashboard` subcommand.

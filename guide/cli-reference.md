@@ -220,6 +220,20 @@ Show the usage summary.
 
 ---
 
+### `dashboard`
+
+Start the HTML dashboard server and open it in your browser.
+
+```powershell
+.\cronagents.ps1 dashboard
+```
+
+Launches a lightweight HTTP server on `127.0.0.1:9077` serving an interactive HTML dashboard. The dashboard provides live status, agent controls (pause/resume/trigger), run history with details, feedback submission, and question answering — all through a browser UI. Auto-refreshes every 5 seconds.
+
+The server runs until you press Ctrl+C. Both the HTML dashboard and the static `dashboard.md` can coexist — they read from the same `.cronstate/` data.
+
+---
+
 ## Interactive menu
 
 Running `cronagents.ps1` with no arguments launches a numbered interactive menu:
@@ -232,10 +246,12 @@ CronAgents — Interactive Menu
   3) Pause / Resume
   4) View run history
   5) Submit feedback
-  6) Health check (doctor)
-  7) Exit
+  6) Pending questions
+  7) Health check (doctor)
+  8) Open HTML dashboard
+  9) Exit
 
-Select [1-7]:
+Select [1-9]:
 ```
 
 ### Menu options
@@ -247,8 +263,10 @@ Select [1-7]:
 | 3 | Pause / Resume | Choose global or per-agent, then pause or resume |
 | 4 | View run history | Shows the 20 most recent runs with agent, time, exit code, and feedback status |
 | 5 | Submit feedback | Opens the most recent pending `feedback.md` in your editor |
-| 6 | Health check | Same as `cronagents.ps1 doctor` |
-| 7 | Exit | Close the menu |
+| 6 | Pending questions | View and answer pending agent questions interactively |
+| 7 | Health check | Same as `cronagents.ps1 doctor` |
+| 8 | Open HTML dashboard | Same as `cronagents.ps1 dashboard` — starts the browser-based management UI |
+| 9 | Exit | Close the menu |
 
 Type the number and press Enter. After each action completes, the menu reappears so you can perform additional operations.
 
@@ -278,6 +296,8 @@ Type the number and press Enter. After each action completes, the menu reappears
 .\cronagents.ps1 feedback               # Open pending feedback
 .\cronagents.ps1 feedback daily-review  # Open feedback for agent
 .\cronagents.ps1 evaluate               # Process all pending feedback
+.\cronagents.ps1 questions              # View and answer pending questions
+.\cronagents.ps1 dashboard              # Open HTML dashboard in browser
 .\cronagents.ps1 doctor                 # Run health checks
 .\cronagents.ps1 install                # Register Task Scheduler + personal repo
 .\cronagents.ps1 uninstall              # Remove Task Scheduler entry

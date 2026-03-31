@@ -7,6 +7,7 @@ A lightweight, agent scheduler for GitHub Copilot agents that runs recurring wor
 - **Scheduled agent runs** — interval, daily, or weekly execution via a single background process
 - **Agent + prompt-only modes** — full `.agent.md` agents or simple prompt-only invocations
 - **Live markdown dashboard** — auto-generated `dashboard.md` with run summaries, status, and links
+- **HTML dashboard** — browser-based management UI at `127.0.0.1:9077` with live status, agent controls, feedback, and questions
 - **Human feedback loop** — write feedback on any run, an evaluator agent edits agent definitions accordingly
 - **Separate personal repo** — agent definitions live in `~/.cronagents/`, fully isolated from shared infrastructure
 - **CLI + interactive TUI** — `cronagents.ps1` with subcommands and a numbered menu
