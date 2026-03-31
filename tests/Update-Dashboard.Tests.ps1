@@ -419,8 +419,7 @@ Describe 'Update-Dashboard' {
         }
 
         It 'Shows running icon in summary table' {
-            # 🔄 emoji (U+1F504)
-            $script:RunningDash | Should -Match ([char]0xD83D)
+            $script:RunningDash | Should -Match ([char]::ConvertFromUtf32(0x1F504))
         }
 
         It 'Shows dash for duration when still running' {
