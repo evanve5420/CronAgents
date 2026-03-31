@@ -532,6 +532,8 @@ Describe 'Dashboard — File Integrity' {
     It 'dashboard.html contains essential elements' {
         $content = Get-Content -LiteralPath $script:dashboardHtml -Raw
         $content | Should -Match 'CronAgents Dashboard'
+        $content | Should -Match 'rel="icon"'
+        $content | Should -Match 'image/svg\+xml'
         $content | Should -Match '/api/status'
         $content | Should -Match '/api/runs'
         $content | Should -Match '/api/questions'
