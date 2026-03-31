@@ -98,12 +98,12 @@ Start-ScheduledTask -TaskName 'CronAgents' -TaskPath '\CronAgents\'
 
 The fastest way to get started is to copy a template and customize it.
 
-### Using the agent-creator skill
+### Using the creating-agents skill
 
 If you're in a Copilot CLI session, use the built-in skill:
 
 ```
-/agent-creator
+/creating-agents
 ```
 
 It will walk you through an interview to set up your agent's name, schedule, prompt, and tool permissions.

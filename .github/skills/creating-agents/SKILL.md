@@ -1,5 +1,5 @@
 ---
-name: agent-creator
+name: creating-agents
 description: "Use when asked to create a new CronAgents agent or prompt-only scheduled invocation. Helps create the required agent profile and registration in the personal repo."
 argument-hint: "Describe what the agent should do (e.g., 'review PRs every morning')"
 ---

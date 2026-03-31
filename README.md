@@ -36,7 +36,7 @@ Choose the path that matches your starting point:
   .\cronagents.ps1 install
 
   # Create your first agent (interactive skill)
-  # /agent-creator "review PRs every morning"
+  # /creating-agents "review PRs every morning"
 
   # Or copy a template into your personal repo
   Copy-Item templates\agents\daily-review.agent.md.example ~/.cronagents/.github/agents/daily-review.agent.md
