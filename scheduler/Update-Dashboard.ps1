@@ -53,6 +53,7 @@ function Get-StatusIcon {
     $meta = $Run.Meta
     if ($null -eq $meta) { return '❓' }
 
+    if ($null -eq $meta.exitCode)         { return '🔄' }
     if ($meta.timedOut)                  { return '⏱️' }
     if ($meta.retryAttempt -gt 0 -and
         $meta.exitCode -eq 0)           { return '🔄' }
@@ -72,6 +73,7 @@ function Get-StatusLabel {
     $meta = $Run.Meta
     if ($null -eq $meta) { return 'Unknown' }
 
+    if ($null -eq $meta.exitCode) { return 'Running' }
     if ($meta.timedOut)         { return 'Timed Out' }
     if ($meta.exitCode -eq 75) { return 'Skipped' }
     if ($meta.exitCode -eq 0)  { return 'Success' }
@@ -84,7 +86,10 @@ function Get-DurationString {
     param([Parameter(Mandatory)][PSCustomObject]$Run)
 
     $meta = $Run.Meta
-    if ($null -eq $meta -or $null -eq $meta.startTime -or $null -eq $meta.endTime) {
+    if ($null -eq $meta -or $null -eq $meta.exitCode) {
+        return '—'
+    }
+    if ($null -eq $meta.startTime -or $null -eq $meta.endTime) {
         return '—'
     }
 

@@ -68,6 +68,44 @@ Describe 'Invoke-ScheduledAgent — Run Directory' {
         $content = Get-Content $feedbackPath -Raw
         $content | Should -Match 'feedback'
     }
+
+    It 'Initialize-RunMetadata writes preliminary meta.json with null exitCode' {
+        $runDir = New-RunDirectory -RunsRoot $testEnv.RunsRoot -AgentId 'test-agent'
+
+        Initialize-RunMetadata -RunDirectory $runDir -AgentId 'test-agent' `
+            -AgentName 'Test Agent' -Prompt 'Review the code'
+
+        $metaPath = Join-Path $runDir 'meta.json'
+        Test-Path $metaPath | Should -BeTrue
+
+        $meta = Get-Content $metaPath -Raw | ConvertFrom-Json
+        $meta.agentId           | Should -Be 'test-agent'
+        $meta.agentName         | Should -Be 'Test Agent'
+        $meta.prompt            | Should -Be 'Review the code'
+        $meta.exitCode          | Should -BeNullOrEmpty
+        $meta.endTime           | Should -BeNullOrEmpty
+        $meta.startTime         | Should -Not -BeNullOrEmpty
+        $meta.timedOut          | Should -Be $false
+        $meta.feedbackProcessed | Should -Be $false
+    }
+
+    It 'Write-RunMetadata overwrites Initialize-RunMetadata content' {
+        $runDir = New-RunDirectory -RunsRoot $testEnv.RunsRoot -AgentId 'test-agent'
+        $now = [datetime]::UtcNow
+
+        Initialize-RunMetadata -RunDirectory $runDir -AgentId 'test-agent' `
+            -AgentName 'Test Agent' -Prompt 'Review the code'
+
+        Write-RunMetadata -RunDirectory $runDir -AgentId 'test-agent' `
+            -AgentName 'Test Agent' -Prompt 'Review the code' `
+            -StartTime $now.AddMinutes(-1) -EndTime $now `
+            -ExitCode 0
+
+        $meta = Get-Content (Join-Path $runDir 'meta.json') -Raw | ConvertFrom-Json
+        $meta.exitCode  | Should -Be 0
+        $meta.endTime   | Should -Not -BeNullOrEmpty
+        $meta.startTime | Should -Not -BeNullOrEmpty
+    }
 }
 
 Describe 'Invoke-ScheduledAgent — Mock Copilot CLI Arguments' {

@@ -60,6 +60,44 @@ function New-RunDirectory {
 }
 
 # -------------------------------------------------------------------
+# Initialize-RunMetadata — preliminary meta.json written at run start
+# -------------------------------------------------------------------
+function Initialize-RunMetadata {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RunDirectory,
+
+        [Parameter(Mandatory)]
+        [string]$AgentId,
+
+        [Parameter(Mandatory)]
+        [string]$AgentName,
+
+        [Parameter(Mandatory)]
+        [string]$Prompt
+    )
+
+    $meta = [ordered]@{
+        agentId           = $AgentId
+        agentName         = $AgentName
+        prompt            = $Prompt
+        startTime         = [datetime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ss')
+        endTime           = $null
+        exitCode          = $null
+        timedOut          = $false
+        retryAttempt      = 0
+        feedbackProcessed = $false
+    }
+
+    $metaPath = Join-Path $RunDirectory 'meta.json'
+    $json = $meta | ConvertTo-Json -Depth 10
+    Set-Content -LiteralPath $metaPath -Value $json -Encoding UTF8
+
+    Write-CronAgentsLog -Level 'debug' -Message "Initialized run metadata in: $metaPath"
+}
+
+# -------------------------------------------------------------------
 # Write-RunMetadata
 # -------------------------------------------------------------------
 function Write-RunMetadata {

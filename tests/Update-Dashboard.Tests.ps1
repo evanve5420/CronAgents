@@ -379,4 +379,56 @@ Describe 'Update-Dashboard' {
             $script:NoMetaDash | Should -Match 'orphan-agent'
         }
     }
+
+    Context 'In-progress run (null exitCode)' {
+        BeforeAll {
+            $runningRepo = Join-Path $TestDrive 'running-repo'
+            $runningRuns = Join-Path $runningRepo '.cronstate\runs'
+            $runningOut  = Join-Path $runningRepo 'dashboard.md'
+            New-Item -Path $runningRuns -ItemType Directory -Force | Out-Null
+
+            $ts = [datetime]::UtcNow.AddMinutes(-2).ToUniversalTime().ToString('yyyyMMddTHHmmss')
+            $nonce = '{0:x4}' -f (Get-Random -Maximum 65535)
+            $dirName = "${ts}_running-agent_${nonce}"
+            $runDir = Join-Path $runningRuns $dirName
+            New-Item -Path $runDir -ItemType Directory -Force | Out-Null
+
+            # Write meta.json with null exitCode (as Initialize-RunMetadata does)
+            $meta = [ordered]@{
+                agentId           = 'running-agent'
+                agentName         = 'Running Agent'
+                prompt            = 'Do something long'
+                startTime         = [datetime]::UtcNow.AddMinutes(-2).ToString('yyyy-MM-ddTHH:mm:ss')
+                endTime           = $null
+                exitCode          = $null
+                timedOut          = $false
+                retryAttempt      = 0
+                feedbackProcessed = $false
+            }
+            $meta | ConvertTo-Json -Depth 10 | Set-Content -Path (Join-Path $runDir 'meta.json') -Encoding UTF8
+
+            # feedback stub
+            Set-Content -Path (Join-Path $runDir 'feedback.md') -Value "<!-- Feedback -->`n" -Encoding UTF8
+
+            & $script:DashboardScript -RepoRoot $runningRepo -RunsRoot $runningRuns -OutputPath $runningOut
+            $script:RunningDash = Get-Content -LiteralPath $runningOut -Raw -Encoding UTF8
+        }
+
+        It 'Shows Running status label' {
+            $script:RunningDash | Should -Match '\*\*Status:\*\* Running'
+        }
+
+        It 'Shows running icon in summary table' {
+            # 🔄 emoji (U+1F504)
+            $script:RunningDash | Should -Match ([char]0xD83D)
+        }
+
+        It 'Shows dash for duration when still running' {
+            $script:RunningDash | Should -Match '\*\*Duration:\*\* —'
+        }
+
+        It 'Shows agent name' {
+            $script:RunningDash | Should -Match 'Running Agent'
+        }
+    }
 }
