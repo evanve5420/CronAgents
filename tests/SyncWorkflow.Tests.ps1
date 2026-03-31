@@ -134,4 +134,30 @@ Describe 'Personal Repo Workflow — Agent Discovery' {
         $sharedAgent | Should -Not -BeNullOrEmpty
         $sharedAgent.Config.prompt | Should -Be 'Personal override of shared agent'
     }
+
+    It 'Infra agent with "agent" field resolves against infra repo, not personal repo' {
+        # Place a .agent.md in the infra repo only
+        $infraGhAgents = Join-Path $script:infraRepo '.github' 'agents'
+        New-Item -ItemType Directory -Path $infraGhAgents -Force | Out-Null
+        Set-Content -Path (Join-Path $infraGhAgents 'infra-review.agent.md') `
+            -Value '# Infra Review Agent' -Encoding UTF8
+
+        # Register an infra agent that references the .agent.md by name
+        $infraReg = [ordered]@{
+            name     = 'Infra Review'
+            agent    = 'infra-review'
+            schedule = [ordered]@{ type = 'daily'; time = '07:00' }
+            prompt   = 'Review infra'
+        }
+        $infraReg | ConvertTo-Json | Set-Content `
+            -Path (Join-Path $script:infraRepo '.cronagents' 'agents' 'infra-review.agent-registration.json') `
+            -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $script:infraRepo -PersonalRepoPath $script:personalRepo
+        $review = $agents | Where-Object { $_.Id -eq 'infra-review' }
+        $review | Should -Not -BeNullOrEmpty
+        # The AgentFilePath must resolve inside the infra repo, not be $null
+        $review.AgentFilePath | Should -Not -BeNullOrEmpty
+        $review.AgentFilePath | Should -BeLike "$($script:infraRepo)*"
+    }
 }

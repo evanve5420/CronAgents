@@ -243,7 +243,10 @@ function Resolve-AgentFilePath {
     if (Test-Path $copilotDefault) { return (Resolve-Path $copilotDefault).Path }
 
     # 4. Direct path (the reference itself may be a relative or absolute path)
-    if (Test-Path $AgentRef) { return (Resolve-Path $AgentRef).Path }
+    # Resolve relative paths from $RepoRoot, not the process CWD
+    $resolvedRef = if ([System.IO.Path]::IsPathRooted($AgentRef)) { $AgentRef }
+                   else { Join-Path $RepoRoot $AgentRef }
+    if (Test-Path $resolvedRef) { return (Resolve-Path $resolvedRef).Path }
 
     return $null
 }
@@ -382,25 +385,26 @@ function Get-AgentConfigs {
     [System.Collections.Generic.List[PSCustomObject]]$agents = @()
     [System.Collections.Generic.HashSet[string]]$seenIds = @()
 
-    # Collect scan directories — personal repo first, then infra repo fallback
-    [System.Collections.Generic.List[string]]$scanDirs = @()
+    # Collect scan directories — personal repo first, then infra repo fallback.
+    # Each entry tracks its own RepoRoot so agent file references resolve correctly.
+    [System.Collections.Generic.List[PSCustomObject]]$scanDirs = @()
 
     if ($PersonalRepoPath) {
         $personalAgentsDir = Join-Path $PersonalRepoPath '.cronagents' 'agents'
         if (Test-Path $personalAgentsDir) {
-            $scanDirs.Add($personalAgentsDir)
+            $scanDirs.Add([PSCustomObject]@{ Dir = $personalAgentsDir; RepoRoot = $PersonalRepoPath })
         }
     }
 
     $defaultDir = Join-Path $RepoRoot '.cronagents' 'agents'
     if (Test-Path $defaultDir) {
-        $scanDirs.Add($defaultDir)
+        $scanDirs.Add([PSCustomObject]@{ Dir = $defaultDir; RepoRoot = $RepoRoot })
     }
 
     if ($AdditionalPaths) {
         foreach ($p in $AdditionalPaths) {
             if (Test-Path $p) {
-                $scanDirs.Add($p)
+                $scanDirs.Add([PSCustomObject]@{ Dir = $p; RepoRoot = $RepoRoot })
             }
             else {
                 Write-CronAgentsLog -Level 'warn' -Message "Additional agent scan path does not exist: $p"
@@ -408,13 +412,10 @@ function Get-AgentConfigs {
         }
     }
 
-    # Determine the agent file resolution root — prefer personal repo
-    $agentRepoRoot = if ($PersonalRepoPath -and (Test-Path $PersonalRepoPath)) { $PersonalRepoPath } else { $RepoRoot }
-
-    foreach ($dir in $scanDirs) {
-        $registrationFiles = Get-ChildItem -LiteralPath $dir -Filter "*.agent-registration.json" -File -ErrorAction SilentlyContinue
+    foreach ($entry in $scanDirs) {
+        $registrationFiles = Get-ChildItem -LiteralPath $entry.Dir -Filter "*.agent-registration.json" -File -ErrorAction SilentlyContinue
         foreach ($file in $registrationFiles) {
-            $result = Import-SingleAgentConfig -FilePath $file.FullName -RepoRoot $agentRepoRoot
+            $result = Import-SingleAgentConfig -FilePath $file.FullName -RepoRoot $entry.RepoRoot
             if ($null -eq $result) { continue }
 
             if ($seenIds.Contains($result.Id)) {

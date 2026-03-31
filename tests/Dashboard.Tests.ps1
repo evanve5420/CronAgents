@@ -518,7 +518,7 @@ Describe 'Dashboard — HTTP Server' {
                 -Method Post -ErrorAction Stop
             $data.ok | Should -Be $true
 
-            $deadline = (Get-Date).AddSeconds(10)
+            $deadline = (Get-Date).AddSeconds(20)
             $newRunDir = $null
             while ((Get-Date) -lt $deadline -and -not $newRunDir) {
                 Start-Sleep -Milliseconds 250
@@ -531,6 +531,13 @@ Describe 'Dashboard — HTTP Server' {
                     $metaPath = Join-Path $newRunDir.FullName 'meta.json'
                     if (-not (Test-Path -LiteralPath $metaPath)) {
                         $newRunDir = $null
+                    }
+                    else {
+                        # Wait for the run to finish — exitCode is set by Write-RunMetadata
+                        $meta = Get-Content -LiteralPath $metaPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction SilentlyContinue
+                        if ($null -eq $meta -or $null -eq $meta.exitCode) {
+                            $newRunDir = $null
+                        }
                     }
                 }
             }

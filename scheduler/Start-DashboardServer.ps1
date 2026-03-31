@@ -40,6 +40,7 @@ $StateFile = Join-Path $PersonalRepoPath '.cronstate/state.json'
 $RunsRoot  = Join-Path $PersonalRepoPath '.cronstate/runs'
 $StateRoot = Join-Path $PersonalRepoPath '.cronstate'
 
+$InvokeScriptPath = Join-Path $PSScriptRoot 'Invoke-ScheduledAgent.ps1'
 $DashboardHtmlPath = Join-Path $PSScriptRoot 'dashboard.html'
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -441,8 +442,10 @@ function script:Invoke-Route {
             }
 
             # Fire and forget in a background job so we don't block the HTTP response
-            $invokeScript = Join-Path $RepoRoot 'scheduler/Invoke-ScheduledAgent.ps1'
-            $modulePath   = Join-Path $RepoRoot 'scheduler/lib/CronAgents.psd1'
+            # Use script-level paths (derived from $PSScriptRoot at load time) so they
+            # work even when $RepoRoot points at a personal-repo or test-env directory.
+            $invokeScript = $InvokeScriptPath
+            $modulePath   = $ModulePath
             $job = Start-Job -ScriptBlock {
                 param($script, $module, $configPath, $id, $rr, $prp, $rroot)
 
