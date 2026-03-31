@@ -250,12 +250,12 @@ If the agent fails or produces bad output, edit the `.agent.md` or prompt and ru
 
 ---
 
-## Using the agent-creator skill
+## Using the creating-agents skill
 
-The fastest way to create a new agent is the built-in `/agent-creator` skill. In a Copilot CLI session:
+The fastest way to create a new agent is the built-in `/creating-agents` skill. In a Copilot CLI session:
 
 ```
-/agent-creator
+/creating-agents
 ```
 
 The skill runs an interactive interview:
