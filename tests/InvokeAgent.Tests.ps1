@@ -203,3 +203,127 @@ Describe 'Invoke-ScheduledAgent — Exit Code and State' {
         $state.agents['test-agent'].runIfState.gitDirty.head | Should -Be 'abc1234deadbeef'
     }
 }
+
+Describe 'Invoke-ScheduledAgent — Single-Word CopilotPath (Issue #15 Bug 1)' {
+    <#
+        When copilotPath is a single token (e.g. 'copilot'), Split-CommandLine
+        returns a one-element array that PowerShell unwraps to a scalar. Under
+        Set-StrictMode -Version Latest the subsequent .Count access fails.
+        These tests verify the fix: the runner must work with single-word paths.
+    #>
+
+    BeforeEach {
+        $testEnv = New-TestEnvironment -Name 'SingleWordPath'
+    }
+    AfterEach {
+        Remove-TestEnvironment -TestEnv $testEnv
+    }
+
+    It 'Runs successfully with a single-word copilotPath' {
+        # Rewrite cronagents.json with a single-word copilotPath pointing to
+        # a wrapper whose absolute path is a single PowerShell token.
+        $mockCopilotPath = Join-Path $PSScriptRoot 'mocks' 'copilot.ps1'
+        $wrapperDir  = Join-Path $testEnv.Root '.mock-bin'
+        New-Item -ItemType Directory -Path $wrapperDir -Force | Out-Null
+        $wrapperPath = Join-Path $wrapperDir 'mock-copilot.cmd'
+
+        # Create a .cmd wrapper that delegates to the real mock via pwsh
+        Set-Content -Path $wrapperPath -Encoding UTF8 -Value @"
+@echo off
+pwsh -NoProfile -File "$mockCopilotPath" %*
+"@
+
+        # Overwrite config with the single-word path (no spaces, no flags)
+        $config = [ordered]@{
+            autoFeedback  = $false
+            maxRunHistory = 50
+            copilotPath   = $wrapperPath
+            retentionDays = 14
+            startupDelay  = '0'
+            logLevel      = 'debug'
+            quietHours    = $null
+            personalRepo  = [ordered]@{
+                path               = '~/.cronagents'
+                userName           = 'test-user'
+                autoCommitFeedback = $false
+            }
+        }
+        $config | ConvertTo-Json -Depth 5 | Set-Content -Path $testEnv.ConfigPath -Encoding UTF8
+
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'single-word-agent' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Prompt 'Verify single-word copilotPath works'
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'single-word-agent'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Be 0
+        $result.RunDirectory | Should -Not -BeNullOrEmpty
+        Test-Path (Join-Path $result.RunDirectory 'meta.json') | Should -BeTrue
+    }
+}
+
+Describe 'Invoke-ScheduledAgent — Failure Metadata (Issue #15 Bug 2)' {
+    <#
+        When the runner fails before Invoke-CopilotRun sets $startTime, the
+        catch block must still write meta.json with a valid StartTime rather
+        than propagating a null-to-DateTime conversion error.
+    #>
+
+    BeforeEach {
+        $testEnv = New-TestEnvironment -Name 'FailMeta'
+    }
+    AfterEach {
+        Remove-TestEnvironment -TestEnv $testEnv
+    }
+
+    It 'Writes meta.json with valid timestamps when run fails before execution' {
+        # Use a copilotPath that will cause an early failure during process start
+        $config = [ordered]@{
+            autoFeedback  = $false
+            maxRunHistory = 50
+            copilotPath   = '__nonexistent_binary_that_will_fail__'
+            retentionDays = 14
+            startupDelay  = '0'
+            logLevel      = 'debug'
+            quietHours    = $null
+            personalRepo  = [ordered]@{
+                path               = '~/.cronagents'
+                userName           = 'test-user'
+                autoCommitFeedback = $false
+            }
+        }
+        $config | ConvertTo-Json -Depth 5 | Set-Content -Path $testEnv.ConfigPath -Encoding UTF8
+
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'fail-meta-agent' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Prompt 'This should fail early'
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'fail-meta-agent'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Be -1
+
+        # The key assertion: meta.json must exist with valid timestamps
+        if ($result.RunDirectory -and (Test-Path $result.RunDirectory)) {
+            $metaPath = Join-Path $result.RunDirectory 'meta.json'
+            Test-Path $metaPath | Should -BeTrue
+            $meta = Get-Content $metaPath -Raw | ConvertFrom-Json
+            $meta.exitCode  | Should -Be -1
+            $meta.startTime | Should -Not -BeNullOrEmpty
+            $meta.endTime   | Should -Not -BeNullOrEmpty
+        }
+    }
+}
