@@ -408,7 +408,7 @@ try {
         -RetryAttempt $retryAttempt
 
     # ------------------------------------------------------------------
-    # Step 6b — Notify on failure (best-effort)
+    # Step 6b — Notify on failure or success (best-effort)
     # ------------------------------------------------------------------
     if ($exitCode -ne 0) {
         try {
@@ -419,6 +419,16 @@ try {
         }
         catch {
             Write-CronAgentsLog -Level 'warn' -Message "Failure notification error for '$AgentId': $_ — continuing."
+        }
+    }
+    else {
+        try {
+            Send-AgentSuccessNotification `
+                -AgentId $AgentId -AgentName $AgentConfig.name `
+                -GlobalConfig $GlobalConfig -AgentConfig $AgentConfig
+        }
+        catch {
+            Write-CronAgentsLog -Level 'warn' -Message "Success notification error for '$AgentId': $_ — continuing."
         }
     }
 

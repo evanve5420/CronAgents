@@ -20,9 +20,9 @@ Requirements captured in [UX-REQUIREMENTS.md](UX-REQUIREMENTS.md). Only worth do
 
 A config-level `editScope` per agent restricting which paths the evaluator can modify when processing feedback for that agent. Currently enforced only by the evaluator's prompt instructions ("cannot edit scheduler scripts"). A config allowlist (e.g., `"editScope": [".cronagents/agents/daily-review*"]`) lets the scheduler validate the evaluator's edits after the fact and reject out-of-scope changes before committing.
 
-### 4. Success Toasts
+### 4. Success Toasts ✅
 
-Per-agent `"notifyOnSuccess": true` for success toasts (e.g. confirming a critical daily agent completed). Not implemented yet — current design only notifies on failure.
+> **Implemented.** Per-agent `"notifyOnSuccess": true` (default `false`) for success toasts confirming a critical daily agent completed. Respects the global `notifications` toggle.
 
 ### 5. GitHub Remote for Personal Repo
 

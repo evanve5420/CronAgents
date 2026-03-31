@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
     Pester 5 tests for the Notifier module (Send-AgentFailureNotification,
-    Test-NotificationAvailable, Resolve-NotificationBackend).
+    Send-AgentSuccessNotification, Test-NotificationAvailable,
+    Resolve-NotificationBackend).
     All tests mock the notification backends to avoid actual toast popups.
 #>
 
@@ -16,10 +17,14 @@ BeforeAll {
     }
 
     function New-MockAgentConfig {
-        param([bool]$NotifyOnFailure = $false)
+        param(
+            [bool]$NotifyOnFailure = $false,
+            [bool]$NotifyOnSuccess = $false
+        )
         [PSCustomObject]@{
             name            = 'Test Agent'
             notifyOnFailure = $NotifyOnFailure
+            notifyOnSuccess = $NotifyOnSuccess
         }
     }
 }
@@ -239,6 +244,179 @@ Describe 'Send-AgentFailureNotification — timeout message' {
 }
 
 # ---------------------------------------------------------------------------
+Describe 'Send-AgentSuccessNotification — gating logic' {
+    BeforeEach {
+        InModuleScope CronAgents { $script:NotificationBackend = 'None' }
+    }
+    AfterEach {
+        InModuleScope CronAgents { $script:NotificationBackend = $null }
+    }
+
+    It 'Does nothing when global notifications = false' {
+        $global = New-MockGlobalConfig -Notifications $false
+        $agent  = New-MockAgentConfig  -NotifyOnSuccess $true
+
+        { Send-AgentSuccessNotification -AgentId 'test' -AgentName 'Test' `
+            -GlobalConfig $global -AgentConfig $agent } |
+            Should -Not -Throw
+    }
+
+    It 'Does nothing when per-agent notifyOnSuccess = false' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnSuccess $false
+
+        { Send-AgentSuccessNotification -AgentId 'test' -AgentName 'Test' `
+            -GlobalConfig $global -AgentConfig $agent } |
+            Should -Not -Throw
+    }
+
+    It 'Does nothing when notifyOnSuccess property is absent' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = [PSCustomObject]@{ name = 'Test Agent' }
+
+        { Send-AgentSuccessNotification -AgentId 'test' -AgentName 'Test' `
+            -GlobalConfig $global -AgentConfig $agent } |
+            Should -Not -Throw
+    }
+
+    It 'Proceeds past gates when both toggles are true (backend=None → silent)' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnSuccess $true
+
+        { Send-AgentSuccessNotification -AgentId 'test' -AgentName 'Test' `
+            -GlobalConfig $global -AgentConfig $agent } |
+            Should -Not -Throw
+    }
+}
+
+# ---------------------------------------------------------------------------
+Describe 'Send-AgentSuccessNotification — BurntToast mock' {
+    BeforeEach {
+        InModuleScope CronAgents { $script:NotificationBackend = 'BurntToast' }
+    }
+    AfterEach {
+        InModuleScope CronAgents { $script:NotificationBackend = $null }
+    }
+
+    It 'Calls Send-BurntToastNotification when backend is BurntToast' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnSuccess $true
+
+        Mock -ModuleName CronAgents Send-BurntToastNotification {}
+
+        Send-AgentSuccessNotification -AgentId 'bt-test' -AgentName 'BT Test' `
+            -GlobalConfig $global -AgentConfig $agent
+
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 1
+    }
+
+    It 'Falls back to native when BurntToast throws' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnSuccess $true
+
+        Mock -ModuleName CronAgents Send-BurntToastNotification { throw 'BurntToast unavailable' }
+        Mock -ModuleName CronAgents Send-NativeToastNotification {}
+
+        Send-AgentSuccessNotification -AgentId 'fb-test' -AgentName 'Fallback Test' `
+            -GlobalConfig $global -AgentConfig $agent
+
+        Should -Invoke -ModuleName CronAgents Send-BurntToastNotification -Times 1
+        Should -Invoke -ModuleName CronAgents Send-NativeToastNotification -Times 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+Describe 'Send-AgentSuccessNotification — Native mock' {
+    BeforeEach {
+        InModuleScope CronAgents { $script:NotificationBackend = 'Native' }
+    }
+    AfterEach {
+        InModuleScope CronAgents { $script:NotificationBackend = $null }
+    }
+
+    It 'Calls Send-NativeToastNotification when backend is Native' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnSuccess $true
+
+        Mock -ModuleName CronAgents Send-NativeToastNotification {}
+
+        Send-AgentSuccessNotification -AgentId 'native-test' -AgentName 'Native Test' `
+            -GlobalConfig $global -AgentConfig $agent
+
+        Should -Invoke -ModuleName CronAgents Send-NativeToastNotification -Times 1
+    }
+
+    It 'Silently degrades when native throws' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnSuccess $true
+
+        Mock -ModuleName CronAgents Send-NativeToastNotification { throw 'WinRT unavailable' }
+
+        { Send-AgentSuccessNotification -AgentId 'native-fail' -AgentName 'Native Fail' `
+            -GlobalConfig $global -AgentConfig $agent } |
+            Should -Not -Throw
+    }
+}
+
+# ---------------------------------------------------------------------------
+Describe 'Send-AgentSuccessNotification — message content' {
+    BeforeEach {
+        InModuleScope CronAgents { $script:NotificationBackend = 'BurntToast' }
+    }
+    AfterEach {
+        InModuleScope CronAgents { $script:NotificationBackend = $null }
+    }
+
+    It 'Includes "completed successfully" in the title' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnSuccess $true
+
+        $capturedTitle = $null
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body)
+            Set-Variable -Name capturedTitle -Value $Title -Scope 2
+        }
+
+        Send-AgentSuccessNotification -AgentId 'success-test' -AgentName 'Success Test' `
+            -GlobalConfig $global -AgentConfig $agent
+
+        $capturedTitle | Should -Match 'completed successfully'
+    }
+
+    It 'Includes agent name in the title' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnSuccess $true
+
+        $capturedTitle = $null
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body)
+            Set-Variable -Name capturedTitle -Value $Title -Scope 2
+        }
+
+        Send-AgentSuccessNotification -AgentId 'name-test' -AgentName 'My Agent' `
+            -GlobalConfig $global -AgentConfig $agent
+
+        $capturedTitle | Should -Match 'My Agent'
+    }
+
+    It 'Includes agent ID in the body' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnSuccess $true
+
+        $capturedBody = $null
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body)
+            Set-Variable -Name capturedBody -Value $Body -Scope 2
+        }
+
+        Send-AgentSuccessNotification -AgentId 'body-test' -AgentName 'Body Test' `
+            -GlobalConfig $global -AgentConfig $agent
+
+        $capturedBody | Should -Match 'body-test'
+    }
+}
+
+# ---------------------------------------------------------------------------
 Describe 'Send-SchedulerErrorNotification — gating logic' {
     BeforeEach {
         InModuleScope CronAgents {
@@ -363,6 +541,43 @@ Describe 'ConfigLoader — notifyOnFailure parsing' {
         $agents = Get-AgentConfigs -RepoRoot $testEnv.Root
         $agent = $agents | Where-Object { $_.Id -eq 'yes-notify' }
         $agent.Config.notifyOnFailure | Should -Be $true
+    }
+}
+
+# ---------------------------------------------------------------------------
+Describe 'ConfigLoader — notifyOnSuccess parsing' {
+    BeforeEach {
+        $testEnv = New-TestEnvironment -Name 'NotifierSuccessConfig'
+    }
+    AfterEach {
+        Remove-TestEnvironment -TestEnv $testEnv
+    }
+
+    It 'Defaults notifyOnSuccess to false when absent' {
+        $configContent = [ordered]@{
+            prompt   = 'Do something'
+            schedule = @{ type = 'daily'; time = '09:00' }
+        }
+        $filePath = Join-Path $testEnv.AgentsDir 'no-success-notify.agent-registration.json'
+        $configContent | ConvertTo-Json -Depth 5 | Out-File -FilePath $filePath -Encoding utf8
+
+        $agents = Get-AgentConfigs -RepoRoot $testEnv.Root
+        $agent = $agents | Where-Object { $_.Id -eq 'no-success-notify' }
+        $agent.Config.notifyOnSuccess | Should -Be $false
+    }
+
+    It 'Parses notifyOnSuccess = true' {
+        $configContent = [ordered]@{
+            prompt          = 'Do something'
+            schedule        = @{ type = 'daily'; time = '09:00' }
+            notifyOnSuccess = $true
+        }
+        $filePath = Join-Path $testEnv.AgentsDir 'yes-success-notify.agent-registration.json'
+        $configContent | ConvertTo-Json -Depth 5 | Out-File -FilePath $filePath -Encoding utf8
+
+        $agents = Get-AgentConfigs -RepoRoot $testEnv.Root
+        $agent = $agents | Where-Object { $_.Id -eq 'yes-success-notify' }
+        $agent.Config.notifyOnSuccess | Should -Be $true
     }
 }
 

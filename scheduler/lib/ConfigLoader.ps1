@@ -338,6 +338,8 @@ function Import-SingleAgentConfig {
         runIf         = $runIfDefinition
         notifyOnFailure = if ($parsed.PSObject.Properties['notifyOnFailure'] -and $null -ne $parsed.notifyOnFailure)
                           { [bool]$parsed.notifyOnFailure } else { $false }
+        notifyOnSuccess = if ($parsed.PSObject.Properties['notifyOnSuccess'] -and $null -ne $parsed.notifyOnSuccess)
+                          { [bool]$parsed.notifyOnSuccess } else { $false }
     }
 
     # Copy agent reference if present

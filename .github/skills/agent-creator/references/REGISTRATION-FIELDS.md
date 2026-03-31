@@ -80,6 +80,10 @@ Environment variables set for the agent process. String keys and values.
 
 Show a Windows toast notification when the agent fails or times out. Requires the global `notifications` setting to be `true` in `cronagents.json`.
 
+### `notifyOnSuccess` (boolean, default `false`)
+
+Show a Windows toast notification when the agent completes successfully. Requires the global `notifications` setting to be `true` in `cronagents.json`.
+
 ## Mode summary
 
 | | Agent mode | Prompt-only mode |
