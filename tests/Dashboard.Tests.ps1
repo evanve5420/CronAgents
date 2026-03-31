@@ -518,10 +518,13 @@ Describe 'Dashboard — HTTP Server' {
                 -Method Post -ErrorAction Stop
             $data.ok | Should -Be $true
 
-            $deadline = (Get-Date).AddSeconds(20)
+            # Poll for the run to complete. The background job chain is:
+            # dashboard Start-Job → agent runner Start-Job → copilot process → summarizer process
+            # On CI with parallel workers this can take significant time.
+            $deadline = (Get-Date).AddSeconds(45)
             $newRunDir = $null
             while ((Get-Date) -lt $deadline -and -not $newRunDir) {
-                Start-Sleep -Milliseconds 250
+                Start-Sleep -Milliseconds 500
                 $newRunDir = Get-ChildItem -LiteralPath $script:testEnv.RunsRoot -Directory -ErrorAction SilentlyContinue |
                     Where-Object { $_.Name -like '*http-working-dir*' } |
                     Sort-Object LastWriteTime -Descending |
@@ -548,10 +551,12 @@ Describe 'Dashboard — HTTP Server' {
                     Where-Object { $_.Name -like '*http-working-dir*' }
             ).Count | Should -BeGreaterThan $beforeRuns
 
+            # Mock invocations should already exist since the copilot finished before
+            # exitCode was written to meta.json. Give a generous window anyway.
             $invocations = @()
-            $deadline = (Get-Date).AddSeconds(5)
+            $deadline = (Get-Date).AddSeconds(10)
             while ((Get-Date) -lt $deadline -and $invocations.Count -eq 0) {
-                Start-Sleep -Milliseconds 250
+                Start-Sleep -Milliseconds 500
                 $invocations = @(Get-MockInvocations -LogPath $script:testEnv.MockLogPath |
                     Where-Object { $_.agent -eq 'http-working-dir' })
             }
