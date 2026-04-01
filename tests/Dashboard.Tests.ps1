@@ -89,6 +89,15 @@ Describe 'Dashboard — HTTP Server' {
         $null = New-TestAgentConfig -TestEnv $script:testEnv -AgentId 'http-agent' `
             -Schedule @{ type = 'daily'; time = '10:00' } `
             -Prompt 'HTTP test prompt' -Name 'HTTP Agent'
+        @{
+            name             = 'HTTP Working Dir Agent'
+            agent            = 'http-working-dir'
+            prompt           = 'HTTP working directory test prompt'
+            schedule         = @{ type = 'daily'; time = '11:00' }
+            workingDirectory = $script:testEnv.Root
+        } | ConvertTo-Json -Depth 5 | Set-Content `
+            -LiteralPath (Join-Path $script:testEnv.AgentsDir 'http-working-dir.agent-registration.json') `
+            -Encoding UTF8
 
         # Rewrite config to point personalRepo.path at the test root
         # so the server finds .cronstate/ in the temp directory
@@ -107,6 +116,10 @@ Describe 'Dashboard — HTTP Server' {
         # Create a multi-line summary to test excerpt vs full content
         Set-Content -LiteralPath (Join-Path $script:runDir 'summary.md') `
             -Value "# Run Summary`nDetailed line two`nLine three with more info" -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $script:runDir 'output.md') `
+            -Value "Primary output line`n`n---`n**stderr:**`nMock stderr line" -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $script:runDir 'scheduler.log') `
+            -Value "[2026-01-01T00:00:00Z] [ERROR] Mock scheduler failure detail" -Encoding UTF8
 
         # Save a pending question
         $qStateRoot = $script:testEnv.StatePath
@@ -278,6 +291,13 @@ Describe 'Dashboard — HTTP Server' {
             $data.summary | Should -Match 'Run Summary'
             $data.summary | Should -Match 'Detailed line two'
             $data.summary | Should -Match 'Line three with more info'
+        }
+
+        It 'Returns output, scheduler log, and run directory for run detail' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/$($script:runId)" -ErrorAction Stop
+            $data.runDirectory | Should -Be $script:runDir
+            $data.output | Should -Match 'Primary output line'
+            $data.schedulerLog | Should -Match 'Mock scheduler failure detail'
         }
 
         It 'Returns 404 for non-existent run' {
@@ -486,6 +506,63 @@ Describe 'Dashboard — HTTP Server' {
                 -Method Post -ErrorAction Stop
             $data.ok | Should -Be $true
             $data.message | Should -Match 'http-agent'
+        }
+
+        It 'Runs a working-directory agent through the dashboard job path' {
+            $beforeRuns = @(
+                Get-ChildItem -LiteralPath $script:testEnv.RunsRoot -Directory -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -like '*http-working-dir*' }
+            ).Count
+
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/run/http-working-dir" `
+                -Method Post -ErrorAction Stop
+            $data.ok | Should -Be $true
+
+            # Poll for the run to complete. The background job chain is:
+            # dashboard Start-Job → agent runner Start-Job → copilot process → summarizer process
+            # On CI with parallel workers this can take significant time.
+            $deadline = (Get-Date).AddSeconds(45)
+            $newRunDir = $null
+            while ((Get-Date) -lt $deadline -and -not $newRunDir) {
+                Start-Sleep -Milliseconds 500
+                $newRunDir = Get-ChildItem -LiteralPath $script:testEnv.RunsRoot -Directory -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -like '*http-working-dir*' } |
+                    Sort-Object LastWriteTime -Descending |
+                    Select-Object -First 1
+
+                if ($newRunDir) {
+                    $metaPath = Join-Path $newRunDir.FullName 'meta.json'
+                    if (-not (Test-Path -LiteralPath $metaPath)) {
+                        $newRunDir = $null
+                    }
+                    else {
+                        # Wait for the run to finish — exitCode is set by Write-RunMetadata
+                        $meta = Get-Content -LiteralPath $metaPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction SilentlyContinue
+                        if ($null -eq $meta -or $null -eq $meta.exitCode) {
+                            $newRunDir = $null
+                        }
+                    }
+                }
+            }
+
+            $newRunDir | Should -Not -BeNullOrEmpty
+            @(
+                Get-ChildItem -LiteralPath $script:testEnv.RunsRoot -Directory -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -like '*http-working-dir*' }
+            ).Count | Should -BeGreaterThan $beforeRuns
+
+            # Mock invocations should already exist since the copilot finished before
+            # exitCode was written to meta.json. Give a generous window anyway.
+            $invocations = @()
+            $deadline = (Get-Date).AddSeconds(10)
+            while ((Get-Date) -lt $deadline -and $invocations.Count -eq 0) {
+                Start-Sleep -Milliseconds 500
+                $invocations = @(Get-MockInvocations -LogPath $script:testEnv.MockLogPath |
+                    Where-Object { $_.agent -eq 'http-working-dir' })
+            }
+
+            $invocations.Count | Should -BeGreaterOrEqual 1
+            @($invocations[-1].addDir) | Should -Contain $script:testEnv.Root
         }
 
         It 'Returns 404 for unknown agent' {

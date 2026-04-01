@@ -168,10 +168,10 @@ function Test-AgentConfigs {
 # Check 4: State File
 # ===================================================================
 function Test-StateFile {
-    param([string]$RepoRoot)
+    param([string]$StateRoot)
 
     try {
-        $stateFile = Join-Path $RepoRoot '.cronstate\state.json'
+        $stateFile = Join-Path $StateRoot 'state.json'
 
         if (-not (Test-Path $stateFile)) {
             return New-CheckResult -Name 'State File' -Status 'Warn' `
@@ -252,13 +252,22 @@ function Test-BranchState {
         }
         catch { }
 
-        $branchPrefix = if ($config -and $config.versioning.branchPrefix) {
-            $config.versioning.branchPrefix
+        $versioningConfig = $null
+        if ($config -and $config.PSObject.Properties['versioning'] -and $null -ne $config.versioning) {
+            $versioningConfig = $config.versioning
+        }
+
+        $branchPrefix = if ($versioningConfig -and
+                            $versioningConfig.PSObject.Properties['branchPrefix'] -and
+                            $versioningConfig.branchPrefix) {
+            $versioningConfig.branchPrefix
         } else { 'agents' }
 
         $userName = $null
-        if ($config -and $config.versioning.userName) {
-            $userName = $config.versioning.userName
+        if ($versioningConfig -and
+            $versioningConfig.PSObject.Properties['userName'] -and
+            $versioningConfig.userName) {
+            $userName = $versioningConfig.userName
         }
 
         $branchInfo = Get-CronAgentsBranch -RepoRoot $RepoRoot -BranchPrefix $branchPrefix -UserName $userName
@@ -307,10 +316,13 @@ function Test-BranchState {
 # Check 7: Orphaned Runs
 # ===================================================================
 function Test-OrphanedRuns {
-    param([string]$RepoRoot)
+    param(
+        [string]$RepoRoot,
+        [string]$PersonalRepoPath,
+        [string]$RunsRoot
+    )
 
     try {
-        $runsRoot = Join-Path $RepoRoot '.cronstate\runs'
         if (-not (Test-Path $runsRoot)) {
             return New-CheckResult -Name 'Run Directories' -Status 'Pass' `
                 -Message 'No run directory yet'
@@ -321,7 +333,7 @@ function Test-OrphanedRuns {
             [System.StringComparer]::OrdinalIgnoreCase
         )
         try {
-            $agents = @(Get-AgentConfigs -RepoRoot $RepoRoot)
+            $agents = @(Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $PersonalRepoPath)
             foreach ($a in $agents) { [void]$knownIds.Add($a.Id) }
         }
         catch { }
@@ -402,13 +414,33 @@ function Test-NotificationBackend {
 
 $checks.Add((Test-TaskScheduler -TaskName $TaskName -TaskPath $TaskPath))
 $checks.Add((Test-GlobalConfig -RepoRoot $RepoRoot))
-try { $personalRepoConfigPath = (Import-CronAgentsConfig -ConfigPath (Join-Path $RepoRoot 'cronagents.json')).personalRepo.path } catch { $personalRepoConfigPath = $null }
-$personalRepoPath = Get-PersonalRepoPath -ConfigPath $personalRepoConfigPath
+
+$personalRepoPath = $null
+try {
+    $healthConfig = Import-CronAgentsConfig -ConfigPath (Join-Path $RepoRoot 'cronagents.json')
+    if ($healthConfig.PSObject.Properties['personalRepo'] -and
+        $null -ne $healthConfig.personalRepo -and
+        $healthConfig.personalRepo.PSObject.Properties['path'] -and
+        -not [string]::IsNullOrWhiteSpace($healthConfig.personalRepo.path)) {
+        $personalRepoPath = Get-PersonalRepoPath -ConfigPath $healthConfig.personalRepo.path
+    }
+}
+catch {
+    $personalRepoPath = $null
+}
+
+$stateRoot = if ($personalRepoPath) {
+    Join-Path $personalRepoPath '.cronstate'
+} else {
+    Join-Path $RepoRoot '.cronstate'
+}
+$runsRoot = Join-Path $stateRoot 'runs'
+
 $checks.Add((Test-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath))
-$checks.Add((Test-StateFile -RepoRoot $RepoRoot))
+$checks.Add((Test-StateFile -StateRoot $stateRoot))
 $checks.Add((Test-SchedulerProcess))
 $checks.Add((Test-BranchState -RepoRoot $RepoRoot))
-$checks.Add((Test-OrphanedRuns -RepoRoot $RepoRoot))
+$checks.Add((Test-OrphanedRuns -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath -RunsRoot $runsRoot))
 $checks.Add((Test-NotificationBackend -RepoRoot $RepoRoot))
 
 # ===================================================================

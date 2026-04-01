@@ -291,6 +291,7 @@ function switchTab(name) {
 function relativeTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
   const now = new Date();
   const diffMs = now - d;
   const diffMin = Math.floor(diffMs / 60000);
@@ -307,6 +308,7 @@ function relativeTime(iso) {
 function timeUntil(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
   const now = new Date();
   const diffMs = d - now;
   if (diffMs <= 0) return 'due now';
@@ -333,7 +335,11 @@ function formatDuration(meta) {
   if (!meta.startTime || !meta.endTime) return '—';
   const start = new Date(meta.startTime);
   const end   = new Date(meta.endTime);
-  const sec   = Math.floor((end - start) / 1000);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '—';
+  const diffMs = end - start;
+  if (diffMs < 0) return '—';
+  if (diffMs > 0 && diffMs < 1000) return '<1s';
+  const sec   = Math.floor(diffMs / 1000);
   if (sec < 60) return `${sec}s`;
   const min = Math.floor(sec / 60);
   const remSec = sec % 60;
@@ -342,8 +348,10 @@ function formatDuration(meta) {
   return `${hr}h ${min % 60}m`;
 }
 
-function statusBadge(meta) {
+function statusBadge(run) {
+  const meta = run?.meta;
   if (!meta) return '<span class="badge badge-muted">Unknown</span>';
+  if (run?.isIncomplete) return '<span class="badge badge-warn">⚠️ Incomplete</span>';
   if (meta.exitCode === null || meta.exitCode === undefined) return '<span class="badge badge-info">🔄 Running</span>';
   if (meta.timedOut) return '<span class="badge badge-warn">⏱️ Timed Out</span>';
   if (meta.exitCode === 75) return '<span class="badge badge-info">⏭️ Skipped</span>';
@@ -409,7 +417,9 @@ function renderRuns() {
   }
   tbody.innerHTML = runs.map(r => {
     let summaryCell = '<span style="color:var(--muted)">—</span>';
-    if (r.meta && (r.meta.exitCode === null || r.meta.exitCode === undefined)) {
+    if (r.isIncomplete) {
+      summaryCell = '<span style="color:var(--yellow);font-style:italic">run ended without final metadata</span>';
+    } else if (r.meta && (r.meta.exitCode === null || r.meta.exitCode === undefined)) {
       summaryCell = '<span style="color:var(--muted);font-style:italic">running…</span>';
     } else if (r.summary) {
       const text = r.summary.replace(/^#+\s*/, '');
@@ -422,7 +432,7 @@ function renderRuns() {
     <tr>
       <td>${esc(r.meta?.agentName || r.agentId)}</td>
       <td>${relativeTime(r.timestamp)}</td>
-      <td>${statusBadge(r.meta)}</td>
+      <td>${statusBadge(r)}</td>
       <td>${formatDuration(r.meta)}</td>
       <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${summaryCell}</td>
       <td>${feedbackBadge(r)}</td>
@@ -447,6 +457,12 @@ async function showRunDetail(runId) {
       html += `<p><strong>Agent:</strong> ${esc(detail.meta.agentName || detail.meta.agentId)}</p>`;
       html += `<p><strong>Exit Code:</strong> ${detail.meta.exitCode}</p>`;
       html += `<p><strong>Start:</strong> ${detail.meta.startTime || '—'} &nbsp; <strong>End:</strong> ${detail.meta.endTime || '—'}</p>`;
+      if (detail.runDirectory) {
+        html += `<p><strong>Run Directory:</strong> <code>${esc(detail.runDirectory)}</code></p>`;
+      }
+      if (detail.isIncomplete) {
+        html += `<p style="color:var(--yellow)"><strong>Note:</strong> This run produced output but never wrote final metadata. It likely ended or was interrupted during post-processing.</p>`;
+      }
       if (detail.meta.prompt) {
         html += `<details><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Prompt</summary><pre>${esc(detail.meta.prompt)}</pre></details>`;
       }
@@ -458,6 +474,14 @@ async function showRunDetail(runId) {
 
     if (detail.feedbackResult) {
       html += `<details><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Feedback Result</summary><pre>${esc(detail.feedbackResult)}</pre></details>`;
+    }
+
+    if (detail.output) {
+      html += `<details ${detail.meta && detail.meta.exitCode !== 0 ? 'open' : ''}><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Output</summary><pre>${esc(detail.output)}</pre></details>`;
+    }
+
+    if (detail.schedulerLog) {
+      html += `<details><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Scheduler Log</summary><pre>${esc(detail.schedulerLog)}</pre></details>`;
     }
 
     // Feedback form

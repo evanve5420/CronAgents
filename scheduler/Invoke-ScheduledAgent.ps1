@@ -160,8 +160,8 @@ function Invoke-CopilotRun {
 
     if ($didTimeout) {
         Write-CronAgentsLog -Level 'warn' -Message "Agent '$AgentId' timed out after ${TimeoutSeconds}s — killing process."
-        try { $proc.Kill($true) } catch { <# best-effort #> }
-        try { $proc.WaitForExit(5000) } catch { <# best-effort #> }
+        try { [void]$proc.Kill($true) } catch { <# best-effort #> }
+        try { [void]$proc.WaitForExit(5000) } catch { <# best-effort #> }
     }
 
     # Ensure async reads complete

@@ -15,6 +15,51 @@ param(
     [Parameter(ValueFromRemainingArguments)][string[]]$ExtraArgs
 )
 
+# --- Parse --key=value arguments from ExtraArgs ---
+# The real Copilot CLI accepts --key=value; PowerShell doesn't bind them to
+# named parameters, so they end up in $ExtraArgs. Extract the ones we care about.
+# Additionally, PowerShell splits Windows paths at the ':' (e.g. C:\Users → 'C'
+# and '\Users\...') when they appear inline with --key=, so we rejoin them.
+if ($ExtraArgs) {
+    # First pass: reassemble split Windows drive-letter paths.
+    # e.g. ('--add-dir=C', '\Users\path') → ('--add-dir=C:\Users\path')
+    $merged = [System.Collections.Generic.List[string]]::new()
+    for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+        $cur = $ExtraArgs[$i]
+        if ($i + 1 -lt $ExtraArgs.Count -and
+            $cur -match '^(--[a-z-]+=)[A-Za-z]$' -and
+            $ExtraArgs[$i + 1] -match '^\\') {
+            $merged.Add($cur + ':' + $ExtraArgs[$i + 1])
+            $i++   # skip next
+        } else {
+            $merged.Add($cur)
+        }
+    }
+
+    $remaining = [System.Collections.Generic.List[string]]::new()
+    $addDirs   = [System.Collections.Generic.List[string]]::new()
+    if ($AddDir) { $addDirs.Add($AddDir) }
+    for ($i = 0; $i -lt $merged.Count; $i++) {
+        $arg = $merged[$i]
+        if ($arg -match '^--agent=(.+)$' -and -not $Agent)        { $Agent     = $Matches[1] }
+        elseif ($arg -match '^--share=(.+)$' -and -not $Share)    { $Share     = $Matches[1] }
+        elseif ($arg -match '^--model=(.+)$' -and -not $Model)    { $Model     = $Matches[1] }
+        elseif ($arg -match '^--add-dir=(.+)$')                   { $addDirs.Add($Matches[1]) }
+        elseif ($arg -match '^--deny-tool=(.+)$')                 { $DenyTool  = @($DenyTool) + $Matches[1] }
+        elseif ($arg -eq '--allow-all-tools')                      { $AllowAllTools = [switch]$true }
+        elseif ($arg -eq '--allow-all')                            { <# scope flag, ignore #> }
+        elseif ($arg -eq '--silent')                               { $Silent = [switch]$true }
+        elseif ($arg -eq '--no-ask-user')                          { $NoAskUser = [switch]$true }
+        else { $remaining.Add($arg) }
+    }
+    $ExtraArgs = if ($remaining.Count) { $remaining.ToArray() } else { @() }
+    $addDirResolved = if ($addDirs.Count) {
+        $addDirs.ToArray()
+    } else {
+        @()
+    }
+}
+
 # --- Invocation logging ---
 $logPath = if ($env:CRONAGENTS_MOCK_LOG) { $env:CRONAGENTS_MOCK_LOG }
            else { Join-Path $PSScriptRoot 'mock-invocations.jsonl' }
@@ -29,7 +74,7 @@ $entry = [ordered]@{
     denyTool    = $DenyTool
     outputFormat = $OutputFormat
     allowAllTools = $AllowAllTools.IsPresent
-    addDir      = $AddDir
+    addDir      = if ($addDirResolved) { @($addDirResolved) } else { $AddDir }
     noAskUser   = $NoAskUser.IsPresent
     extraArgs   = $ExtraArgs
 }

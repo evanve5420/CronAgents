@@ -10,7 +10,8 @@ function New-TestEnvironment {
     .PARAMETER Name
         Test suite name used in the temp directory path.
     .OUTPUTS
-        PSCustomObject with Root, ConfigPath, StatePath, RunsRoot, AgentsDir, MockLogPath.
+        PSCustomObject with Root, ConfigPath, StatePath, RunsRoot, AgentsDir,
+        PersonalRepoRoot, and MockLogPath.
     #>
     [CmdletBinding()]
     param(
@@ -19,6 +20,7 @@ function New-TestEnvironment {
 
     $random = [System.IO.Path]::GetRandomFileName().Replace('.', '')
     $root = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-Test-$Name-$random"
+    $personalRepoRoot = Join-Path $root 'personal-repo'
 
     # Create directory structure
     $dirs = @(
@@ -27,6 +29,9 @@ function New-TestEnvironment {
         (Join-Path $root '.cronstate' 'runs')
         (Join-Path $root 'scheduler' 'lib')
         (Join-Path $root 'scheduler' 'agents')
+        (Join-Path $personalRepoRoot '.cronagents' 'agents')
+        (Join-Path $personalRepoRoot '.github' 'agents')
+        (Join-Path $personalRepoRoot '.cronstate' 'runs')
     )
     foreach ($d in $dirs) {
         New-Item -ItemType Directory -Path $d -Force | Out-Null
@@ -63,7 +68,7 @@ function New-TestEnvironment {
         quietHours     = $null
         versioning     = $null
         personalRepo   = [ordered]@{
-            path                    = '~/.cronagents'
+            path                    = $personalRepoRoot
             userName                = 'test-user'
             autoCommitFeedback      = $false
             defaultWorkingDirectory = $null
@@ -76,12 +81,13 @@ function New-TestEnvironment {
     $env:CRONAGENTS_MOCK_LOG = $mockLogPath
 
     [PSCustomObject]@{
-        Root        = $root
-        ConfigPath  = $configPath
-        StatePath   = Join-Path $root '.cronstate'
-        RunsRoot    = Join-Path $root '.cronstate' 'runs'
-        AgentsDir   = Join-Path $root '.cronagents' 'agents'
-        MockLogPath = $mockLogPath
+        Root            = $root
+        ConfigPath      = $configPath
+        StatePath       = Join-Path $root '.cronstate'
+        RunsRoot        = Join-Path $root '.cronstate' 'runs'
+        AgentsDir       = Join-Path $root '.cronagents' 'agents'
+        PersonalRepoRoot = $personalRepoRoot
+        MockLogPath     = $mockLogPath
     }
 }
 

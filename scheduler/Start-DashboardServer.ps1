@@ -40,9 +40,45 @@ $StateFile = Join-Path $PersonalRepoPath '.cronstate/state.json'
 $RunsRoot  = Join-Path $PersonalRepoPath '.cronstate/runs'
 $StateRoot = Join-Path $PersonalRepoPath '.cronstate'
 
+$InvokeScriptPath = Join-Path $PSScriptRoot 'Invoke-ScheduledAgent.ps1'
 $DashboardHtmlPath = Join-Path $PSScriptRoot 'dashboard.html'
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
+function script:Normalize-IsoTimestamp {
+    [OutputType([string])]
+    param($Value)
+
+    if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) {
+        return $null
+    }
+
+    if ($Value -is [datetimeoffset]) {
+        return $Value.ToUniversalTime().ToString('o')
+    }
+
+    if ($Value -is [datetime]) {
+        $dt = [datetime]$Value
+        if ($dt.Kind -eq [System.DateTimeKind]::Unspecified) {
+            $dt = [datetime]::SpecifyKind($dt, [System.DateTimeKind]::Utc)
+        }
+        return $dt.ToUniversalTime().ToString('o')
+    }
+
+    try {
+        $text = [string]$Value
+        if ($text -match 'Z$|[+\-]\d{2}:\d{2}$') {
+            $parsed = [datetimeoffset]::Parse($text, [System.Globalization.CultureInfo]::InvariantCulture)
+            return $parsed.ToUniversalTime().ToString('o')
+        }
+
+        $parsed = [datetime]::ParseExact($text, 'yyyy-MM-ddTHH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture)
+        return ([datetime]::SpecifyKind($parsed, [System.DateTimeKind]::Utc)).ToString('o')
+    }
+    catch {
+        return [string]$Value
+    }
+}
 
 function script:Get-AgentsList {
     [OutputType([object[]])]
@@ -106,7 +142,12 @@ function script:Get-StatusPayload {
 function script:Get-RunsPayload {
     [OutputType([object[]])]
     param([string]$AgentId)
-    $params = @{ RunsRoot = $RunsRoot; MaxResults = 50 }
+    $maxRunHistory = if ($GlobalConfig.PSObject.Properties['maxRunHistory'] -and $null -ne $GlobalConfig.maxRunHistory) {
+        [int]$GlobalConfig.maxRunHistory
+    } else {
+        50
+    }
+    $params = @{ RunsRoot = $RunsRoot; MaxResults = $maxRunHistory }
     if ($AgentId) { $params['AgentId'] = $AgentId }
     $runs = @(Get-RunHistory @params)
 
@@ -114,17 +155,23 @@ function script:Get-RunsPayload {
     foreach ($r in $runs) {
         $dirName = Split-Path $r.RunDirectory -Leaf
         $meta = $null
+        $hasOutput = Test-Path -LiteralPath (Join-Path $r.RunDirectory 'output.md')
+        $isIncomplete = $false
         if ($r.Meta) {
             $meta = [ordered]@{
                 agentId           = $r.Meta.agentId
                 agentName         = if ($r.Meta.PSObject.Properties['agentName']) { $r.Meta.agentName } else { $null }
                 prompt            = if ($r.Meta.PSObject.Properties['prompt']) { $r.Meta.prompt } else { $null }
-                startTime         = if ($r.Meta.PSObject.Properties['startTime']) { $r.Meta.startTime } else { $null }
-                endTime           = if ($r.Meta.PSObject.Properties['endTime']) { $r.Meta.endTime } else { $null }
+                startTime         = if ($r.Meta.PSObject.Properties['startTime']) { script:Normalize-IsoTimestamp -Value $r.Meta.startTime } else { $null }
+                endTime           = if ($r.Meta.PSObject.Properties['endTime']) { script:Normalize-IsoTimestamp -Value $r.Meta.endTime } else { $null }
                 exitCode          = if ($r.Meta.PSObject.Properties['exitCode']) { $r.Meta.exitCode } else { $null }
                 timedOut          = if ($r.Meta.PSObject.Properties['timedOut']) { $r.Meta.timedOut } else { $false }
                 retryAttempt      = if ($r.Meta.PSObject.Properties['retryAttempt']) { $r.Meta.retryAttempt } else { 0 }
                 feedbackProcessed = if ($r.Meta.PSObject.Properties['feedbackProcessed']) { $r.Meta.feedbackProcessed } else { $false }
+            }
+
+            if (($null -eq $meta.exitCode) -and [string]::IsNullOrEmpty($meta.endTime) -and $hasOutput) {
+                $isIncomplete = $true
             }
         }
 
@@ -141,8 +188,10 @@ function script:Get-RunsPayload {
         $result += [ordered]@{
             id                = $dirName
             agentId           = $r.AgentId
-            timestamp         = $r.Timestamp.ToString('o')
+            timestamp         = $r.Timestamp.ToUniversalTime().ToString('o')
             meta              = $meta
+            hasOutput         = $hasOutput
+            isIncomplete      = $isIncomplete
             hasFeedback       = $r.HasFeedback
             feedbackProcessed = $r.FeedbackProcessed
             hasSummary        = $r.HasSummary
@@ -195,10 +244,31 @@ function script:Get-RunDetailPayload {
         try { $meta = Get-Content -LiteralPath $metaPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
     }
 
+    $hasOutput = Test-Path -LiteralPath (Join-Path $runDir 'output.md')
+    $isIncomplete = $false
+    if ($meta -and
+        ($null -eq $meta.PSObject.Properties['exitCode'] -or $null -eq $meta.exitCode) -and
+        ($null -eq $meta.PSObject.Properties['endTime'] -or [string]::IsNullOrEmpty($meta.endTime)) -and
+        $hasOutput) {
+        $isIncomplete = $true
+    }
+
     $summary = $null
     $summaryPath = Join-Path $runDir 'summary.md'
     if (Test-Path -LiteralPath $summaryPath) {
         try { $summary = Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8 } catch { }
+    }
+
+    $output = $null
+    $outputPath = Join-Path $runDir 'output.md'
+    if (Test-Path -LiteralPath $outputPath) {
+        try { $output = Get-Content -LiteralPath $outputPath -Raw -Encoding UTF8 } catch { }
+    }
+
+    $schedulerLog = $null
+    $logPath = Join-Path $runDir 'scheduler.log'
+    if (Test-Path -LiteralPath $logPath) {
+        try { $schedulerLog = Get-Content -LiteralPath $logPath -Raw -Encoding UTF8 } catch { }
     }
 
     $feedback = $null
@@ -213,10 +283,24 @@ function script:Get-RunDetailPayload {
         try { $feedbackResult = Get-Content -LiteralPath $frPath -Raw -Encoding UTF8 } catch { }
     }
 
+    if ($meta) {
+        if ($meta.PSObject.Properties['startTime']) {
+            $meta.startTime = script:Normalize-IsoTimestamp -Value $meta.startTime
+        }
+        if ($meta.PSObject.Properties['endTime']) {
+            $meta.endTime = script:Normalize-IsoTimestamp -Value $meta.endTime
+        }
+    }
+
     return [ordered]@{
         id             = $RunId
+        runDirectory   = $runDir
         meta           = $meta
+        hasOutput      = $hasOutput
+        isIncomplete   = $isIncomplete
         summary        = $summary
+        output         = $output
+        schedulerLog   = $schedulerLog
         feedback       = $feedback
         feedbackResult = $feedbackResult
     }
@@ -356,19 +440,33 @@ function script:Invoke-Route {
         if ($method -eq 'POST' -and $path -match '^/api/run/(.+)$') {
             $agentId = $Matches[1]
             $agents  = @(Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $PersonalRepoPath)
-            $match   = $agents | Where-Object { $_.Id -eq $agentId }
+            $match   = $agents | Where-Object { $_.Id -eq $agentId } | Select-Object -First 1
             if (-not $match) {
                 script:Send-ErrorResponse -Response $response -Message "Unknown agent: $agentId" -StatusCode 404
                 return
             }
 
             # Fire and forget in a background job so we don't block the HTTP response
-            $invokeScript = Join-Path $RepoRoot 'scheduler/Invoke-ScheduledAgent.ps1'
+            # Use script-level paths (derived from $PSScriptRoot at load time) so they
+            # work even when $RepoRoot points at a personal-repo or test-env directory.
+            $invokeScript = $InvokeScriptPath
+            $modulePath   = $ModulePath
             $job = Start-Job -ScriptBlock {
-                param($script, $id, $cfg, $gcfg, $rr, $prp, $rroot)
-                & $script -AgentId $id -AgentConfig $cfg -GlobalConfig $gcfg `
+                param($script, $module, $configPath, $id, $rr, $prp, $rroot)
+
+                Import-Module $module -Force
+                $globalConfig = Import-CronAgentsConfig -ConfigPath $configPath
+                $agentConfig = @(Get-AgentConfigs -RepoRoot $rr -PersonalRepoPath $prp) |
+                    Where-Object { $_.Id -eq $id } |
+                    Select-Object -First 1
+
+                if (-not $agentConfig) {
+                    throw "Unknown agent in dashboard background job: $id"
+                }
+
+                & $script -AgentId $id -AgentConfig $agentConfig.Config -GlobalConfig $globalConfig `
                           -RepoRoot $rr -PersonalRepoPath $prp -RunsRoot $rroot
-            } -ArgumentList $invokeScript, $match.Id, $match.Config, $GlobalConfig, $RepoRoot, $PersonalRepoPath, $RunsRoot
+            } -ArgumentList $invokeScript, $modulePath, $ConfigPath, $match.Id, $RepoRoot, $PersonalRepoPath, $RunsRoot
             # Auto-cleanup: remove job once it completes
             Register-ObjectEvent -InputObject $job -EventName StateChanged -Action {
                 Remove-Job -Id $Sender.Id -Force -ErrorAction SilentlyContinue
