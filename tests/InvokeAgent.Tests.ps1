@@ -311,6 +311,43 @@ Describe 'Invoke-ScheduledAgent — Single-Word CopilotPath (Issue #15 Bug 1)' {
     }
 }
 
+Describe 'Invoke-ScheduledAgent — UTF-8 Output Capture' {
+    BeforeEach {
+        $testEnv = New-TestEnvironment -Name 'Utf8Capture'
+    }
+    AfterEach {
+        Remove-Item Env:\CRONAGENTS_MOCK_OUTPUT -ErrorAction SilentlyContinue
+        Remove-TestEnvironment -TestEnv $testEnv
+    }
+
+    It 'Captures smart punctuation without mojibake in output.md' {
+        $env:CRONAGENTS_MOCK_OUTPUT = "I’m checking UTF-8 — this shouldn’t turn into mojibake."
+
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'utf8-agent' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Prompt 'Verify UTF-8 output capture'
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'utf8-agent'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Be 0
+
+        $outputPath = Join-Path $result.RunDirectory 'output.md'
+        Test-Path $outputPath | Should -BeTrue
+
+        $content = Get-Content -LiteralPath $outputPath -Raw -Encoding UTF8
+        $content | Should -Match 'I.m checking UTF-8'
+        $content | Should -Not -Match 'ΓÇ'
+        $content | Should -Not -Match 'â'
+    }
+}
+
 Describe 'Invoke-ScheduledAgent — Failure Metadata (Issue #15 Bug 2)' {
     <#
         When the runner fails before Invoke-CopilotRun sets $startTime, the

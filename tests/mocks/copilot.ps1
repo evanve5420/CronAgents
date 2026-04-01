@@ -98,12 +98,16 @@ Status: completed
 }
 
 # --- Deterministic output ---
-$output = switch ($Agent) {
-    'run-summarizer' {
-        "✓ no changes"
-    }
-    'feedback-evaluator' {
-        @"
+if ($env:CRONAGENTS_MOCK_OUTPUT) {
+    $output = $env:CRONAGENTS_MOCK_OUTPUT
+}
+else {
+    $output = switch ($Agent) {
+        'run-summarizer' {
+            "✓ no changes"
+        }
+        'feedback-evaluator' {
+            @"
 ## Changes Made
 
 - No changes required.
@@ -112,10 +116,11 @@ $output = switch ($Agent) {
 
 Feedback acknowledged, no edits needed.
 "@
-    }
-    default {
-        $label = if ($Agent) { $Agent } else { 'prompt-only' }
-        "Mock agent output for: $label`n`nAll checks passed. No issues found."
+        }
+        default {
+            $label = if ($Agent) { $Agent } else { 'prompt-only' }
+            "Mock agent output for: $label`n`nAll checks passed. No issues found."
+        }
     }
 }
 
