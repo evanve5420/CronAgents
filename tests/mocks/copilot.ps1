@@ -98,8 +98,9 @@ Status: completed
 }
 
 # --- Deterministic output ---
-if ($env:CRONAGENTS_MOCK_OUTPUT) {
-    $output = $env:CRONAGENTS_MOCK_OUTPUT
+$mockOutputOverride = [System.Environment]::GetEnvironmentVariable('CRONAGENTS_MOCK_OUTPUT')
+if ($null -ne $mockOutputOverride) {
+    $output = $mockOutputOverride
 }
 else {
     $output = switch ($Agent) {
@@ -129,6 +130,7 @@ if ($OutputFormat -eq 'json') {
     $output = @{ output = $output; exitCode = 0; agent = $Agent } | ConvertTo-Json -Compress
 }
 
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Write-Output $output
 
 # --- Exit code ---

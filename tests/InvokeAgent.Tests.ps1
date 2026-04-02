@@ -321,7 +321,8 @@ Describe 'Invoke-ScheduledAgent — UTF-8 Output Capture' {
     }
 
     It 'Captures smart punctuation without mojibake in output.md' {
-        $env:CRONAGENTS_MOCK_OUTPUT = "I’m checking UTF-8 — this shouldn’t turn into mojibake."
+        $expectedOutput = "I’m checking UTF-8 — this shouldn’t turn into mojibake."
+        $env:CRONAGENTS_MOCK_OUTPUT = $expectedOutput
 
         $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'utf8-agent' `
             -Schedule @{ type = 'interval'; every = '1h' } `
@@ -342,7 +343,7 @@ Describe 'Invoke-ScheduledAgent — UTF-8 Output Capture' {
         Test-Path $outputPath | Should -BeTrue
 
         $content = Get-Content -LiteralPath $outputPath -Raw -Encoding UTF8
-        $content | Should -Match 'I.m checking UTF-8'
+        $content.Contains($expectedOutput) | Should -BeTrue
         $content | Should -Not -Match 'ΓÇ'
         $content | Should -Not -Match 'â'
     }
