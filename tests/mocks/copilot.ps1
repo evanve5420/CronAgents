@@ -98,12 +98,17 @@ Status: completed
 }
 
 # --- Deterministic output ---
-$output = switch ($Agent) {
-    'run-summarizer' {
-        "✓ no changes"
-    }
-    'feedback-evaluator' {
-        @"
+$mockOutputOverride = [System.Environment]::GetEnvironmentVariable('CRONAGENTS_MOCK_OUTPUT')
+if ($null -ne $mockOutputOverride) {
+    $output = $mockOutputOverride
+}
+else {
+    $output = switch ($Agent) {
+        'run-summarizer' {
+            "✓ no changes"
+        }
+        'feedback-evaluator' {
+            @"
 ## Changes Made
 
 - No changes required.
@@ -112,10 +117,11 @@ $output = switch ($Agent) {
 
 Feedback acknowledged, no edits needed.
 "@
-    }
-    default {
-        $label = if ($Agent) { $Agent } else { 'prompt-only' }
-        "Mock agent output for: $label`n`nAll checks passed. No issues found."
+        }
+        default {
+            $label = if ($Agent) { $Agent } else { 'prompt-only' }
+            "Mock agent output for: $label`n`nAll checks passed. No issues found."
+        }
     }
 }
 
@@ -124,6 +130,7 @@ if ($OutputFormat -eq 'json') {
     $output = @{ output = $output; exitCode = 0; agent = $Agent } | ConvertTo-Json -Compress
 }
 
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Write-Output $output
 
 # --- Exit code ---

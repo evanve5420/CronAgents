@@ -108,6 +108,9 @@ function New-CommandProcessStartInfo {
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.CreateNoWindow = $true
+    # Copilot CLI emits UTF-8; force redirected stream decoding to avoid mojibake on Windows.
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
 
     if ($commandParts.Count -gt 1) {
         foreach ($part in $commandParts[1..($commandParts.Count - 1)]) {
