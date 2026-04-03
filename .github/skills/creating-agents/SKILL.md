@@ -8,6 +8,20 @@ argument-hint: "Describe what the agent should do (e.g., 'review PRs every morni
 
 Create a CronAgents scheduled entry: either a custom agent (`.agent.md` + `.agent-registration.json`) or a prompt-only invocation (`.agent-registration.json` only).
 
+## Important — CronAgents agent profiles must be CLI-compatible
+
+CronAgents ultimately runs these agents via **GitHub Copilot CLI**, not VS Code chat.
+
+When you create or edit a `.agent.md` profile for CronAgents:
+
+- Use the official custom-agent `tools` format that Copilot CLI supports.
+- Prefer the CLI-safe aliases: `read`, `edit`, `search`, `execute`, `agent`.
+- You may also use namespaced MCP tools such as `github/*`, `playwright/*`, or `server-name/tool-name` when intentionally needed.
+- Compatible aliases include `shell`/`Bash`/`powershell` for `execute`, and `Grep`/`Glob` for `search`.
+- **Do not** emit VS Code-only tool names or chat-mode tool sets such as `editFiles`, `runCommands`, `runTasks`, `codebase`, `findTestFiles`, `usages`, `terminalLastCommand`, `terminalSelection`, `changes`, `problems`, `githubRepo`, or `vscodeAPI`.
+
+If Copilot generates a draft agent profile using VS Code-style tool names, rewrite the `tools:` list before saving it so the profile stays correct for CLI execution.
+
 ## Personal Repo Setup — Do This Before Creating Anything
 
 Agent definitions and registrations live in the user's **personal repo** (`~/.cronagents/`), not in the infra repo.
@@ -35,7 +49,7 @@ Skip anything already clear from context:
 1. **What should it do?**
 2. **Schedule** — daily at 9am, every 4h, weekly Monday, etc.
 3. **Agent or prompt-only?** — Prompt-only is simpler when no custom system instructions or tool scoping is needed. Agent mode when the task needs custom behavior, tool restrictions, or a system prompt.
-4. **What tools does it need?** — Scope to the **minimum required**. Start restrictive; the user can expand later. See [AGENT-PROFILE.md](references/AGENT-PROFILE.md) for common tool sets.
+4. **What tools does it need?** — Scope to the **minimum required** and express them in **CLI-compatible tool aliases**. Start restrictive; the user can expand later. See [AGENT-PROFILE.md](references/AGENT-PROFILE.md) for the approved tool format and common tool sets.
 5. **Model preference?**
 6. **Execution policies?** — timeout, skip on battery, retry on failure, `runIf` (see [RUNIF.md](references/RUNIF.md)), notify on failure (`notifyOnFailure`), notify on success (`notifyOnSuccess`)
 7. **Agent profile placement (agent mode only)** — personal repo `.github/agents/` (default) or user-global `~/.copilot/agents/`
@@ -55,7 +69,8 @@ Custom agent profile — see [AGENT-PROFILE.md](references/AGENT-PROFILE.md) for
 name: <agent-name>
 description: "<one-line description>"
 tools:
-  - <minimum tools needed>
+  - <CLI-compatible tool alias>
+  - <CLI-compatible tool alias>
 ---
 
 <System prompt>
@@ -95,10 +110,11 @@ Create in `~/.cronagents/.github/skills/<agent-name>/SKILL.md` if the agent need
 
 ## Validate
 
-- Agent mode: `.agent.md` lives in `~/.cronagents/.github/agents/` or `~/.copilot/agents/`, has explicit `tools` list (least-privilege), and `agent` in the registration matches the `.agent.md` name
+- Agent mode: `.agent.md` lives in `~/.cronagents/.github/agents/` or `~/.copilot/agents/`, has an explicit least-privilege `tools` list using **CLI-compatible aliases**, and `agent` in the registration matches the `.agent.md` file stem
 - Prompt-only: registration has `prompt` + `schedule`, no `agent` field, `denyTools` considered
 - Both: registration file is named `~/.cronagents/.cronagents/agents/<agent-id>.agent-registration.json`
 - Both: schedule type is `interval`/`daily`/`weekly`, test with `cronagents.ps1 run <agent-id>`
+- Both: if a generated `.agent.md` contains VS Code-only tool names, normalize them before finishing
 
 ## Agent Questions (Deferred Decisions)
 
