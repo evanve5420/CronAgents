@@ -244,14 +244,15 @@
   </div>
 </main>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script>
 // ── State ────────────────────────────────────────────────────────
 let state = { schedulerPaused: false, agents: [], timestamp: null };
 let runs = [];
 let questions = [];
-let knownQuestionIds = new Set();
+let knownQuestionKeys = new Set();
+let hasLoadedQuestions = false;
 let pollTimer = null;
 
 // ── API helpers ──────────────────────────────────────────────────
@@ -639,15 +640,17 @@ async function refreshRuns() {
 async function refreshQuestions() {
   try {
     questions = await api('GET', '/api/questions');
-    const currentIds = new Set(questions.map(q => q.id));
-    const newQuestions = questions.filter(q => !knownQuestionIds.has(q.id));
-    if (newQuestions.length > 0 && knownQuestionIds.size > 0) {
+    const toKey = q => `${q.agentId}:${q.id}`;
+    const currentKeys = new Set(questions.map(toKey));
+    const newQuestions = questions.filter(q => !knownQuestionKeys.has(toKey(q)));
+    if (newQuestions.length > 0 && hasLoadedQuestions) {
       const label = newQuestions.length === 1
         ? `New question from ${newQuestions[0].agentId}`
         : `${newQuestions.length} new questions pending`;
       showToast(`❓ ${label}`, 'info');
     }
-    knownQuestionIds = currentIds;
+    knownQuestionKeys = currentKeys;
+    hasLoadedQuestions = true;
     renderQuestions();
   } catch { }
 }
