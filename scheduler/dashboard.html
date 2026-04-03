@@ -467,7 +467,9 @@ function renderRuns() {
       <td>${feedbackBadge(r)}</td>
       <td>
         <button class="btn" data-action="showRunDetail" data-run-id="${esc(r.id)}">Details</button>
-        <button class="btn btn-red" data-action="deleteRun" data-run-id="${esc(r.id)}" title="Delete this run">🗑</button>
+        ${r.meta && (r.meta.exitCode === null || r.meta.exitCode === undefined) && !r.isIncomplete
+          ? `<button class="btn btn-red" disabled title="Cannot delete a running run">🗑</button>`
+          : `<button class="btn btn-red" data-action="deleteRun" data-run-id="${esc(r.id)}" aria-label="Delete run ${esc(r.id)}" title="Delete this run">🗑</button>`}
       </td>
     </tr>`;
   }).join('');
@@ -634,18 +636,55 @@ async function answerQuestionCustom(agentId, questionId) {
 function showConfirm(message) {
   return new Promise(resolve => {
     const container = document.getElementById('confirm-dialog');
+    const previouslyFocused = document.activeElement;
+
     container.innerHTML = `
       <div class="confirm-overlay">
-        <div class="confirm-box">
-          <p>${esc(message)}</p>
+        <div class="confirm-box" role="dialog" aria-modal="true" aria-label="Confirm delete" aria-describedby="confirm-message" tabindex="-1">
+          <p id="confirm-message">${esc(message)}</p>
           <div class="confirm-actions">
             <button class="btn" id="confirm-cancel">Cancel</button>
             <button class="btn btn-red" id="confirm-ok" style="background:var(--red);border-color:var(--red);color:#fff">Delete</button>
           </div>
         </div>
       </div>`;
-    document.getElementById('confirm-cancel').onclick = () => { container.innerHTML = ''; resolve(false); };
-    document.getElementById('confirm-ok').onclick = () => { container.innerHTML = ''; resolve(true); };
+
+    const cancelBtn = document.getElementById('confirm-cancel');
+    const okBtn = document.getElementById('confirm-ok');
+    const dialog = container.querySelector('[role="dialog"]');
+
+    function closeDialog(result) {
+      document.removeEventListener('keydown', handleKeydown, true);
+      container.innerHTML = '';
+      if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+        previouslyFocused.focus();
+      }
+      resolve(result);
+    }
+
+    function handleKeydown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeDialog(false);
+        return;
+      }
+      if (event.key === 'Tab') {
+        const focusable = [cancelBtn, okBtn];
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault(); last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault(); first.focus();
+        } else if (!dialog.contains(document.activeElement)) {
+          event.preventDefault(); first.focus();
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeydown, true);
+    cancelBtn.onclick = () => closeDialog(false);
+    okBtn.onclick = () => closeDialog(true);
+    cancelBtn.focus();
   });
 }
 
@@ -667,17 +706,6 @@ async function clearAllRuns() {
   try {
     const res = await api('DELETE', '/api/runs');
     showToast(res.message || 'All runs cleared');
-    document.getElementById('run-detail').style.display = 'none';
-    await refreshRuns();
-  } catch (err) { showToast(err.message, 'error'); }
-}
-
-async function clearAgentRuns(agentId) {
-  const ok = await showConfirm(`Delete all runs for agent '${agentId}'?`);
-  if (!ok) return;
-  try {
-    const res = await api('DELETE', `/api/runs?agent=${encodeURIComponent(agentId)}`);
-    showToast(res.message || 'Agent runs cleared');
     document.getElementById('run-detail').style.display = 'none';
     await refreshRuns();
   } catch (err) { showToast(err.message, 'error'); }
@@ -754,7 +782,6 @@ document.addEventListener('click', (e) => {
     case 'answerQuestionCustom': answerQuestionCustom(agentId, questionId); break;
     case 'deleteRun':         deleteRun(runId); break;
     case 'clearAllRuns':      clearAllRuns(); break;
-    case 'clearAgentRuns':    clearAgentRuns(agentId); break;
   }
 });
 

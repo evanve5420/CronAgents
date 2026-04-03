@@ -309,6 +309,21 @@ function Clear-RunHistory {
         }
     }
 
+    # Helper: returns $true when meta.json indicates the run is still active
+    $isRunActive = {
+        param([string]$Dir)
+        $metaPath = Join-Path $Dir 'meta.json'
+        if (-not (Test-Path -LiteralPath $metaPath)) { return $false }
+        try {
+            $meta = Get-Content -LiteralPath $metaPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            # A run is active when it has no final exitCode and no endTime
+            $noExit = ($null -eq $meta.PSObject.Properties['exitCode']) -or ($null -eq $meta.exitCode)
+            $noEnd  = ($null -eq $meta.PSObject.Properties['endTime'])  -or [string]::IsNullOrEmpty($meta.endTime)
+            return ($noExit -and $noEnd)
+        }
+        catch { return $false }
+    }
+
     # ── Single run ──────────────────────────────────────────────
     if ($RunId) {
         # Validate run ID format (same pattern as Test-SafeRunId)
@@ -328,14 +343,21 @@ function Clear-RunHistory {
         }
 
         if (Test-Path -LiteralPath $runDir) {
-            try {
-                Remove-Item -LiteralPath $runDir -Recurse -Force
-                $deleted++
-                Write-CronAgentsLog -Level 'info' -Message "Cleared run: $RunId"
+            if (& $isRunActive $runDir) {
+                Write-CronAgentsLog -Level 'info' -Message "Skipping active run: $RunId"
+                $errors.Add("Run '$RunId' is still active and cannot be deleted.")
+                $skipped++
             }
-            catch {
-                $errors.Add("Failed to delete $RunId`: $_")
-                Write-CronAgentsLog -Level 'warn' -Message "Failed to delete run $RunId`: $_"
+            else {
+                try {
+                    Remove-Item -LiteralPath $runDir -Recurse -Force
+                    $deleted++
+                    Write-CronAgentsLog -Level 'info' -Message "Cleared run: $RunId"
+                }
+                catch {
+                    $errors.Add("Failed to delete $RunId`: $_")
+                    Write-CronAgentsLog -Level 'warn' -Message "Failed to delete run $RunId`: $_"
+                }
             }
         }
         else {
@@ -345,10 +367,16 @@ function Clear-RunHistory {
 
     # ── Agent runs ──────────────────────────────────────────────
     elseif ($AgentId) {
+        $escapedAgentId = [regex]::Escape($AgentId)
         $dirs = Get-ChildItem -LiteralPath $RunsRoot -Directory |
-            Where-Object { $_.Name -match "^(\d{8}T\d{6})_${AgentId}_([0-9a-f]{4})$" }
+            Where-Object { $_.Name -match "^(\d{8}T\d{6})_${escapedAgentId}_([0-9a-f]{4})$" }
 
         foreach ($dir in $dirs) {
+            if (& $isRunActive $dir.FullName) {
+                Write-CronAgentsLog -Level 'info' -Message "Skipping active run: $($dir.Name)"
+                $skipped++
+                continue
+            }
             try {
                 Remove-Item -LiteralPath $dir.FullName -Recurse -Force
                 $deleted++
@@ -367,6 +395,11 @@ function Clear-RunHistory {
             Where-Object { $_.Name -match '^(\d{8}T\d{6})_(.+)_([0-9a-f]{4})$' }
 
         foreach ($dir in $dirs) {
+            if (& $isRunActive $dir.FullName) {
+                Write-CronAgentsLog -Level 'info' -Message "Skipping active run: $($dir.Name)"
+                $skipped++
+                continue
+            }
             try {
                 Remove-Item -LiteralPath $dir.FullName -Recurse -Force
                 $deleted++

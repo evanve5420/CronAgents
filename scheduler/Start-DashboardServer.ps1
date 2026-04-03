@@ -602,18 +602,36 @@ function script:Invoke-Route {
                     return
                 }
                 $result = Clear-RunHistory -RunsRoot $RunsRoot -AgentId $agentFilter
-                script:Send-JsonResponse -Response $response -Body ([ordered]@{
-                    ok      = $true
-                    message = "Cleared $($result.DeletedCount) run(s) for agent '$agentFilter'"
-                    deleted = $result.DeletedCount
-                })
             }
             else {
                 $result = Clear-RunHistory -RunsRoot $RunsRoot -All
+            }
+
+            $label = if ($agentFilter) { " for agent '$agentFilter'" } else { '' }
+            if ($result.Errors.Count -gt 0 -and $result.DeletedCount -eq 0) {
+                script:Send-JsonResponse -Response $response -Body ([ordered]@{
+                    ok      = $false
+                    message = "Failed to clear runs$label"
+                    deleted = 0
+                    skipped = $result.SkippedCount
+                    errors  = $result.Errors
+                }) -StatusCode 500
+            }
+            elseif ($result.Errors.Count -gt 0) {
                 script:Send-JsonResponse -Response $response -Body ([ordered]@{
                     ok      = $true
-                    message = "Cleared $($result.DeletedCount) run(s)"
+                    message = "Cleared $($result.DeletedCount) run(s)$label (some failed)"
                     deleted = $result.DeletedCount
+                    skipped = $result.SkippedCount
+                    errors  = $result.Errors
+                })
+            }
+            else {
+                script:Send-JsonResponse -Response $response -Body ([ordered]@{
+                    ok      = $true
+                    message = "Cleared $($result.DeletedCount) run(s)$label"
+                    deleted = $result.DeletedCount
+                    skipped = $result.SkippedCount
                 })
             }
             return
@@ -635,11 +653,23 @@ function script:Invoke-Route {
             }
 
             $result = Clear-RunHistory -RunsRoot $RunsRoot -RunId $runId
-            script:Send-JsonResponse -Response $response -Body ([ordered]@{
-                ok      = $true
-                message = "Deleted run '$runId'"
-                deleted = $result.DeletedCount
-            })
+            if ($result.Errors.Count -gt 0) {
+                script:Send-JsonResponse -Response $response -Body ([ordered]@{
+                    ok      = $false
+                    message = $result.Errors[0]
+                    deleted = $result.DeletedCount
+                }) -StatusCode 409
+            }
+            elseif ($result.DeletedCount -eq 0) {
+                script:Send-ErrorResponse -Response $response -Message 'Run could not be deleted' -StatusCode 409
+            }
+            else {
+                script:Send-JsonResponse -Response $response -Body ([ordered]@{
+                    ok      = $true
+                    message = "Deleted run '$runId'"
+                    deleted = $result.DeletedCount
+                })
+            }
             return
         }
 

@@ -14,7 +14,8 @@ BeforeAll {
             [string]$RunsRoot,
             [string]$AgentId,
             [datetime]$Timestamp,
-            [string]$Nonce = 'abcd'
+            [string]$Nonce = 'abcd',
+            [switch]$Active
         )
         $ts   = $Timestamp.ToString('yyyyMMddTHHmmss')
         $name = "${ts}_${AgentId}_${Nonce}"
@@ -26,8 +27,8 @@ BeforeAll {
             agentName         = $AgentId
             prompt            = 'test'
             startTime         = $Timestamp.ToString('yyyy-MM-ddTHH:mm:ss')
-            endTime           = $Timestamp.AddMinutes(5).ToString('yyyy-MM-ddTHH:mm:ss')
-            exitCode          = 0
+            endTime           = if ($Active) { $null } else { $Timestamp.AddMinutes(5).ToString('yyyy-MM-ddTHH:mm:ss') }
+            exitCode          = if ($Active) { $null } else { 0 }
             timedOut          = $false
             retryAttempt      = 0
             feedbackProcessed = $false
@@ -168,6 +169,76 @@ Describe 'Clear-RunHistory' {
             Test-Path $dir | Should -Be $false
             Test-Path (Join-Path $testEnv.RunsRoot 'random-dir') | Should -Be $true
             $result.DeletedCount | Should -Be 1
+        }
+    }
+
+    Context 'Active run protection' {
+        It 'Refuses to delete a single active run by RunId' {
+            $ts = [datetime]::UtcNow.AddMinutes(-5)
+            $dir = New-FakeRunDir -RunsRoot $testEnv.RunsRoot -AgentId 'agent-a' -Timestamp $ts -Active
+            $runId = Split-Path $dir -Leaf
+
+            $result = Clear-RunHistory -RunsRoot $testEnv.RunsRoot -RunId $runId
+
+            Test-Path $dir | Should -Be $true
+            $result.DeletedCount | Should -Be 0
+            $result.SkippedCount | Should -Be 1
+            $result.Errors.Count | Should -Be 1
+            $result.Errors[0] | Should -BeLike '*still active*'
+        }
+
+        It 'Skips active runs when clearing by AgentId' {
+            $ts1 = [datetime]::UtcNow.AddHours(-2)
+            $ts2 = [datetime]::UtcNow.AddMinutes(-5)
+            $finishedDir = New-FakeRunDir -RunsRoot $testEnv.RunsRoot -AgentId 'agent-a' -Timestamp $ts1 -Nonce 'aa01'
+            $activeDir   = New-FakeRunDir -RunsRoot $testEnv.RunsRoot -AgentId 'agent-a' -Timestamp $ts2 -Nonce 'aa02' -Active
+
+            $result = Clear-RunHistory -RunsRoot $testEnv.RunsRoot -AgentId 'agent-a'
+
+            Test-Path $finishedDir | Should -Be $false
+            Test-Path $activeDir | Should -Be $true
+            $result.DeletedCount | Should -Be 1
+            $result.SkippedCount | Should -Be 1
+        }
+
+        It 'Skips active runs when clearing all' {
+            $ts1 = [datetime]::UtcNow.AddHours(-1)
+            $ts2 = [datetime]::UtcNow.AddMinutes(-2)
+            $finishedDir = New-FakeRunDir -RunsRoot $testEnv.RunsRoot -AgentId 'agent-a' -Timestamp $ts1 -Nonce 'aa01'
+            $activeDir   = New-FakeRunDir -RunsRoot $testEnv.RunsRoot -AgentId 'agent-b' -Timestamp $ts2 -Nonce 'bb01' -Active
+
+            $result = Clear-RunHistory -RunsRoot $testEnv.RunsRoot -All
+
+            Test-Path $finishedDir | Should -Be $false
+            Test-Path $activeDir | Should -Be $true
+            $result.DeletedCount | Should -Be 1
+            $result.SkippedCount | Should -Be 1
+        }
+    }
+
+    Context 'Regex safety for AgentId' {
+        It 'Does not match other agents when AgentId contains dots' {
+            $ts = [datetime]::UtcNow.AddHours(-1)
+            $dirDotted = New-FakeRunDir -RunsRoot $testEnv.RunsRoot -AgentId 'foo.bar' -Timestamp $ts -Nonce 'aa01'
+            $dirSimilar = New-FakeRunDir -RunsRoot $testEnv.RunsRoot -AgentId 'fooXbar' -Timestamp $ts -Nonce 'bb01'
+
+            $result = Clear-RunHistory -RunsRoot $testEnv.RunsRoot -AgentId 'foo.bar'
+
+            Test-Path $dirDotted | Should -Be $false
+            Test-Path $dirSimilar | Should -Be $true
+            $result.DeletedCount | Should -Be 1
+        }
+
+        It 'Does not match other agents when AgentId contains regex metacharacters' {
+            $ts = [datetime]::UtcNow.AddHours(-1)
+            # Agent ID with a dot that regex would treat as wildcard
+            $target = New-FakeRunDir -RunsRoot $testEnv.RunsRoot -AgentId 'my.agent' -Timestamp $ts -Nonce 'aa01'
+            $bystander = New-FakeRunDir -RunsRoot $testEnv.RunsRoot -AgentId 'myXagent' -Timestamp $ts -Nonce 'bb01'
+
+            Clear-RunHistory -RunsRoot $testEnv.RunsRoot -AgentId 'my.agent'
+
+            Test-Path $target | Should -Be $false
+            Test-Path $bystander | Should -Be $true
         }
     }
 }
