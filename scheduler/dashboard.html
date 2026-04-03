@@ -159,6 +159,14 @@
   }
   .tab:hover { color: var(--text); }
   .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab.has-questions { color: var(--yellow); }
+  .tab.has-questions.active { color: var(--yellow); border-bottom-color: var(--yellow); }
+  #question-badge {
+    display: inline-block; background: var(--yellow); color: var(--bg);
+    font-size: 0.65rem; font-weight: 700; padding: 0 5px; border-radius: 8px;
+    min-width: 14px; text-align: center; line-height: 16px; vertical-align: middle;
+  }
+  #question-badge:empty { display: none; }
   .tab-content { display: none; }
   .tab-content.active { display: block; }
 
@@ -505,7 +513,9 @@ function renderQuestions() {
   const container = document.getElementById('questions-list');
   const badge = document.getElementById('question-badge');
 
-  badge.textContent = questions.length > 0 ? `(${questions.length})` : '';
+  badge.textContent = questions.length > 0 ? questions.length : '';
+  const questionsTab = document.querySelector('[data-tab="questions"]');
+  questionsTab.classList.toggle('has-questions', questions.length > 0);
 
   if (questions.length === 0) {
     container.innerHTML = '<div class="empty-state">No pending questions</div>';
