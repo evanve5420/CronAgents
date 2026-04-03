@@ -275,6 +275,38 @@ function Get-RunHistory {
 }
 
 # -------------------------------------------------------------------
+# Test-SafeRunId — validate a run ID and resolve its directory path
+# -------------------------------------------------------------------
+function Test-SafeRunId {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RunId,
+
+        [Parameter(Mandatory)]
+        [string]$RunsRoot
+    )
+
+    # Strict format: 20240101T123456_<safe-name>_1a2b
+    if ($RunId -notmatch '^[0-9]{8}T[0-9]{6}_[A-Za-z0-9._-]+_[0-9a-f]{4}$') {
+        return $null
+    }
+    # Must not contain directory separators or traversal segments
+    if ($RunId -ne [System.IO.Path]::GetFileName($RunId)) {
+        return $null
+    }
+    $runsRootFull = [System.IO.Path]::GetFullPath($RunsRoot)
+    $runDir = [System.IO.Path]::GetFullPath((Join-Path $RunsRoot $RunId))
+    # Ensure resolved path stays under runs root
+    $prefix = $runsRootFull.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $runDir.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $null
+    }
+    return $runDir
+}
+
+# -------------------------------------------------------------------
 # Clear-RunHistory
 # -------------------------------------------------------------------
 function Clear-RunHistory {
@@ -326,19 +358,8 @@ function Clear-RunHistory {
 
     # ── Single run ──────────────────────────────────────────────
     if ($RunId) {
-        # Validate run ID format (same pattern as Test-SafeRunId)
-        if ($RunId -notmatch '^[0-9]{8}T[0-9]{6}_[A-Za-z0-9._-]+_[0-9a-f]{4}$') {
-            throw "Invalid run ID format: $RunId"
-        }
-        if ($RunId -ne [System.IO.Path]::GetFileName($RunId)) {
-            throw "Invalid run ID format: $RunId"
-        }
-
-        $runDir = Join-Path $RunsRoot $RunId
-        $runsRootFull = [System.IO.Path]::GetFullPath($RunsRoot)
-        $runDirFull   = [System.IO.Path]::GetFullPath($runDir)
-        $prefix       = $runsRootFull.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-        if (-not $runDirFull.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $runDir = Test-SafeRunId -RunId $RunId -RunsRoot $RunsRoot
+        if (-not $runDir) {
             throw "Invalid run ID format: $RunId"
         }
 

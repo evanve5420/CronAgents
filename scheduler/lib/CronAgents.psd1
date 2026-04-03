@@ -49,6 +49,7 @@
         'Get-RunHistory',
         'Clear-RunHistory',
         'Test-FeedbackPresent',
+        'Test-SafeRunId',
         # PersonalRepo
         'ConvertTo-Slug',
         'Resolve-GitHubHandle',
