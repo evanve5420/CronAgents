@@ -85,7 +85,9 @@
         'Test-AgentHasPendingQuestions',
         'Write-AnswersFile',
         # CopilotHome
+        'Initialize-RunCopilotHome',
         'Initialize-SchedulerCopilotHome',
+        'Clear-CopilotDaemonState',
         'Get-CopilotAuthToken'
     )
     CmdletsToExport   = @()
