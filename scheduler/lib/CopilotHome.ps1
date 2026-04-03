@@ -1,27 +1,67 @@
 <#
 .SYNOPSIS
-    Manages an isolated Copilot CLI home directory for scheduled agent runs.
+    Manages isolated Copilot CLI home directories for scheduled agent runs.
 
 .DESCRIPTION
-    When the Copilot CLI shares COPILOT_HOME with an active VS Code session,
-    it auto-connects to the IDE's MCP server and may hang indefinitely during
-    initialization (the daemon is shared and can deadlock under contention).
+    The Copilot CLI uses a long-lived daemon process keyed by COPILOT_HOME.
+    When the scheduler shares COPILOT_HOME with an active VS Code session (or
+    a previous timed-out run), the new process connects to the stale/busy
+    daemon and hangs indefinitely.
 
-    This module creates a separate COPILOT_HOME for scheduled runs with
-    ide.auto_connect disabled, giving each scheduled agent process its own
-    daemon and eliminating contention with interactive sessions.
+    This module creates a **unique COPILOT_HOME per run** inside the run
+    directory, guaranteeing a fresh daemon every time with zero contention.
+    It also writes an empty MCP server config so unattended runs don't
+    spawn heavyweight MCP server processes.
 #>
 
-function Initialize-SchedulerCopilotHome {
+function Initialize-RunCopilotHome {
     <#
     .SYNOPSIS
-        Ensures the scheduler's isolated Copilot CLI home directory exists
-        with the necessary configuration and credentials.
-    .PARAMETER StateRoot
-        The scheduler state root directory (e.g., ~/.cronagents/.cronstate).
+        Creates a fresh, isolated COPILOT_HOME directory for a single agent
+        run so it gets its own daemon with no stale-process contention.
+    .PARAMETER RunDirectory
+        The run-specific directory (e.g., ~/.cronagents/.cronstate/runs/<runId>).
     .OUTPUTS
-        The full path to the scheduler's copilot home directory.
+        The full path to the per-run copilot home directory.
     #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RunDirectory
+    )
+
+    $copilotHome = Join-Path $RunDirectory 'copilot-home'
+    New-Item -Path $copilotHome -ItemType Directory -Force | Out-Null
+
+    # config.json — disable IDE auto-connect, banners, and auto-update
+    $config = @{
+        'ide.auto_connect' = $false
+        'banner'           = 'never'
+        'autoUpdate'       = $false
+    }
+    $configJson = $config | ConvertTo-Json -Depth 5
+    [System.IO.File]::WriteAllText(
+        (Join-Path $copilotHome 'config.json'),
+        $configJson,
+        [System.Text.Encoding]::UTF8
+    )
+
+    # mcp-config.json — empty; agents use built-in tools only.
+    # Agents needing specific MCP servers can opt in via extraCliFlags.
+    [System.IO.File]::WriteAllText(
+        (Join-Path $copilotHome 'mcp-config.json'),
+        '{"mcpServers": {}}',
+        [System.Text.Encoding]::UTF8
+    )
+
+    Write-CronAgentsLog -Level 'debug' -Message "Created per-run copilot home: $copilotHome"
+    return $copilotHome
+}
+
+# Keep the old name as a wrapper so existing callers don't break during
+# the transition.  The shared copilot-home approach is deprecated.
+function Initialize-SchedulerCopilotHome {
     [CmdletBinding()]
     [OutputType([string])]
     param(
@@ -29,17 +69,21 @@ function Initialize-SchedulerCopilotHome {
         [string]$StateRoot
     )
 
+    # Create the legacy shared directory for backward compat only.
     $copilotHome = Join-Path $StateRoot 'copilot-home'
-
     if (-not (Test-Path $copilotHome)) {
         New-Item -Path $copilotHome -ItemType Directory -Force | Out-Null
-        Write-CronAgentsLog -Level 'info' -Message "Created scheduler copilot home: $copilotHome"
     }
 
-    # Write config.json with IDE auto-connect disabled
+    # Write or repair config.json — always validate the expected values so
+    # stale or corrupt files are corrected automatically.
+    $expectedConfig = @{
+        'ide.auto_connect' = $false
+        'banner'           = 'never'
+        'autoUpdate'       = $false
+    }
     $configFile = Join-Path $copilotHome 'config.json'
     $needsWrite = $true
-
     if (Test-Path $configFile) {
         try {
             $existing = Get-Content $configFile -Raw | ConvertFrom-Json
@@ -49,22 +93,14 @@ function Initialize-SchedulerCopilotHome {
                 $needsWrite = $false
             }
         }
-        catch {
-            Write-CronAgentsLog -Level 'debug' -Message "Could not read existing config ($configFile): $_ — will rewrite."
-        }
+        catch { <# corrupt JSON — overwrite #> }
     }
-
     if ($needsWrite) {
-        $config = @{
-            'ide.auto_connect' = $false
-            'banner'           = 'never'
-            'autoUpdate'       = $false
-        }
-        $config | ConvertTo-Json -Depth 5 | Set-Content -Path $configFile -Encoding UTF8
-        Write-CronAgentsLog -Level 'debug' -Message "Wrote scheduler copilot config: $configFile"
+        $expectedConfig | ConvertTo-Json -Depth 5 |
+            Set-Content -Path $configFile -Encoding UTF8
     }
 
-    # Sync MCP server config from the default copilot home
+    # Always write empty MCP config — unattended runs use built-in tools only.
     Sync-McpConfig -SchedulerCopilotHome $copilotHome
 
     return $copilotHome
@@ -73,8 +109,10 @@ function Initialize-SchedulerCopilotHome {
 function Sync-McpConfig {
     <#
     .SYNOPSIS
-        Copies the MCP server configuration from the default ~/.copilot
-        directory to the scheduler's copilot home, if it exists and is newer.
+        Writes an empty MCP server configuration to the scheduler copilot home.
+        Previously this synced the interactive session's MCP config, but
+        unattended runs now use built-in tools only to avoid spawning
+        heavyweight MCP server processes.
     #>
     [CmdletBinding()]
     param(
@@ -82,28 +120,31 @@ function Sync-McpConfig {
         [string]$SchedulerCopilotHome
     )
 
-    $defaultHome = if ($env:COPILOT_HOME) {
-        $env:COPILOT_HOME
-    }
-    else {
-        Join-Path $HOME '.copilot'
-    }
+    [System.IO.File]::WriteAllText(
+        (Join-Path $SchedulerCopilotHome 'mcp-config.json'),
+        '{"mcpServers": {}}',
+        [System.Text.Encoding]::UTF8
+    )
+}
 
-    $sourceMcp = Join-Path $defaultHome 'mcp-config.json'
-    $destMcp   = Join-Path $SchedulerCopilotHome 'mcp-config.json'
+function Clear-CopilotDaemonState {
+    <#
+    .SYNOPSIS
+        Removes stale session-state and log directories from a copilot home
+        directory so the next run starts a fresh daemon.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$SchedulerCopilotHome
+    )
 
-    if (-not (Test-Path $sourceMcp)) { return }
-
-    $needsCopy = $true
-    if (Test-Path $destMcp) {
-        $srcTime  = (Get-Item $sourceMcp).LastWriteTimeUtc
-        $destTime = (Get-Item $destMcp).LastWriteTimeUtc
-        if ($destTime -ge $srcTime) { $needsCopy = $false }
-    }
-
-    if ($needsCopy) {
-        Copy-Item -Path $sourceMcp -Destination $destMcp -Force
-        Write-CronAgentsLog -Level 'debug' -Message "Synced MCP config to scheduler copilot home."
+    foreach ($subdir in @('session-state', 'logs')) {
+        $path = Join-Path $SchedulerCopilotHome $subdir
+        if (Test-Path $path) {
+            Remove-Item $path -Recurse -Force -ErrorAction SilentlyContinue
+            Write-CronAgentsLog -Level 'debug' -Message "Cleared stale daemon state: $subdir"
+        }
     }
 }
 

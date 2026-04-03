@@ -92,10 +92,8 @@ Describe 'Sync-McpConfig' {
         $script:testDir = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-McpSync-$(
             [System.IO.Path]::GetRandomFileName().Replace('.', '')
         )"
-        $script:fakeDefaultHome = Join-Path $script:testDir 'default-copilot'
-        $script:schedulerHome   = Join-Path $script:testDir 'scheduler-copilot'
-        New-Item -ItemType Directory -Path $script:fakeDefaultHome -Force | Out-Null
-        New-Item -ItemType Directory -Path $script:schedulerHome   -Force | Out-Null
+        $script:schedulerHome = Join-Path $script:testDir 'scheduler-copilot'
+        New-Item -ItemType Directory -Path $script:schedulerHome -Force | Out-Null
     }
     AfterEach {
         if (Test-Path $script:testDir) {
@@ -103,54 +101,24 @@ Describe 'Sync-McpConfig' {
         }
     }
 
-    It 'copies mcp-config.json when destination does not exist' {
-        $srcMcp = Join-Path $script:fakeDefaultHome 'mcp-config.json'
-        '{"mcpServers":{}}' | Set-Content $srcMcp -Encoding UTF8
-
-        # Simulate COPILOT_HOME pointing to our fake default
-        $prevHome = $env:COPILOT_HOME
-        try {
-            $env:COPILOT_HOME = $script:fakeDefaultHome
-            # Call the private function via the module — since Sync-McpConfig
-            # is called by Initialize-SchedulerCopilotHome, we test via that
-            # by temporarily overriding COPILOT_HOME
-            # Alternatively, invoke directly by dot-sourcing the module file.
-            # Since the function isn't exported, we use InternalCommand
-            & (Get-Module CronAgents) { Sync-McpConfig -SchedulerCopilotHome $args[0] } $script:schedulerHome
-        }
-        finally {
-            $env:COPILOT_HOME = $prevHome
-        }
+    It 'writes empty mcp-config.json when destination does not exist' {
+        & (Get-Module CronAgents) { Sync-McpConfig -SchedulerCopilotHome $args[0] } $script:schedulerHome
 
         $destMcp = Join-Path $script:schedulerHome 'mcp-config.json'
         Test-Path $destMcp | Should -BeTrue
-        Get-Content $destMcp -Raw | Should -Match 'mcpServers'
+        $content = Get-Content $destMcp -Raw | ConvertFrom-Json
+        ($content.mcpServers.PSObject.Properties | Measure-Object).Count | Should -Be 0
     }
 
-    It 'skips copy when destination is newer' {
-        $srcMcp  = Join-Path $script:fakeDefaultHome 'mcp-config.json'
-        $destMcp = Join-Path $script:schedulerHome   'mcp-config.json'
+    It 'overwrites existing mcp-config.json with empty servers' {
+        $destMcp = Join-Path $script:schedulerHome 'mcp-config.json'
+        '{"mcpServers":{"heavy-server":{"command":"npx","args":["server"]}}}' |
+            Set-Content $destMcp -Encoding UTF8
 
-        '{"mcpServers":{"old":true}}' | Set-Content $srcMcp  -Encoding UTF8
-        '{"mcpServers":{"new":true}}' | Set-Content $destMcp -Encoding UTF8
-        $srcItem = Get-Item $srcMcp
-        $destItem = Get-Item $destMcp
-        $baseTime = [DateTime]::UtcNow
-        $srcItem.LastWriteTimeUtc = $baseTime.AddMinutes(-1)
-        $destItem.LastWriteTimeUtc = $baseTime
-        $destWriteTime = $destItem.LastWriteTimeUtc
+        & (Get-Module CronAgents) { Sync-McpConfig -SchedulerCopilotHome $args[0] } $script:schedulerHome
 
-        $prevHome = $env:COPILOT_HOME
-        try {
-            $env:COPILOT_HOME = $script:fakeDefaultHome
-            & (Get-Module CronAgents) { Sync-McpConfig -SchedulerCopilotHome $args[0] } $script:schedulerHome
-        }
-        finally {
-            $env:COPILOT_HOME = $prevHome
-        }
-
-        (Get-Item $destMcp).LastWriteTimeUtc | Should -Be $destWriteTime
-        Get-Content $destMcp -Raw | Should -Match '"new"'
+        $content = Get-Content $destMcp -Raw | ConvertFrom-Json
+        ($content.mcpServers.PSObject.Properties | Measure-Object).Count | Should -Be 0
     }
 }
 
