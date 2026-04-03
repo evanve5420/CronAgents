@@ -9,7 +9,7 @@
 
 .PARAMETER Command
     Subcommand to execute (run, status, list, pause, resume, feedback,
-    evaluate, doctor, install, uninstall, migrate, help).
+    evaluate, clear, doctor, install, uninstall, migrate, help).
 
 .PARAMETER Argument
     Optional argument for the subcommand (e.g. agent-id).
@@ -641,6 +641,57 @@ function Invoke-DashboardCommand {
     }
 }
 
+# ── Clear command ────────────────────────────────────────────────────
+
+function Invoke-ClearCommand {
+    [CmdletBinding()]
+    param([string]$AgentId)
+
+    if ($AgentId) {
+        # Clear all runs for a specific agent
+        $agents = Get-Agents
+        $match = $agents | Where-Object { $_.Id -eq $AgentId } | Select-Object -First 1
+        if (-not $match) {
+            Write-Host "Unknown agent: '$AgentId'" -ForegroundColor Red
+            return
+        }
+
+        $runs = @(Get-RunHistory -RunsRoot $RunsRoot -AgentId $AgentId)
+        if ($runs.Count -eq 0) {
+            Write-Host "  No run history for agent '$AgentId'." -ForegroundColor Yellow
+            return
+        }
+
+        Write-Host "This will delete $($runs.Count) run(s) for agent '$AgentId'." -ForegroundColor Yellow
+        $confirm = Read-Host "Confirm? [y/N]"
+        if ($confirm -ne 'y' -and $confirm -ne 'Y') {
+            Write-Host "Cancelled." -ForegroundColor DarkGray
+            return
+        }
+
+        $result = Clear-RunHistory -RunsRoot $RunsRoot -AgentId $AgentId
+        Write-Host "  Deleted $($result.DeletedCount) run(s)." -ForegroundColor Green
+    }
+    else {
+        # Clear all runs
+        $runs = @(Get-RunHistory -RunsRoot $RunsRoot)
+        if ($runs.Count -eq 0) {
+            Write-Host "  No run history found." -ForegroundColor Yellow
+            return
+        }
+
+        Write-Host "This will delete ALL $($runs.Count) run(s) for every agent." -ForegroundColor Yellow
+        $confirm = Read-Host "Confirm? [y/N]"
+        if ($confirm -ne 'y' -and $confirm -ne 'Y') {
+            Write-Host "Cancelled." -ForegroundColor DarkGray
+            return
+        }
+
+        $result = Clear-RunHistory -RunsRoot $RunsRoot -All
+        Write-Host "  Deleted $($result.DeletedCount) run(s)." -ForegroundColor Green
+    }
+}
+
 # ── Help ─────────────────────────────────────────────────────────────
 
 function Show-Usage {
@@ -658,6 +709,7 @@ function Show-Usage {
     Write-Host "  feedback [agent-id]  Open most recent pending feedback"
     Write-Host "  evaluate             Process all pending feedback"
     Write-Host "  questions [agent-id] View and answer pending agent questions"
+    Write-Host "  clear [agent-id]     Clear run history (all or per agent)"
     Write-Host "  dashboard             Open the HTML dashboard in a browser"
     Write-Host "  doctor               Run health checks"
     Write-Host "  install              Register scheduled task & init personal repo"
@@ -692,26 +744,28 @@ function Show-InteractiveMenu {
         Write-Host " 2) Trigger ad-hoc run"
         Write-Host " 3) Pause / Resume"
         Write-Host " 4) View run history"
-        Write-Host " 5) Submit feedback"
-        Write-Host " 6) Pending questions$qBadge"
-        Write-Host " 7) Health check (doctor)"
-        Write-Host " 8) Open HTML dashboard"
-        Write-Host " 9) Exit"
+        Write-Host " 5) Clear run history"
+        Write-Host " 6) Submit feedback"
+        Write-Host " 7) Pending questions$qBadge"
+        Write-Host " 8) Health check (doctor)"
+        Write-Host " 9) Open HTML dashboard"
+        Write-Host "10) Exit"
         Write-Host ([char]0x2500 * 30)
 
-        $choice = Read-Host "Select [1-9]"
+        $choice = Read-Host "Select [1-10]"
 
         switch ($choice) {
-            '1' { Invoke-StatusCommand }
-            '2' { Invoke-TuiAdHocRun }
-            '3' { Invoke-TuiPauseResume }
-            '4' { Invoke-TuiRunHistory }
-            '5' { Invoke-TuiFeedback }
-            '6' { Invoke-TuiQuestions }
-            '7' { Invoke-DoctorCommand }
-            '8' { Invoke-DashboardCommand }
-            '9' { Write-Host "Goodbye." -ForegroundColor Cyan; return }
-            default { Write-Host "Invalid selection. Please enter 1-9." -ForegroundColor Yellow }
+            '1'  { Invoke-StatusCommand }
+            '2'  { Invoke-TuiAdHocRun }
+            '3'  { Invoke-TuiPauseResume }
+            '4'  { Invoke-TuiRunHistory }
+            '5'  { Invoke-TuiClearRuns }
+            '6'  { Invoke-TuiFeedback }
+            '7'  { Invoke-TuiQuestions }
+            '8'  { Invoke-DoctorCommand }
+            '9'  { Invoke-DashboardCommand }
+            '10' { Write-Host "Goodbye." -ForegroundColor Cyan; return }
+            default { Write-Host "Invalid selection. Please enter 1-10." -ForegroundColor Yellow }
         }
     }
 }
@@ -814,6 +868,120 @@ function Invoke-TuiPauseResume {
         }
         '3' { return }
         default { Write-Host "Invalid selection." -ForegroundColor Yellow }
+    }
+}
+
+# ── TUI: Clear run history ──────────────────────────────────────────
+
+function Invoke-TuiClearRuns {
+    [CmdletBinding()]
+    param()
+
+    Write-Host ""
+    Write-Host "Clear run history:" -ForegroundColor Cyan
+    Write-Host " 1) Clear a single run"
+    Write-Host " 2) Clear all runs for one agent"
+    Write-Host " 3) Clear all run history"
+    Write-Host " 0) Back"
+
+    $pick = Read-Host "Select [0-3]"
+
+    switch ($pick) {
+        '1' {
+            $runs = @(Get-RunHistory -RunsRoot $RunsRoot -MaxResults 20)
+            if ($runs.Count -eq 0) {
+                Write-Host "  No run history found." -ForegroundColor Yellow
+                return
+            }
+
+            Write-Host ""
+            Write-Host "Recent runs:" -ForegroundColor Cyan
+            for ($i = 0; $i -lt $runs.Count; $i++) {
+                $r = $runs[$i]
+                $exitStr = if ($r.Meta) { "exit=$($r.Meta.exitCode)" } else { 'no meta' }
+                $ts = $r.Timestamp.ToLocalTime().ToString('yyyy-MM-dd HH:mm')
+                Write-Host "  $($i + 1)) $($r.AgentId)  $ts  [$exitStr]"
+            }
+            Write-Host "  0) Back"
+
+            $runPick = Read-Host "Select run to delete"
+            if ($runPick -eq '0' -or [string]::IsNullOrWhiteSpace($runPick)) { return }
+
+            $idx = 0
+            if (-not [int]::TryParse($runPick, [ref]$idx) -or $idx -lt 1 -or $idx -gt $runs.Count) {
+                Write-Host "Invalid selection." -ForegroundColor Yellow
+                return
+            }
+
+            $selected = $runs[$idx - 1]
+            $runId = Split-Path $selected.RunDirectory -Leaf
+            $confirm = Read-Host "Delete run '$runId'? [y/N]"
+            if ($confirm -ne 'y' -and $confirm -ne 'Y') {
+                Write-Host "Cancelled." -ForegroundColor DarkGray
+                return
+            }
+
+            $result = Clear-RunHistory -RunsRoot $RunsRoot -RunId $runId
+            Write-Host "  Deleted $($result.DeletedCount) run." -ForegroundColor Green
+        }
+        '2' {
+            $agents = Get-Agents
+            if ($agents.Count -eq 0) {
+                Write-Host "  No agents discovered." -ForegroundColor Yellow
+                return
+            }
+
+            Write-Host ""
+            Write-Host "Select agent:" -ForegroundColor Cyan
+            for ($i = 0; $i -lt $agents.Count; $i++) {
+                $name = if ($agents[$i].Config.name) { $agents[$i].Config.name } else { $agents[$i].Id }
+                Write-Host "  $($i + 1)) $name ($($agents[$i].Id))"
+            }
+            Write-Host "  0) Back"
+
+            $agentPick = Read-Host "Select"
+            if ($agentPick -eq '0' -or [string]::IsNullOrWhiteSpace($agentPick)) { return }
+
+            $idx = 0
+            if (-not [int]::TryParse($agentPick, [ref]$idx) -or $idx -lt 1 -or $idx -gt $agents.Count) {
+                Write-Host "Invalid selection." -ForegroundColor Yellow
+                return
+            }
+
+            $agentId = $agents[$idx - 1].Id
+            $runs = @(Get-RunHistory -RunsRoot $RunsRoot -AgentId $agentId)
+            if ($runs.Count -eq 0) {
+                Write-Host "  No run history for agent '$agentId'." -ForegroundColor Yellow
+                return
+            }
+
+            $confirm = Read-Host "Delete $($runs.Count) run(s) for '$agentId'? [y/N]"
+            if ($confirm -ne 'y' -and $confirm -ne 'Y') {
+                Write-Host "Cancelled." -ForegroundColor DarkGray
+                return
+            }
+
+            $result = Clear-RunHistory -RunsRoot $RunsRoot -AgentId $agentId
+            Write-Host "  Deleted $($result.DeletedCount) run(s)." -ForegroundColor Green
+        }
+        '3' {
+            $runs = @(Get-RunHistory -RunsRoot $RunsRoot)
+            if ($runs.Count -eq 0) {
+                Write-Host "  No run history found." -ForegroundColor Yellow
+                return
+            }
+
+            Write-Host "This will delete ALL $($runs.Count) run(s) across every agent." -ForegroundColor Yellow
+            $confirm = Read-Host "Confirm? [y/N]"
+            if ($confirm -ne 'y' -and $confirm -ne 'Y') {
+                Write-Host "Cancelled." -ForegroundColor DarkGray
+                return
+            }
+
+            $result = Clear-RunHistory -RunsRoot $RunsRoot -All
+            Write-Host "  Deleted $($result.DeletedCount) run(s)." -ForegroundColor Green
+        }
+        default { return }
     }
 }
 
@@ -977,6 +1145,7 @@ try {
         'feedback'  { Invoke-FeedbackCommand -AgentId $Argument }
         'evaluate'  { Invoke-EvaluateCommand }
         'questions' { Invoke-QuestionsCommand -AgentId $Argument }
+        'clear'     { Invoke-ClearCommand -AgentId $Argument }
         'dashboard' { Invoke-DashboardCommand }
         'doctor'    { Invoke-DoctorCommand }
         'install'   { Invoke-InstallCommand }

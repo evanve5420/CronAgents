@@ -273,3 +273,115 @@ function Get-RunHistory {
 
     return @($results)
 }
+
+# -------------------------------------------------------------------
+# Clear-RunHistory
+# -------------------------------------------------------------------
+function Clear-RunHistory {
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RunsRoot,
+
+        [string]$RunId,
+
+        [string]$AgentId,
+
+        [switch]$All
+    )
+
+    $deleted  = 0
+    $skipped  = 0
+    $errors   = [System.Collections.Generic.List[string]]::new()
+
+    # Validate parameters — exactly one scope must be specified
+    $scopeCount = [int][bool]$RunId + [int][bool]$AgentId + [int][bool]$All
+    if ($scopeCount -ne 1) {
+        throw 'Specify exactly one of -RunId, -AgentId, or -All.'
+    }
+
+    if (-not (Test-Path -LiteralPath $RunsRoot)) {
+        return [PSCustomObject]@{
+            DeletedCount = 0
+            SkippedCount = 0
+            Errors       = [string[]]@()
+        }
+    }
+
+    # ── Single run ──────────────────────────────────────────────
+    if ($RunId) {
+        # Validate run ID format (same pattern as Test-SafeRunId)
+        if ($RunId -notmatch '^[0-9]{8}T[0-9]{6}_[A-Za-z0-9._-]+_[0-9a-f]{4}$') {
+            throw "Invalid run ID format: $RunId"
+        }
+        if ($RunId -ne [System.IO.Path]::GetFileName($RunId)) {
+            throw "Invalid run ID format: $RunId"
+        }
+
+        $runDir = Join-Path $RunsRoot $RunId
+        $runsRootFull = [System.IO.Path]::GetFullPath($RunsRoot)
+        $runDirFull   = [System.IO.Path]::GetFullPath($runDir)
+        $prefix       = $runsRootFull.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+        if (-not $runDirFull.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Invalid run ID format: $RunId"
+        }
+
+        if (Test-Path -LiteralPath $runDir) {
+            try {
+                Remove-Item -LiteralPath $runDir -Recurse -Force
+                $deleted++
+                Write-CronAgentsLog -Level 'info' -Message "Cleared run: $RunId"
+            }
+            catch {
+                $errors.Add("Failed to delete $RunId`: $_")
+                Write-CronAgentsLog -Level 'warn' -Message "Failed to delete run $RunId`: $_"
+            }
+        }
+        else {
+            $skipped++
+        }
+    }
+
+    # ── Agent runs ──────────────────────────────────────────────
+    elseif ($AgentId) {
+        $dirs = Get-ChildItem -LiteralPath $RunsRoot -Directory |
+            Where-Object { $_.Name -match "^(\d{8}T\d{6})_${AgentId}_([0-9a-f]{4})$" }
+
+        foreach ($dir in $dirs) {
+            try {
+                Remove-Item -LiteralPath $dir.FullName -Recurse -Force
+                $deleted++
+            }
+            catch {
+                $errors.Add("Failed to delete $($dir.Name)`: $_")
+                $skipped++
+            }
+        }
+        Write-CronAgentsLog -Level 'info' -Message "Cleared $deleted run(s) for agent: $AgentId"
+    }
+
+    # ── All runs ────────────────────────────────────────────────
+    elseif ($All) {
+        $dirs = Get-ChildItem -LiteralPath $RunsRoot -Directory |
+            Where-Object { $_.Name -match '^(\d{8}T\d{6})_(.+)_([0-9a-f]{4})$' }
+
+        foreach ($dir in $dirs) {
+            try {
+                Remove-Item -LiteralPath $dir.FullName -Recurse -Force
+                $deleted++
+            }
+            catch {
+                $errors.Add("Failed to delete $($dir.Name)`: $_")
+                $skipped++
+            }
+        }
+        Write-CronAgentsLog -Level 'info' -Message "Cleared all run history: $deleted run(s) deleted."
+    }
+
+    return [PSCustomObject]@{
+        DeletedCount = $deleted
+        SkippedCount = $skipped
+        Errors       = [string[]]$errors.ToArray()
+    }
+}
