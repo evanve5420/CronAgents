@@ -130,9 +130,28 @@ function Get-MockInvocations {
 
     if (-not (Test-Path $LogPath)) { return @() }
 
-    Get-Content -Path $LogPath -Encoding utf8 |
-        Where-Object { $_.Trim() -ne '' } |
-        ForEach-Object { $_ | ConvertFrom-Json }
+    $lines = @(
+        Get-Content -Path $LogPath -Encoding utf8 |
+            Where-Object { $_.Trim() -ne '' }
+    )
+
+    $parsed = [System.Collections.Generic.List[object]]::new()
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        try {
+            $parsed.Add(($lines[$i] | ConvertFrom-Json -ErrorAction Stop))
+        }
+        catch {
+            # Tests poll this log while background jobs can still be appending to it.
+            # Ignore a malformed final line so readers don't fail on an in-progress write.
+            if ($i -eq ($lines.Count - 1)) {
+                continue
+            }
+
+            throw
+        }
+    }
+
+    return $parsed.ToArray()
 }
 
 function Initialize-TestGitRepo {
