@@ -6,29 +6,8 @@
 BeforeAll {
     $repoRoot = Split-Path $PSScriptRoot -Parent
     Import-Module (Join-Path $repoRoot 'scheduler/lib/CronAgents.psd1') -Force
+    Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
     $script:hasGit = [bool](Get-Command git -ErrorAction SilentlyContinue)
-
-    function Initialize-TestGitRepo {
-        param([Parameter(Mandatory)][string]$Path)
-
-        New-Item -ItemType Directory -Path $Path -Force | Out-Null
-        & git -C $Path init 2>$null | Out-Null
-        & git -C $Path config user.email 'cronagents-tests@example.com'
-        & git -C $Path config user.name 'CronAgents Tests'
-    }
-
-    function New-TestGitCommit {
-        param(
-            [Parameter(Mandatory)][string]$Path,
-            [Parameter(Mandatory)][string]$FileName,
-            [Parameter(Mandatory)][string]$Content
-        )
-
-        Set-Content -Path (Join-Path $Path $FileName) -Value $Content -Encoding UTF8
-        & git -C $Path add --all
-        & git -C $Path commit -m "test $([guid]::NewGuid())" --quiet
-        return ((& git -C $Path rev-parse HEAD) | Select-Object -First 1).Trim()
-    }
 }
 
 Describe 'ConvertTo-AgentRunIfDefinition' {
@@ -82,7 +61,7 @@ Describe 'Test-AgentRunIf - built-in predicates' {
         }
 
         $repoPath = Join-Path $TestDrive 'git-repo'
-        Initialize-TestGitRepo -Path $repoPath
+        Initialize-TestGitRepo -Path $repoPath -UserEmail 'cronagents-tests@example.com' -UserName 'CronAgents Tests'
         $null = New-TestGitCommit -Path $repoPath -FileName 'README.md' -Content 'first'
 
         $runIf = ConvertTo-AgentRunIfDefinition -RunIf 'git-dirty'

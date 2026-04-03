@@ -135,6 +135,78 @@ function Get-MockInvocations {
         ForEach-Object { $_ | ConvertFrom-Json }
 }
 
+function Initialize-TestGitRepo {
+    <#
+    .SYNOPSIS
+        Creates a test git repository with deterministic local config.
+    .PARAMETER Path
+        Repository path to create or initialize.
+    .PARAMETER UserEmail
+        Git user.email value for the test repository.
+    .PARAMETER UserName
+        Git user.name value for the test repository.
+    .PARAMETER InitialBranch
+        Optional initial branch name passed to git init.
+    .PARAMETER GitHubUser
+        Optional github.user config value.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [string]$UserEmail = 'test@test.com',
+        [string]$UserName = 'Test User',
+        [string]$InitialBranch,
+        [string]$GitHubUser
+    )
+
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+
+    $initArgs = @('-C', $Path, 'init')
+    if ($InitialBranch) {
+        $initArgs += "--initial-branch=$InitialBranch"
+    }
+
+    & git @initArgs 2>$null | Out-Null
+    & git -C $Path config user.email $UserEmail 2>&1 | Out-Null
+    & git -C $Path config user.name $UserName 2>&1 | Out-Null
+
+    if ($PSBoundParameters.ContainsKey('GitHubUser')) {
+        & git -C $Path config github.user $GitHubUser 2>&1 | Out-Null
+    }
+
+    return $Path
+}
+
+function New-TestGitCommit {
+    <#
+    .SYNOPSIS
+        Writes a file, creates a commit, and returns the resulting commit hash.
+    .PARAMETER Path
+        Repository root path.
+    .PARAMETER FileName
+        Relative file path to write before committing.
+    .PARAMETER Content
+        File content to write.
+    .PARAMETER Message
+        Optional commit message.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$FileName,
+        [Parameter(Mandatory)][string]$Content,
+        [string]$Message
+    )
+
+    Set-Content -Path (Join-Path $Path $FileName) -Value $Content -Encoding UTF8
+    & git -C $Path add --all 2>&1 | Out-Null
+
+    $commitMessage = if ($Message) { $Message } else { "test $([guid]::NewGuid())" }
+    & git -C $Path commit -m $commitMessage --quiet 2>&1 | Out-Null
+
+    return ((& git -C $Path rev-parse HEAD) | Select-Object -First 1).Trim()
+}
+
 function New-TestAgentConfig {
     <#
     .SYNOPSIS
@@ -250,6 +322,8 @@ Export-ModuleMember -Function @(
     'New-TestEnvironment'
     'Remove-TestEnvironment'
     'Get-MockInvocations'
+    'Initialize-TestGitRepo'
+    'New-TestGitCommit'
     'New-TestAgentConfig'
     'New-TestRunDirectory'
 )

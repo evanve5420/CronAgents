@@ -11,23 +11,62 @@
     Optional wildcard filter for test file names (e.g. 'Config*').
 .PARAMETER MaxWorkers
     Maximum number of test-file subprocesses to run at once.
+.PARAMETER PollIntervalMs
+    Milliseconds to wait before checking for completed subprocesses again.
 .EXAMPLE
     ./tests/Invoke-Tests.ps1
     ./tests/Invoke-Tests.ps1 -Filter 'Schedule*'
     ./tests/Invoke-Tests.ps1 -ExcludeTag 'E2E','Slow'
     ./tests/Invoke-Tests.ps1 -MaxWorkers 8
+    ./tests/Invoke-Tests.ps1 -PollIntervalMs 100
 #>
 [CmdletBinding()]
 param(
     [string[]]$ExcludeTag = @('E2E'),
     [string]$Filter = '*',
     [ValidateRange(1, 64)]
-    [int]$MaxWorkers = 8
+    [int]$MaxWorkers = 8,
+    [ValidateRange(25, 2000)]
+    [int]$PollIntervalMs = 100,
+    [switch]$ChildRun,
+    [string]$TestFile,
+    [string]$ResultFile,
+    [string]$ExcludeTagSerialized
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $testDir = $PSScriptRoot
+$runnerScriptPath = $PSCommandPath
+$hostExecutablePath = (Get-Process -Id $PID -ErrorAction Stop).Path
+if (-not $hostExecutablePath) {
+    $hostExecutablePath = (Get-Command pwsh -ErrorAction Stop).Source
+}
+
+if ($ChildRun) {
+    Set-Location $repoRoot
+    $childExcludeTag = if ($PSBoundParameters.ContainsKey('ExcludeTagSerialized')) {
+        @($ExcludeTagSerialized -split "`n" | Where-Object { $_ -ne '' })
+    }
+    else {
+        $ExcludeTag
+    }
+
+    try {
+        $result = Invoke-Pester $TestFile -ExcludeTag $childExcludeTag -Output None -PassThru
+        [PSCustomObject]@{
+            PassedCount = $result.PassedCount
+            FailedCount = $result.FailedCount
+            SkippedCount = $result.SkippedCount
+            FailedNames = @($result.Failed | ForEach-Object { $_.Name })
+        } | ConvertTo-Json -Compress | Set-Content -Path $ResultFile -Encoding utf8
+        exit 0
+    }
+    catch {
+        Write-Error $_
+        exit 1
+    }
+}
 
 $files = Get-ChildItem -Path $testDir -Filter "$Filter.Tests.ps1" | Sort-Object Name
 if ($files.Count -eq 0) {
@@ -35,33 +74,89 @@ if ($files.Count -eq 0) {
     exit 1
 }
 
-$excludeArg = ($ExcludeTag | ForEach-Object { "'$_'" }) -join ','
 $totalPassed = 0; $totalFailed = 0; $totalSkipped = 0
 $failures = @()
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
+function Get-TestProcessDiagnostics {
+    param(
+        [Parameter(Mandatory)][pscustomobject]$RunningTest,
+        [int]$MaxLines = 20
+    )
+
+    $diagnostics = @()
+    $streams = @(
+        @{ Label = 'stderr'; Path = $RunningTest.StdErrFile }
+        @{ Label = 'stdout'; Path = $RunningTest.StdOutFile }
+    )
+
+    foreach ($stream in $streams) {
+        if (-not (Test-Path $stream.Path)) {
+            continue
+        }
+
+        $content = Get-Content -Path $stream.Path -Raw -ErrorAction SilentlyContinue
+        if ([string]::IsNullOrWhiteSpace($content)) {
+            continue
+        }
+
+        $diagnostics += "$($stream.Label):"
+        $lines = @($content -split "`r?`n" | Where-Object { $_.Trim().Length -gt 0 })
+        if ($lines.Count -le $MaxLines) {
+            $diagnostics += $lines
+        }
+        else {
+            $diagnostics += $lines[0..($MaxLines - 1)]
+            $diagnostics += "... ($($lines.Count - $MaxLines) more lines)"
+        }
+    }
+
+    return $diagnostics
+}
+
+function Remove-TestProcessArtifacts {
+    param(
+        [Parameter(Mandatory)][pscustomobject]$RunningTest
+    )
+
+    @($RunningTest.ResultFile, $RunningTest.StdOutFile, $RunningTest.StdErrFile) |
+        Where-Object { $_ } |
+        ForEach-Object {
+            Remove-Item $_ -Force -ErrorAction SilentlyContinue
+        }
+}
+
 function Start-TestProcess {
     param(
         [Parameter(Mandatory)][System.IO.FileInfo]$File,
-        [Parameter(Mandatory)][string]$RepoRoot,
-        [Parameter(Mandatory)][string]$ExcludeArg
+        [Parameter(Mandatory)][string]$RunnerScriptPath,
+        [Parameter(Mandatory)][string]$HostExecutablePath,
+        [Parameter(Mandatory)][string[]]$ExcludeTag
     )
 
     $resultFile = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-test-$([guid]::NewGuid().ToString('N')).txt"
-    $cmd = @"
-Set-Location '$RepoRoot'
-`$r = Invoke-Pester '$($File.FullName)' -ExcludeTag $ExcludeArg -Output None -PassThru 2>`$null
-"`$(`$r.PassedCount)|`$(`$r.FailedCount)|`$(`$r.SkippedCount)" | Set-Content '$resultFile'
-if (`$r.FailedCount -gt 0) {
-    `$r.Failed | ForEach-Object { `$_.Name } | Add-Content '$resultFile'
-}
-"@
-    $encodedCommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($cmd))
+    $stdoutFile = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-test-$([guid]::NewGuid().ToString('N')).stdout.txt"
+    $stderrFile = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-test-$([guid]::NewGuid().ToString('N')).stderr.txt"
+
+    $argumentList = @(
+        '-NoProfile'
+        '-File'
+        $RunnerScriptPath
+        '-ChildRun'
+        '-TestFile'
+        $File.FullName
+        '-ResultFile'
+        $resultFile
+        '-ExcludeTagSerialized'
+        ($ExcludeTag -join "`n")
+    )
 
     $startArgs = @{
-        FilePath     = 'pwsh'
-        ArgumentList = @('-NoProfile', '-EncodedCommand', $encodedCommand)
-        PassThru     = $true
+        FilePath               = $HostExecutablePath
+        ArgumentList           = $argumentList
+        RedirectStandardOutput = $stdoutFile
+        RedirectStandardError  = $stderrFile
+        PassThru               = $true
     }
     if ($IsWindows) { $startArgs.WindowStyle = 'Hidden' }
 
@@ -69,6 +164,8 @@ if (`$r.FailedCount -gt 0) {
         File       = $File
         Label      = $File.Name.Replace('.Tests.ps1', '')
         ResultFile = $resultFile
+        StdOutFile = $stdoutFile
+        StdErrFile = $stderrFile
         Process    = Start-Process @startArgs
     }
 }
@@ -80,39 +177,49 @@ function Complete-TestProcess {
 
     $label = $RunningTest.Label
     Write-Host -NoNewline "  $($label.PadRight(30))"
+    $diagnostics = Get-TestProcessDiagnostics -RunningTest $RunningTest
 
     if (Test-Path $RunningTest.ResultFile) {
-        $lines = @(Get-Content $RunningTest.ResultFile)
-        $parts = $lines[0].Split('|')
-        $passed = [int]$parts[0]
-        $failed = [int]$parts[1]
-        $skipped = [int]$parts[2]
-        $failedNames = if ($lines.Count -gt 1) { $lines[1..($lines.Count - 1)] } else { @() }
-        Remove-Item $RunningTest.ResultFile -Force -ErrorAction SilentlyContinue
+        try {
+            $payload = Get-Content $RunningTest.ResultFile -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            $passed = [int]$payload.PassedCount
+            $failed = [int]$payload.FailedCount
+            $skipped = [int]$payload.SkippedCount
+            $failedNames = @($payload.FailedNames)
 
-        return [PSCustomObject]@{
-            Label        = $label
-            PassedCount  = $passed
-            FailedCount  = $failed
-            SkippedCount = $skipped
-            FailedNames  = $failedNames
-            HadResult    = $true
+            Remove-TestProcessArtifacts -RunningTest $RunningTest
+
+            return [PSCustomObject]@{
+                Label        = $label
+                PassedCount  = $passed
+                FailedCount  = $failed
+                SkippedCount = $skipped
+                FailedNames  = $failedNames
+                Diagnostics  = @()
+                HadResult    = $true
+            }
+        }
+        catch {
+            $diagnostics = @("Invalid result payload: $($_.Exception.Message)") + $diagnostics
         }
     }
+
+    Remove-TestProcessArtifacts -RunningTest $RunningTest
 
     return [PSCustomObject]@{
         Label        = $label
         PassedCount  = 0
         FailedCount  = 1
         SkippedCount = 0
-        FailedNames  = @('Subprocess produced no result')
+        FailedNames  = @("Subprocess failed before reporting results (exit code $($RunningTest.Process.ExitCode))")
+        Diagnostics  = $diagnostics
         HadResult    = $false
     }
 }
 
 Write-Host "CronAgents Test Runner" -ForegroundColor Cyan
 Write-Host ("=" * 50) -ForegroundColor Cyan
-Write-Host "Files: $($files.Count)  Exclude: $($ExcludeTag -join ', ')  Workers: $MaxWorkers"
+Write-Host "Files: $($files.Count)  Exclude: $($ExcludeTag -join ', ')  Workers: $MaxWorkers  Poll: ${PollIntervalMs}ms"
 Write-Host
 
 $pendingFiles = [System.Collections.Generic.Queue[System.IO.FileInfo]]::new()
@@ -124,12 +231,12 @@ $runningTests = [System.Collections.ArrayList]::new()
 
 while ($pendingFiles.Count -gt 0 -or $runningTests.Count -gt 0) {
     while ($pendingFiles.Count -gt 0 -and $runningTests.Count -lt $MaxWorkers) {
-        $null = $runningTests.Add((Start-TestProcess -File $pendingFiles.Dequeue() -RepoRoot $repoRoot -ExcludeArg $excludeArg))
+        $null = $runningTests.Add((Start-TestProcess -File $pendingFiles.Dequeue() -RunnerScriptPath $runnerScriptPath -HostExecutablePath $hostExecutablePath -ExcludeTag $ExcludeTag))
     }
 
     $completedTests = @($runningTests | Where-Object { $_.Process.HasExited })
     if ($completedTests.Count -eq 0) {
-        Start-Sleep -Milliseconds 200
+        Start-Sleep -Milliseconds $PollIntervalMs
         continue
     }
 
@@ -142,8 +249,11 @@ while ($pendingFiles.Count -gt 0 -or $runningTests.Count -gt 0) {
 
         if ($result.FailedCount -gt 0) {
             Write-Host "FAIL  ($($result.PassedCount) passed, $($result.FailedCount) failed)" -ForegroundColor Red
-            $failures += @{ File = $result.Label; Names = $result.FailedNames }
+            $failures += @{ File = $result.Label; Names = $result.FailedNames; Diagnostics = $result.Diagnostics }
             $result.FailedNames | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+            if ($result.Diagnostics.Count -gt 0) {
+                $result.Diagnostics | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkRed }
+            }
         }
         elseif ($result.PassedCount -eq 0 -and $result.SkippedCount -eq 0) {
             Write-Host "SKIP  (excluded)" -ForegroundColor DarkGray
@@ -166,6 +276,9 @@ if ($failures.Count -gt 0) {
     foreach ($f in $failures) {
         Write-Host "  $($f.File):" -ForegroundColor Red
         $f.Names | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+        if ($f.Diagnostics.Count -gt 0) {
+            $f.Diagnostics | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkRed }
+        }
     }
     exit 1
 }
