@@ -55,10 +55,14 @@ if ($ChildRun) {
     try {
         $result = Invoke-Pester $TestFile -ExcludeTag $childExcludeTag -Output None -PassThru
         [PSCustomObject]@{
-            PassedCount = $result.PassedCount
-            FailedCount = $result.FailedCount
-            SkippedCount = $result.SkippedCount
-            FailedNames = @($result.Failed | ForEach-Object { $_.Name })
+            PassedCount   = $result.PassedCount
+            FailedCount   = $result.FailedCount
+            SkippedCount  = $result.SkippedCount
+            FailedNames   = @($result.Failed | ForEach-Object { $_.Name })
+            FailedDetails = @($result.Failed | ForEach-Object {
+                $msg = $_.ErrorRecord.Exception.Message
+                if ($msg.Length -gt 400) { $msg.Substring(0, 400) + '...' } else { $msg }
+            })
         } | ConvertTo-Json -Compress | Set-Content -Path $ResultFile -Encoding utf8
         exit 0
     }
@@ -186,6 +190,7 @@ function Complete-TestProcess {
             $failed = [int]$payload.FailedCount
             $skipped = [int]$payload.SkippedCount
             $failedNames = @($payload.FailedNames)
+            $failedDetails = @($payload.FailedDetails)
 
             Remove-TestProcessArtifacts -RunningTest $RunningTest
 
@@ -195,7 +200,7 @@ function Complete-TestProcess {
                 FailedCount  = $failed
                 SkippedCount = $skipped
                 FailedNames  = $failedNames
-                Diagnostics  = @()
+                Diagnostics  = $failedDetails
                 HadResult    = $true
             }
         }
