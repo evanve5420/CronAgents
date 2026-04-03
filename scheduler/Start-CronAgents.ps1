@@ -140,6 +140,30 @@ function Start-InterruptibleSleep {
 }
 
 # -----------------------------------------------------------------------
+# Copilot env helper — temporarily applies scheduler-specific Copilot
+# environment so background evaluator runs do not attach to the IDE daemon.
+# -----------------------------------------------------------------------
+function Invoke-WithSchedulerCopilotEnv {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [scriptblock]$ScriptBlock
+    )
+
+    $prevHome  = $env:COPILOT_HOME
+    $prevToken = $env:GH_TOKEN
+    try {
+        if ($script:schedulerCopilotHome) { $env:COPILOT_HOME = $script:schedulerCopilotHome }
+        if ($script:copilotAuthToken)     { $env:GH_TOKEN     = $script:copilotAuthToken }
+        & $ScriptBlock
+    }
+    finally {
+        $env:COPILOT_HOME = $prevHome
+        $env:GH_TOKEN     = $prevToken
+    }
+}
+
+# -----------------------------------------------------------------------
 # Feedback sweep helper
 # -----------------------------------------------------------------------
 function Invoke-FeedbackSweep {
@@ -173,17 +197,8 @@ function Invoke-FeedbackSweep {
                 "--no-ask-user"
                 "--share=$evalSharePath"
             )
-            # Temporarily set isolated copilot home to avoid IDE daemon contention
-            $prevHome  = $env:COPILOT_HOME
-            $prevToken = $env:GH_TOKEN
-            try {
-                if ($script:schedulerCopilotHome) { $env:COPILOT_HOME = $script:schedulerCopilotHome }
-                if ($script:copilotAuthToken)     { $env:GH_TOKEN     = $script:copilotAuthToken }
+            Invoke-WithSchedulerCopilotEnv -ScriptBlock {
                 & $CopilotPath @copilotArgs 2>&1 | Out-Null
-            }
-            finally {
-                $env:COPILOT_HOME = $prevHome
-                $env:GH_TOKEN     = $prevToken
             }
             Write-CronAgentsLog -Level 'info' -Message "Feedback evaluator completed for: $runDir"
         }
@@ -436,17 +451,8 @@ try {
                                 "--no-ask-user"
                                 "--share=$evalSharePath"
                             )
-                            # Temporarily set isolated copilot home
-                            $prevHome  = $env:COPILOT_HOME
-                            $prevToken = $env:GH_TOKEN
-                            try {
-                                if ($script:schedulerCopilotHome) { $env:COPILOT_HOME = $script:schedulerCopilotHome }
-                                if ($script:copilotAuthToken)     { $env:GH_TOKEN     = $script:copilotAuthToken }
+                            Invoke-WithSchedulerCopilotEnv -ScriptBlock {
                                 & $config.copilotPath @copilotArgs 2>&1 | Out-Null
-                            }
-                            finally {
-                                $env:COPILOT_HOME = $prevHome
-                                $env:GH_TOKEN     = $prevToken
                             }
 
                             # Mark processed

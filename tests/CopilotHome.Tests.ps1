@@ -8,6 +8,11 @@ BeforeAll {
     $repoRoot = Split-Path $PSScriptRoot -Parent
     Import-Module (Join-Path $repoRoot 'scheduler/lib/CronAgents.psd1') -Force
     Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
+
+    function Get-FileSha256 {
+        param([Parameter(Mandatory)][string]$Path)
+        return (Get-FileHash -Algorithm SHA256 -Path $Path).Hash
+    }
 }
 
 Describe 'Initialize-SchedulerCopilotHome' {
@@ -40,29 +45,32 @@ Describe 'Initialize-SchedulerCopilotHome' {
     It 'is idempotent — does not rewrite config when values match' {
         $copilotHome = Initialize-SchedulerCopilotHome -StateRoot $script:testDir
         $configFile = Join-Path $copilotHome 'config.json'
-        $firstWrite = (Get-Item $configFile).LastWriteTimeUtc
+        $initialContent = Get-Content $configFile -Raw
+        $initialHash = Get-FileSha256 -Path $configFile
 
-        Start-Sleep -Milliseconds 50
         Initialize-SchedulerCopilotHome -StateRoot $script:testDir | Out-Null
-        $secondWrite = (Get-Item $configFile).LastWriteTimeUtc
+        $finalContent = Get-Content $configFile -Raw
+        $finalHash = Get-FileSha256 -Path $configFile
 
-        $secondWrite | Should -Be $firstWrite
+        $finalContent | Should -Be $initialContent
+        $finalHash | Should -Be $initialHash
     }
 
     It 'rewrites config when values are stale' {
         $copilotHome = Initialize-SchedulerCopilotHome -StateRoot $script:testDir
         $configFile = Join-Path $copilotHome 'config.json'
+        $expectedContent = Get-Content $configFile -Raw
 
         # Tamper with the config
         @{ 'ide.auto_connect' = $true; banner = 'always'; autoUpdate = $true } |
             ConvertTo-Json | Set-Content $configFile -Encoding UTF8
-        $tamperedWrite = (Get-Item $configFile).LastWriteTimeUtc
+        $tamperedContent = Get-Content $configFile -Raw
 
-        Start-Sleep -Milliseconds 50
         Initialize-SchedulerCopilotHome -StateRoot $script:testDir | Out-Null
-        $fixedWrite = (Get-Item $configFile).LastWriteTimeUtc
+        $fixedContent = Get-Content $configFile -Raw
 
-        $fixedWrite | Should -BeGreaterThan $tamperedWrite
+        $tamperedContent | Should -Not -Be $expectedContent
+        $fixedContent | Should -Be $expectedContent
         $config = Get-Content $configFile -Raw | ConvertFrom-Json
         $config.'ide.auto_connect' | Should -BeFalse
     }
@@ -124,9 +132,13 @@ Describe 'Sync-McpConfig' {
         $destMcp = Join-Path $script:schedulerHome   'mcp-config.json'
 
         '{"mcpServers":{"old":true}}' | Set-Content $srcMcp  -Encoding UTF8
-        Start-Sleep -Milliseconds 50
         '{"mcpServers":{"new":true}}' | Set-Content $destMcp -Encoding UTF8
-        $destWriteTime = (Get-Item $destMcp).LastWriteTimeUtc
+        $srcItem = Get-Item $srcMcp
+        $destItem = Get-Item $destMcp
+        $baseTime = [DateTime]::UtcNow
+        $srcItem.LastWriteTimeUtc = $baseTime.AddMinutes(-1)
+        $destItem.LastWriteTimeUtc = $baseTime
+        $destWriteTime = $destItem.LastWriteTimeUtc
 
         $prevHome = $env:COPILOT_HOME
         try {
