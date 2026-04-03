@@ -53,25 +53,22 @@ if (-not $RunsRoot) {
 # --- State file path ---
 $stateFile = Join-Path $stateRoot 'state.json'
 
-# --- Isolated copilot home (prevents IDE auto-connect hangs) ---
-$schedulerCopilotHome = $null
-$copilotAuthToken     = $null
+# --- Auth token (resolved once, reused across runs/retries) ---
+$copilotAuthToken = $null
 try {
-    $schedulerCopilotHome = Initialize-SchedulerCopilotHome -StateRoot $stateRoot
-    $copilotAuthToken     = Get-CopilotAuthToken
+    $copilotAuthToken = Get-CopilotAuthToken
     if (-not $copilotAuthToken) {
-        Write-CronAgentsLog -Level 'warn' -Message 'No GitHub token found — copilot process may fail to authenticate with isolated home.'
+        Write-CronAgentsLog -Level 'warn' -Message 'No GitHub token found — copilot process may fail to authenticate.'
     }
 }
 catch {
-    Write-CronAgentsLog -Level 'warn' -Message "Failed to initialize scheduler copilot home: $_ — falling back to default."
+    Write-CronAgentsLog -Level 'warn' -Message "Failed to retrieve auth token: $_ — copilot may fail."
 }
 
-# Build environment overrides once at script scope — used by both the
-# main agent run and the post-run summarizer subprocess.
-$copilotEnvOverrides = @{}
-if ($schedulerCopilotHome) { $copilotEnvOverrides['COPILOT_HOME'] = $schedulerCopilotHome }
-if ($copilotAuthToken)     { $copilotEnvOverrides['GH_TOKEN']     = $copilotAuthToken }
+# Environment overrides are built per-run in Invoke-CopilotRun because
+# COPILOT_HOME is now unique per run directory.  GH_TOKEN is static.
+$copilotEnvBase = @{}
+if ($copilotAuthToken) { $copilotEnvBase['GH_TOKEN'] = $copilotAuthToken }
 
 # --- Result tracking ---
 $exitCode     = -1
@@ -129,6 +126,7 @@ function New-CommandProcessStartInfo {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
+    $psi.RedirectStandardInput = $true
     $psi.CreateNoWindow = $true
     # Copilot CLI emits UTF-8; force redirected stream decoding to avoid mojibake on Windows.
     $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
@@ -171,6 +169,17 @@ function Invoke-CopilotRun {
     $copilotPath = if ($GlobalConfig.copilotPath) { $GlobalConfig.copilotPath } else { 'copilot' }
     $outputFile  = Join-Path $RunDirectory 'output.md'
 
+    # Create a unique COPILOT_HOME for this run so the copilot daemon is
+    # guaranteed fresh — no contention with stale daemons from prior runs.
+    $copilotEnvOverrides = @{} + $copilotEnvBase
+    try {
+        $runCopilotHome = Initialize-RunCopilotHome -RunDirectory $RunDirectory
+        $copilotEnvOverrides['COPILOT_HOME'] = $runCopilotHome
+    }
+    catch {
+        Write-CronAgentsLog -Level 'warn' -Message "Failed to create per-run copilot home: $_ — using default."
+    }
+
     Write-CronAgentsLog -Level 'debug' -Message "Copilot command: $copilotPath $($Arguments -join ' ')"
 
     $psi = New-CommandProcessStartInfo -CommandLine $copilotPath `
@@ -183,6 +192,11 @@ function Invoke-CopilotRun {
 
     $attemptStart = [datetime]::UtcNow
     $proc.Start() | Out-Null
+
+    # Close stdin immediately — unattended runs never provide input.
+    # Without this, the child process can hang in background-job contexts
+    # where there is no console and the inherited stdin handle is dead.
+    $proc.StandardInput.Close()
 
     $stdout = $proc.StandardOutput.ReadToEndAsync()
     $stderr = $proc.StandardError.ReadToEndAsync()
@@ -270,11 +284,12 @@ function Build-CopilotArguments {
         }
     }
 
-    # Extra CLI flags
+    # Extra CLI flags — expand %VAR% environment variable references so
+    # config values like --add-dir=%APPDATA% work on Windows.
     $extraCliFlags = @($AgentConfig.extraCliFlags)
     if ($AgentConfig.PSObject.Properties['extraCliFlags'] -and $extraCliFlags.Count -gt 0) {
         foreach ($flag in $extraCliFlags) {
-            $args_.Add($flag)
+            $args_.Add([System.Environment]::ExpandEnvironmentVariables($flag))
         }
     }
 
@@ -522,14 +537,33 @@ try {
 
         Write-CronAgentsLog -Level 'debug' -Message "Invoking run-summarizer for '$AgentId'."
 
+        # Summarizer gets its own copilot home to avoid daemon contention
+        $sumEnv = @{} + $copilotEnvBase
+        try {
+            $sumCopilotHome = Join-Path $runDir 'summarizer-home'
+            New-Item -Path $sumCopilotHome -ItemType Directory -Force | Out-Null
+            @{ 'ide.auto_connect' = $false; 'banner' = 'never'; 'autoUpdate' = $false } |
+                ConvertTo-Json -Depth 5 |
+                Set-Content -Path (Join-Path $sumCopilotHome 'config.json') -Encoding UTF8
+            [System.IO.File]::WriteAllText(
+                (Join-Path $sumCopilotHome 'mcp-config.json'),
+                '{"mcpServers": {}}',
+                [System.Text.Encoding]::UTF8)
+            $sumEnv['COPILOT_HOME'] = $sumCopilotHome
+        }
+        catch {
+            Write-CronAgentsLog -Level 'warn' -Message "Failed to create summarizer copilot home: $_ — using default."
+        }
+
         $sumPsi = New-CommandProcessStartInfo -CommandLine $copilotPath `
             -WorkingDirectory $(if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }) `
             -Arguments $summaryArgs `
-            -EnvironmentOverrides $(if ($copilotEnvOverrides.Count -gt 0) { $copilotEnvOverrides } else { $null })
+            -EnvironmentOverrides $(if ($sumEnv.Count -gt 0) { $sumEnv } else { $null })
 
         $sumProc = [System.Diagnostics.Process]::new()
         $sumProc.StartInfo = $sumPsi
         $sumProc.Start() | Out-Null
+        $sumProc.StandardInput.Close()
 
         $sumStdout = $sumProc.StandardOutput.ReadToEndAsync()
         $sumStderr = $sumProc.StandardError.ReadToEndAsync()

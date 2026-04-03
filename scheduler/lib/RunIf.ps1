@@ -319,6 +319,7 @@ function Invoke-RunIfScriptCondition {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
+    $psi.RedirectStandardInput = $true
     $psi.CreateNoWindow = $true
     $psi.ArgumentList.Add('-NoProfile')
     $psi.ArgumentList.Add('-File')
@@ -333,6 +334,7 @@ function Invoke-RunIfScriptCondition {
     $proc = [System.Diagnostics.Process]::new()
     $proc.StartInfo = $psi
     $proc.Start() | Out-Null
+    $proc.StandardInput.Close()
 
     $stdout = $proc.StandardOutput.ReadToEndAsync()
     $stderr = $proc.StandardError.ReadToEndAsync()
