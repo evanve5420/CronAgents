@@ -81,5 +81,10 @@ Describe 'Test-SafeRunId' {
             $result = Test-SafeRunId -RunId '/etc/passwd' -RunsRoot $testEnv.RunsRoot
             $result | Should -BeNullOrEmpty
         }
+
+        It 'Returns null for Windows absolute path injection' {
+            $result = Test-SafeRunId -RunId 'C:\Windows\System32' -RunsRoot $testEnv.RunsRoot
+            $result | Should -BeNullOrEmpty
+        }
     }
 }
