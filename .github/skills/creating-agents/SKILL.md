@@ -12,9 +12,9 @@ Create a CronAgents scheduled entry: either a custom agent (`.agent.md` + `.agen
 
 CronAgents runs `.agent.md` profiles through **GitHub Copilot CLI**.
 
-If you specify `tools:`, use concrete CLI tool names from the Copilot CLI reference, for example `view`, `rg`, `glob`, `edit`, `apply_patch`, or `powershell`.
+If you specify `tools:`, use the official CLI tool aliases: `read`, `edit`, `search`, `execute`, and `agent`. Compatible aliases include `shell` / `Bash` / `powershell` for `execute`, and `Grep` / `Glob` for `search`. You can also reference MCP tools with `server-name/tool-name` or `server-name/*` for all tools from a server.
 
-Do **not** use VS Code-style labels such as `read`, `search`, `shell`, `codebase`, `runCommands`, `usages`, or `vscodeAPI`.
+Do **not** use VS Code-only tool names such as `editFiles`, `runCommands`, `runTasks`, `codebase`, `findTestFiles`, `usages`, `terminalLastCommand`, `terminalSelection`, or `vscodeAPI`.
 
 Keep the list minimal. If you are unsure, omit `tools:` rather than guessing.
 
