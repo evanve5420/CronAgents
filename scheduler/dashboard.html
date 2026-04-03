@@ -148,6 +148,7 @@
   .toast.show { transform: translateY(0); opacity: 1; }
   .toast.success { border-color: var(--green); }
   .toast.error { border-color: var(--red); }
+  .toast.info { border-color: var(--yellow); }
 
   /* ── Tabs ───────────────────────────────────── */
   .tab-bar { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
@@ -250,6 +251,7 @@
 let state = { schedulerPaused: false, agents: [], timestamp: null };
 let runs = [];
 let questions = [];
+let knownQuestionIds = new Set();
 let pollTimer = null;
 
 // ── API helpers ──────────────────────────────────────────────────
@@ -637,6 +639,15 @@ async function refreshRuns() {
 async function refreshQuestions() {
   try {
     questions = await api('GET', '/api/questions');
+    const currentIds = new Set(questions.map(q => q.id));
+    const newQuestions = questions.filter(q => !knownQuestionIds.has(q.id));
+    if (newQuestions.length > 0 && knownQuestionIds.size > 0) {
+      const label = newQuestions.length === 1
+        ? `New question from ${newQuestions[0].agentId}`
+        : `${newQuestions.length} new questions pending`;
+      showToast(`❓ ${label}`, 'info');
+    }
+    knownQuestionIds = currentIds;
     renderQuestions();
   } catch { }
 }
