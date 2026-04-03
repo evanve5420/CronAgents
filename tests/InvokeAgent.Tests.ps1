@@ -116,13 +116,28 @@ Describe 'Invoke-ScheduledAgent — Mock Copilot CLI Arguments' {
         Remove-TestEnvironment -TestEnv $testEnv
     }
 
-    It 'Mock invocation log shows correct --agent flag (agent mode)' {
-        $mockCopilotPath = Join-Path $PSScriptRoot 'mocks' 'copilot.ps1'
-        $null = & pwsh -NoProfile -File $mockCopilotPath -Agent 'my-custom-agent' -p 'Do stuff' -Silent
+    It 'Invoke-ScheduledAgent passes --agent and --allow-all-tools in agent mode' {
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'agent-mode-test' `
+            -Agent 'my-custom-agent' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Prompt 'Do stuff'
 
-        $invocations = Get-MockInvocations -LogPath $testEnv.MockLogPath
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'agent-mode-test'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Be 0
+
+        $invocations = @(Get-MockInvocations -LogPath $testEnv.MockLogPath |
+            Where-Object { $_.agent -eq 'my-custom-agent' })
         $invocations.Count | Should -BeGreaterOrEqual 1
         $invocations[-1].agent | Should -Be 'my-custom-agent'
+        $invocations[-1].allowAllTools | Should -Be $true
     }
 
     It 'Mock invocation log shows --allow-all-tools (prompt-only mode)' {
