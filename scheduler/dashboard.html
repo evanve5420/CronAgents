@@ -148,6 +148,7 @@
   .toast.show { transform: translateY(0); opacity: 1; }
   .toast.success { border-color: var(--green); }
   .toast.error { border-color: var(--red); }
+  .toast.info { border-color: var(--yellow); }
 
   /* ── Tabs ───────────────────────────────────── */
   .tab-bar { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
@@ -159,6 +160,14 @@
   }
   .tab:hover { color: var(--text); }
   .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab.has-questions { color: var(--yellow); }
+  .tab.has-questions.active { color: var(--yellow); border-bottom-color: var(--yellow); }
+  #question-badge {
+    display: inline-block; background: var(--yellow); color: var(--bg);
+    font-size: 0.65rem; font-weight: 700; padding: 0 5px; border-radius: 8px;
+    min-width: 14px; text-align: center; line-height: 16px; vertical-align: middle;
+  }
+  #question-badge:empty { display: none; }
   .tab-content { display: none; }
   .tab-content.active { display: block; }
 
@@ -235,13 +244,15 @@
   </div>
 </main>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script>
 // ── State ────────────────────────────────────────────────────────
 let state = { schedulerPaused: false, agents: [], timestamp: null };
 let runs = [];
 let questions = [];
+let knownQuestionKeys = new Set();
+let hasLoadedQuestions = false;
 let pollTimer = null;
 
 // ── API helpers ──────────────────────────────────────────────────
@@ -505,7 +516,9 @@ function renderQuestions() {
   const container = document.getElementById('questions-list');
   const badge = document.getElementById('question-badge');
 
-  badge.textContent = questions.length > 0 ? `(${questions.length})` : '';
+  badge.textContent = questions.length > 0 ? questions.length : '';
+  const questionsTab = document.querySelector('[data-tab="questions"]');
+  questionsTab.classList.toggle('has-questions', questions.length > 0);
 
   if (questions.length === 0) {
     container.innerHTML = '<div class="empty-state">No pending questions</div>';
@@ -627,6 +640,17 @@ async function refreshRuns() {
 async function refreshQuestions() {
   try {
     questions = await api('GET', '/api/questions');
+    const toKey = q => `${q.agentId}:${q.id}`;
+    const currentKeys = new Set(questions.map(toKey));
+    const newQuestions = questions.filter(q => !knownQuestionKeys.has(toKey(q)));
+    if (newQuestions.length > 0 && hasLoadedQuestions) {
+      const label = newQuestions.length === 1
+        ? `New question from ${newQuestions[0].agentId}`
+        : `${newQuestions.length} new questions pending`;
+      showToast(`❓ ${label}`, 'info');
+    }
+    knownQuestionKeys = currentKeys;
+    hasLoadedQuestions = true;
     renderQuestions();
   } catch { }
 }
