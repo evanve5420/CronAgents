@@ -237,7 +237,9 @@ Describe 'Scheduler startup entry script' -Tag 'Slow' {
         $script:schedulerProcess = Start-Process @startArgs
 
         $dashboardPath = Join-Path $script:testEnv.Root 'dashboard.md'
-        $deadline = (Get-Date).AddSeconds(20)
+        # Under the multi-worker test runner, the startup script can take longer
+        # to reach its first dashboard write on busy CI hosts.
+        $deadline = (Get-Date).AddSeconds(30)
         while ((Get-Date) -lt $deadline -and -not (Test-Path $dashboardPath)) {
             if ($script:schedulerProcess.HasExited) { break }
             Start-Sleep -Milliseconds 250
