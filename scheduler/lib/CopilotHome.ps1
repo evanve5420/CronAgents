@@ -49,7 +49,9 @@ function Initialize-SchedulerCopilotHome {
                 $needsWrite = $false
             }
         }
-        catch { <# corrupt file — rewrite #> }
+        catch {
+            Write-CronAgentsLog -Level 'debug' -Message "Could not read existing config ($configFile): $_ — will rewrite."
+        }
     }
 
     if ($needsWrite) {

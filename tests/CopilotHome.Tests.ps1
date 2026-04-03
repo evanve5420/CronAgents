@@ -1,0 +1,208 @@
+<#
+.SYNOPSIS
+    Pester 5 tests for the CopilotHome module
+    (Initialize-SchedulerCopilotHome, Sync-McpConfig, Get-CopilotAuthToken).
+#>
+
+BeforeAll {
+    $repoRoot = Split-Path $PSScriptRoot -Parent
+    Import-Module (Join-Path $repoRoot 'scheduler/lib/CronAgents.psd1') -Force
+    Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
+}
+
+Describe 'Initialize-SchedulerCopilotHome' {
+    BeforeEach {
+        $script:testDir = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-CopilotHome-$(
+            [System.IO.Path]::GetRandomFileName().Replace('.', '')
+        )"
+        New-Item -ItemType Directory -Path $script:testDir -Force | Out-Null
+    }
+    AfterEach {
+        if (Test-Path $script:testDir) {
+            Remove-Item $script:testDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'creates copilot-home directory on first call' {
+        $result = Initialize-SchedulerCopilotHome -StateRoot $script:testDir
+        $result | Should -Be (Join-Path $script:testDir 'copilot-home')
+        Test-Path $result | Should -BeTrue
+    }
+
+    It 'writes config.json with ide.auto_connect disabled' {
+        $copilotHome = Initialize-SchedulerCopilotHome -StateRoot $script:testDir
+        $config = Get-Content (Join-Path $copilotHome 'config.json') -Raw | ConvertFrom-Json
+        $config.'ide.auto_connect' | Should -BeFalse
+        $config.'banner' | Should -Be 'never'
+        $config.'autoUpdate' | Should -BeFalse
+    }
+
+    It 'is idempotent — does not rewrite config when values match' {
+        $copilotHome = Initialize-SchedulerCopilotHome -StateRoot $script:testDir
+        $configFile = Join-Path $copilotHome 'config.json'
+        $firstWrite = (Get-Item $configFile).LastWriteTimeUtc
+
+        Start-Sleep -Milliseconds 50
+        Initialize-SchedulerCopilotHome -StateRoot $script:testDir | Out-Null
+        $secondWrite = (Get-Item $configFile).LastWriteTimeUtc
+
+        $secondWrite | Should -Be $firstWrite
+    }
+
+    It 'rewrites config when values are stale' {
+        $copilotHome = Initialize-SchedulerCopilotHome -StateRoot $script:testDir
+        $configFile = Join-Path $copilotHome 'config.json'
+
+        # Tamper with the config
+        @{ 'ide.auto_connect' = $true; banner = 'always'; autoUpdate = $true } |
+            ConvertTo-Json | Set-Content $configFile -Encoding UTF8
+        $tamperedWrite = (Get-Item $configFile).LastWriteTimeUtc
+
+        Start-Sleep -Milliseconds 50
+        Initialize-SchedulerCopilotHome -StateRoot $script:testDir | Out-Null
+        $fixedWrite = (Get-Item $configFile).LastWriteTimeUtc
+
+        $fixedWrite | Should -BeGreaterThan $tamperedWrite
+        $config = Get-Content $configFile -Raw | ConvertFrom-Json
+        $config.'ide.auto_connect' | Should -BeFalse
+    }
+
+    It 'rewrites config when file is corrupt JSON' {
+        $copilotHome = Initialize-SchedulerCopilotHome -StateRoot $script:testDir
+        $configFile = Join-Path $copilotHome 'config.json'
+
+        'not-valid-json{{{' | Set-Content $configFile -Encoding UTF8
+
+        { Initialize-SchedulerCopilotHome -StateRoot $script:testDir } | Should -Not -Throw
+        $config = Get-Content $configFile -Raw | ConvertFrom-Json
+        $config.'ide.auto_connect' | Should -BeFalse
+    }
+}
+
+Describe 'Sync-McpConfig' {
+    BeforeEach {
+        $script:testDir = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-McpSync-$(
+            [System.IO.Path]::GetRandomFileName().Replace('.', '')
+        )"
+        $script:fakeDefaultHome = Join-Path $script:testDir 'default-copilot'
+        $script:schedulerHome   = Join-Path $script:testDir 'scheduler-copilot'
+        New-Item -ItemType Directory -Path $script:fakeDefaultHome -Force | Out-Null
+        New-Item -ItemType Directory -Path $script:schedulerHome   -Force | Out-Null
+    }
+    AfterEach {
+        if (Test-Path $script:testDir) {
+            Remove-Item $script:testDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'copies mcp-config.json when destination does not exist' {
+        $srcMcp = Join-Path $script:fakeDefaultHome 'mcp-config.json'
+        '{"mcpServers":{}}' | Set-Content $srcMcp -Encoding UTF8
+
+        # Simulate COPILOT_HOME pointing to our fake default
+        $prevHome = $env:COPILOT_HOME
+        try {
+            $env:COPILOT_HOME = $script:fakeDefaultHome
+            # Call the private function via the module — since Sync-McpConfig
+            # is called by Initialize-SchedulerCopilotHome, we test via that
+            # by temporarily overriding COPILOT_HOME
+            # Alternatively, invoke directly by dot-sourcing the module file.
+            # Since the function isn't exported, we use InternalCommand
+            & (Get-Module CronAgents) { Sync-McpConfig -SchedulerCopilotHome $args[0] } $script:schedulerHome
+        }
+        finally {
+            $env:COPILOT_HOME = $prevHome
+        }
+
+        $destMcp = Join-Path $script:schedulerHome 'mcp-config.json'
+        Test-Path $destMcp | Should -BeTrue
+        Get-Content $destMcp -Raw | Should -Match 'mcpServers'
+    }
+
+    It 'skips copy when destination is newer' {
+        $srcMcp  = Join-Path $script:fakeDefaultHome 'mcp-config.json'
+        $destMcp = Join-Path $script:schedulerHome   'mcp-config.json'
+
+        '{"mcpServers":{"old":true}}' | Set-Content $srcMcp  -Encoding UTF8
+        Start-Sleep -Milliseconds 50
+        '{"mcpServers":{"new":true}}' | Set-Content $destMcp -Encoding UTF8
+        $destWriteTime = (Get-Item $destMcp).LastWriteTimeUtc
+
+        $prevHome = $env:COPILOT_HOME
+        try {
+            $env:COPILOT_HOME = $script:fakeDefaultHome
+            & (Get-Module CronAgents) { Sync-McpConfig -SchedulerCopilotHome $args[0] } $script:schedulerHome
+        }
+        finally {
+            $env:COPILOT_HOME = $prevHome
+        }
+
+        (Get-Item $destMcp).LastWriteTimeUtc | Should -Be $destWriteTime
+        Get-Content $destMcp -Raw | Should -Match '"new"'
+    }
+}
+
+Describe 'Get-CopilotAuthToken' {
+    It 'returns env var when COPILOT_GITHUB_TOKEN is set' {
+        $prev = $env:COPILOT_GITHUB_TOKEN
+        try {
+            $env:COPILOT_GITHUB_TOKEN = 'test-token-cgt'
+            $result = Get-CopilotAuthToken
+            $result | Should -Be 'test-token-cgt'
+        }
+        finally {
+            $env:COPILOT_GITHUB_TOKEN = $prev
+        }
+    }
+
+    It 'prefers COPILOT_GITHUB_TOKEN over GH_TOKEN' {
+        $prevCGT = $env:COPILOT_GITHUB_TOKEN
+        $prevGH  = $env:GH_TOKEN
+        try {
+            $env:COPILOT_GITHUB_TOKEN = 'copilot-token'
+            $env:GH_TOKEN             = 'gh-token'
+            $result = Get-CopilotAuthToken
+            $result | Should -Be 'copilot-token'
+        }
+        finally {
+            $env:COPILOT_GITHUB_TOKEN = $prevCGT
+            $env:GH_TOKEN             = $prevGH
+        }
+    }
+
+    It 'falls back to GH_TOKEN when COPILOT_GITHUB_TOKEN is not set' {
+        $prevCGT = $env:COPILOT_GITHUB_TOKEN
+        $prevGH  = $env:GH_TOKEN
+        $prevGIT = $env:GITHUB_TOKEN
+        try {
+            $env:COPILOT_GITHUB_TOKEN = $null
+            $env:GH_TOKEN             = 'gh-fallback'
+            $env:GITHUB_TOKEN         = $null
+            $result = Get-CopilotAuthToken
+            $result | Should -Be 'gh-fallback'
+        }
+        finally {
+            $env:COPILOT_GITHUB_TOKEN = $prevCGT
+            $env:GH_TOKEN             = $prevGH
+            $env:GITHUB_TOKEN         = $prevGIT
+        }
+    }
+
+    It 'falls back to GITHUB_TOKEN when others are not set' {
+        $prevCGT = $env:COPILOT_GITHUB_TOKEN
+        $prevGH  = $env:GH_TOKEN
+        $prevGIT = $env:GITHUB_TOKEN
+        try {
+            $env:COPILOT_GITHUB_TOKEN = $null
+            $env:GH_TOKEN             = $null
+            $env:GITHUB_TOKEN         = 'github-fallback'
+            $result = Get-CopilotAuthToken
+            $result | Should -Be 'github-fallback'
+        }
+        finally {
+            $env:COPILOT_GITHUB_TOKEN = $prevCGT
+            $env:GH_TOKEN             = $prevGH
+            $env:GITHUB_TOKEN         = $prevGIT
+        }
+    }
+}

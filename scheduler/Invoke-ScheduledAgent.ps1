@@ -67,6 +67,12 @@ catch {
     Write-CronAgentsLog -Level 'warn' -Message "Failed to initialize scheduler copilot home: $_ — falling back to default."
 }
 
+# Build environment overrides once at script scope — used by both the
+# main agent run and the post-run summarizer subprocess.
+$copilotEnvOverrides = @{}
+if ($schedulerCopilotHome) { $copilotEnvOverrides['COPILOT_HOME'] = $schedulerCopilotHome }
+if ($copilotAuthToken)     { $copilotEnvOverrides['GH_TOKEN']     = $copilotAuthToken }
+
 # --- Result tracking ---
 $exitCode     = -1
 $timedOut     = $false
@@ -167,19 +173,10 @@ function Invoke-CopilotRun {
 
     Write-CronAgentsLog -Level 'debug' -Message "Copilot command: $copilotPath $($Arguments -join ' ')"
 
-    # Build environment overrides for process isolation
-    $envOverrides = @{}
-    if ($schedulerCopilotHome) {
-        $envOverrides['COPILOT_HOME'] = $schedulerCopilotHome
-    }
-    if ($copilotAuthToken) {
-        $envOverrides['GH_TOKEN'] = $copilotAuthToken
-    }
-
     $psi = New-CommandProcessStartInfo -CommandLine $copilotPath `
         -WorkingDirectory $(if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }) `
         -Arguments $Arguments `
-        -EnvironmentOverrides $(if ($envOverrides.Count -gt 0) { $envOverrides } else { $null })
+        -EnvironmentOverrides $(if ($copilotEnvOverrides.Count -gt 0) { $copilotEnvOverrides } else { $null })
 
     $proc = [System.Diagnostics.Process]::new()
     $proc.StartInfo = $psi
@@ -528,13 +525,14 @@ try {
         $sumPsi = New-CommandProcessStartInfo -CommandLine $copilotPath `
             -WorkingDirectory $(if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }) `
             -Arguments $summaryArgs `
-            -EnvironmentOverrides $(if ($envOverrides.Count -gt 0) { $envOverrides } else { $null })
+            -EnvironmentOverrides $(if ($copilotEnvOverrides.Count -gt 0) { $copilotEnvOverrides } else { $null })
 
         $sumProc = [System.Diagnostics.Process]::new()
         $sumProc.StartInfo = $sumPsi
         $sumProc.Start() | Out-Null
 
         $sumStdout = $sumProc.StandardOutput.ReadToEndAsync()
+        $sumStderr = $sumProc.StandardError.ReadToEndAsync()
         # Allow summarizer up to 2 minutes
         if (-not $sumProc.WaitForExit(120000)) {
             Write-CronAgentsLog -Level 'warn' -Message "Run-summarizer timed out for '$AgentId' — killing."
@@ -542,7 +540,12 @@ try {
         }
 
         [void]$sumStdout.Wait(5000)
+        [void]$sumStderr.Wait(5000)
         $sumText = if ($sumStdout.IsCompleted) { $sumStdout.Result } else { '' }
+        $sumErrText = if ($sumStderr.IsCompleted) { $sumStderr.Result } else { '' }
+        if ($sumErrText) {
+            Write-CronAgentsLog -Level 'debug' -Message "Run-summarizer stderr for '$AgentId': $sumErrText"
+        }
         [System.IO.File]::WriteAllText($summaryFile, $sumText, [System.Text.Encoding]::UTF8)
         $sumProc.Dispose()
 

@@ -71,6 +71,19 @@ if (-not (Test-Path $runsRoot)) {
 }
 
 # -----------------------------------------------------------------------
+# 6a. Isolated copilot home (prevents IDE auto-connect hangs)
+# -----------------------------------------------------------------------
+$script:schedulerCopilotHome = $null
+$script:copilotAuthToken     = $null
+try {
+    $script:schedulerCopilotHome = Initialize-SchedulerCopilotHome -StateRoot $cronStateDir
+    $script:copilotAuthToken     = Get-CopilotAuthToken
+}
+catch {
+    Write-CronAgentsLog -Level 'warn' -Message "Failed to initialize scheduler copilot home: $_ — falling back to default."
+}
+
+# -----------------------------------------------------------------------
 # 7. Log startup
 # -----------------------------------------------------------------------
 Write-CronAgentsLog -Level 'info' -Message 'CronAgents scheduler starting'
@@ -139,6 +152,7 @@ function Invoke-FeedbackSweep {
     )
 
     $history = Get-RunHistory -RunsRoot $RunsRoot
+    $agentsDir = Join-Path $RepoRoot 'scheduler' 'agents'
     foreach ($run in $history) {
         if (-not $script:running) { break }
         if (-not $run.HasFeedback) { continue }
@@ -148,17 +162,29 @@ function Invoke-FeedbackSweep {
         Write-CronAgentsLog -Level 'info' -Message "Processing feedback for run: $runDir"
 
         try {
+            $evalSharePath = Join-Path $runDir 'evaluator-session.md'
             $copilotArgs = @(
                 "--agent=feedback-evaluator"
                 "-p"
                 "Process feedback for run in: $runDir"
                 "--silent"
-                "--add-dir=$RepoRoot\scheduler\agents"
+                "--add-dir=$agentsDir"
                 "--allow-all-tools"
                 "--no-ask-user"
-                "--share=$runDir\evaluator-session.md"
+                "--share=$evalSharePath"
             )
-            & $CopilotPath @copilotArgs 2>&1 | Out-Null
+            # Temporarily set isolated copilot home to avoid IDE daemon contention
+            $prevHome  = $env:COPILOT_HOME
+            $prevToken = $env:GH_TOKEN
+            try {
+                if ($script:schedulerCopilotHome) { $env:COPILOT_HOME = $script:schedulerCopilotHome }
+                if ($script:copilotAuthToken)     { $env:GH_TOKEN     = $script:copilotAuthToken }
+                & $CopilotPath @copilotArgs 2>&1 | Out-Null
+            }
+            finally {
+                $env:COPILOT_HOME = $prevHome
+                $env:GH_TOKEN     = $prevToken
+            }
             Write-CronAgentsLog -Level 'info' -Message "Feedback evaluator completed for: $runDir"
         }
         catch {
@@ -398,17 +424,30 @@ try {
                         if ($latestRun -and $latestRun.Count -gt 0 -and $latestRun[0].HasFeedback -and -not $latestRun[0].FeedbackProcessed) {
                             $runDir = $latestRun[0].RunDirectory
                             Write-CronAgentsLog -Level 'info' -Message "Running feedback evaluator for agent '$agentId' run: $runDir"
+                            $evalAgentsDir  = Join-Path $RepoRoot 'scheduler' 'agents'
+                            $evalSharePath  = Join-Path $runDir 'evaluator-session.md'
                             $copilotArgs = @(
                                 "--agent=feedback-evaluator"
                                 "-p"
                                 "Process feedback for run in: $runDir"
                                 "--silent"
-                                "--add-dir=$RepoRoot\scheduler\agents"
+                                "--add-dir=$evalAgentsDir"
                                 "--allow-all-tools"
                                 "--no-ask-user"
-                                "--share=$runDir\evaluator-session.md"
+                                "--share=$evalSharePath"
                             )
-                            & $config.copilotPath @copilotArgs 2>&1 | Out-Null
+                            # Temporarily set isolated copilot home
+                            $prevHome  = $env:COPILOT_HOME
+                            $prevToken = $env:GH_TOKEN
+                            try {
+                                if ($script:schedulerCopilotHome) { $env:COPILOT_HOME = $script:schedulerCopilotHome }
+                                if ($script:copilotAuthToken)     { $env:GH_TOKEN     = $script:copilotAuthToken }
+                                & $config.copilotPath @copilotArgs 2>&1 | Out-Null
+                            }
+                            finally {
+                                $env:COPILOT_HOME = $prevHome
+                                $env:GH_TOKEN     = $prevToken
+                            }
 
                             # Mark processed
                             $metaPath = Join-Path $runDir 'meta.json'
