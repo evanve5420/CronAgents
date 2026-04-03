@@ -201,42 +201,33 @@ function script:Get-RunsPayload {
     return $result
 }
 
-function script:Test-SafeRunId {
-    [OutputType([string])]
-    param([Parameter(Mandatory)][string]$RunId)
-
-    # Strict format: 20240101T123456_<safe-name>_1a2b
-    if ($RunId -notmatch '^[0-9]{8}T[0-9]{6}_[A-Za-z0-9._-]+_[0-9a-f]{4}$') {
-        return $null
-    }
-    # Must not contain directory separators or traversal segments
-    if ($RunId -ne [System.IO.Path]::GetFileName($RunId)) {
-        return $null
-    }
-    $runsRootFull = [System.IO.Path]::GetFullPath($RunsRoot)
-    $runDir = [System.IO.Path]::GetFullPath((Join-Path $RunsRoot $RunId))
-    # Ensure resolved path stays under runs root
-    $prefix = $runsRootFull.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-    if (-not $runDir.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-        return $null
-    }
-    return $runDir
-}
-
 function script:Test-SafeIdentifier {
     [OutputType([bool])]
     param([Parameter(Mandatory)][string]$Value)
-    # Only allow filename-safe characters (alphanumeric, hyphens, underscores, dots)
-    return ($Value -match '^[A-Za-z0-9._-]+$' -and $Value -eq [System.IO.Path]::GetFileName($Value))
+    return (Test-CronAgentsSafeIdentifier -Value $Value)
 }
 
 function script:Get-RunDetailPayload {
-    [OutputType([hashtable])]
+    [OutputType([PSCustomObject])]
     param([Parameter(Mandatory)][string]$RunId)
 
-    $runDir = script:Test-SafeRunId -RunId $RunId
-    if (-not $runDir) { return $null }
-    if (-not (Test-Path -LiteralPath $runDir)) { return $null }
+    $resolvedRun = Resolve-CronAgentsRunPath -RunId $RunId -RunsRoot $RunsRoot
+    if (-not $resolvedRun.IsValid) {
+        return [PSCustomObject]@{
+            IsValid = $false
+            Exists  = $false
+            Payload = $null
+        }
+    }
+    if (-not $resolvedRun.Exists) {
+        return [PSCustomObject]@{
+            IsValid = $true
+            Exists  = $false
+            Payload = $null
+        }
+    }
+
+    $runDir = $resolvedRun.Path
 
     $meta = $null
     $metaPath = Join-Path $runDir 'meta.json'
@@ -292,17 +283,21 @@ function script:Get-RunDetailPayload {
         }
     }
 
-    return [ordered]@{
-        id             = $RunId
-        runDirectory   = $runDir
-        meta           = $meta
-        hasOutput      = $hasOutput
-        isIncomplete   = $isIncomplete
-        summary        = $summary
-        output         = $output
-        schedulerLog   = $schedulerLog
-        feedback       = $feedback
-        feedbackResult = $feedbackResult
+    return [PSCustomObject]@{
+        IsValid = $true
+        Exists  = $true
+        Payload = [ordered]@{
+            id             = $RunId
+            runDirectory   = $runDir
+            meta           = $meta
+            hasOutput      = $hasOutput
+            isIncomplete   = $isIncomplete
+            summary        = $summary
+            output         = $output
+            schedulerLog   = $schedulerLog
+            feedback       = $feedback
+            feedbackResult = $feedbackResult
+        }
     }
 }
 
@@ -419,12 +414,16 @@ function script:Invoke-Route {
         # ── GET /api/runs/:id ────────────────────────────────────
         if ($method -eq 'GET' -and $path -match '^/api/runs/(.+)$') {
             $runId = $Matches[1]
-            $payload = script:Get-RunDetailPayload -RunId $runId
-            if ($null -eq $payload) {
+            $detail = script:Get-RunDetailPayload -RunId $runId
+            if (-not $detail.IsValid) {
+                script:Send-ErrorResponse -Response $response -Message 'Invalid run ID format' -StatusCode 400
+                return
+            }
+            if (-not $detail.Exists) {
                 script:Send-ErrorResponse -Response $response -Message 'Run not found' -StatusCode 404
                 return
             }
-            script:Send-JsonResponse -Response $response -Body $payload
+            script:Send-JsonResponse -Response $response -Body $detail.Payload
             return
         }
 
@@ -522,16 +521,18 @@ function script:Invoke-Route {
         if ($method -eq 'POST' -and $path -match '^/api/feedback/(.+)$') {
             $runId = $Matches[1]
 
-            $runDir = script:Test-SafeRunId -RunId $runId
-            if (-not $runDir) {
+            $resolvedRun = Resolve-CronAgentsRunPath -RunId $runId -RunsRoot $RunsRoot
+            if (-not $resolvedRun.IsValid) {
                 script:Send-ErrorResponse -Response $response -Message 'Invalid run ID format' -StatusCode 400
                 return
             }
 
-            if (-not (Test-Path -LiteralPath $runDir)) {
+            if (-not $resolvedRun.Exists) {
                 script:Send-ErrorResponse -Response $response -Message 'Run not found' -StatusCode 404
                 return
             }
+
+            $runDir = $resolvedRun.Path
 
             $body = script:Read-RequestBody -Request $request
             if (-not $body) {
@@ -641,13 +642,13 @@ function script:Invoke-Route {
         if ($method -eq 'DELETE' -and $path -match '^/api/runs/(.+)$') {
             $runId = $Matches[1]
 
-            $runDir = script:Test-SafeRunId -RunId $runId
-            if (-not $runDir) {
+            $resolvedRun = Resolve-CronAgentsRunPath -RunId $runId -RunsRoot $RunsRoot
+            if (-not $resolvedRun.IsValid) {
                 script:Send-ErrorResponse -Response $response -Message 'Invalid run ID format' -StatusCode 400
                 return
             }
 
-            if (-not (Test-Path -LiteralPath $runDir)) {
+            if (-not $resolvedRun.Exists) {
                 script:Send-ErrorResponse -Response $response -Message 'Run not found' -StatusCode 404
                 return
             }

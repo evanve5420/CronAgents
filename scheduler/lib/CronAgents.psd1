@@ -28,6 +28,7 @@
         # ConfigLoader
         'Import-CronAgentsConfig',
         'Test-CronAgentsConfig',
+        'Test-CronAgentsSafeIdentifier',
         'Get-AgentConfigs',
         # RunIf
         'ConvertTo-AgentRunIfDefinition',
@@ -50,6 +51,8 @@
         'Get-RunHistory',
         'Clear-RunHistory',
         'Test-FeedbackPresent',
+        'Resolve-CronAgentsRunPath',
+        'Test-SafeRunId',
         # PersonalRepo
         'ConvertTo-Slug',
         'Resolve-GitHubHandle',
