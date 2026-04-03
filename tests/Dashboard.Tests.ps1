@@ -576,6 +576,110 @@ Describe 'Dashboard — HTTP Server' {
         }
     }
 
+    # ── DELETE /api/runs ─────────────────────────────────────────
+
+    Context 'DELETE /api/runs/:id' {
+        It 'Deletes a completed run and returns success' {
+            # Create a new completed run to delete
+            $delRunDir = New-RunDirectory -RunsRoot $script:testEnv.RunsRoot -AgentId 'http-agent'
+            Write-RunMetadata -RunDirectory $delRunDir -AgentId 'http-agent' -AgentName 'HTTP Agent' `
+                -Prompt 'test' -StartTime ([datetime]::UtcNow.AddMinutes(-1)) `
+                -EndTime ([datetime]::UtcNow) -ExitCode 0
+            $delRunId = Split-Path $delRunDir -Leaf
+
+            $result = Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/$delRunId" `
+                -Method Delete -ErrorAction Stop
+            $result.ok | Should -Be $true
+            $result.deleted | Should -Be 1
+            Test-Path $delRunDir | Should -Be $false
+        }
+
+        It 'Returns 404 for non-existent run ID' {
+            $err = $null
+            try {
+                Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/20260101T120000_noagent_abcd" `
+                    -Method Delete -ErrorAction Stop
+            } catch { $err = $_ }
+            $err | Should -Not -BeNullOrEmpty
+            $err.Exception.Response.StatusCode.value__ | Should -Be 404
+        }
+
+        It 'Returns 400 for invalid run ID format' {
+            $err = $null
+            try {
+                Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/../traversal" `
+                    -Method Delete -ErrorAction Stop
+            } catch { $err = $_ }
+            $err | Should -Not -BeNullOrEmpty
+            $status = $err.Exception.Response.StatusCode.value__
+            # May be 400 (invalid format) or 404 (path normalization)
+            $status | Should -BeIn @(400, 404)
+        }
+
+        It 'Returns 409 when trying to delete an active run' {
+            # Create an active (in-progress) run
+            $activeDir = New-RunDirectory -RunsRoot $script:testEnv.RunsRoot -AgentId 'http-agent'
+            Initialize-RunMetadata -RunDirectory $activeDir -AgentId 'http-agent' `
+                -AgentName 'HTTP Agent' -Prompt 'running test'
+            $activeRunId = Split-Path $activeDir -Leaf
+
+            $err = $null
+            try {
+                Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/$activeRunId" `
+                    -Method Delete -ErrorAction Stop
+            } catch { $err = $_ }
+            $err | Should -Not -BeNullOrEmpty
+            $err.Exception.Response.StatusCode.value__ | Should -Be 409
+
+            # Run should still exist
+            Test-Path $activeDir | Should -Be $true
+            # Clean up
+            Remove-Item -LiteralPath $activeDir -Recurse -Force
+        }
+    }
+
+    Context 'DELETE /api/runs (bulk)' {
+        It 'Clears all completed runs' {
+            # Create two completed runs
+            $d1 = New-RunDirectory -RunsRoot $script:testEnv.RunsRoot -AgentId 'http-agent'
+            Write-RunMetadata -RunDirectory $d1 -AgentId 'http-agent' -AgentName 'HTTP Agent' `
+                -Prompt 'test' -StartTime ([datetime]::UtcNow.AddMinutes(-3)) `
+                -EndTime ([datetime]::UtcNow.AddMinutes(-2)) -ExitCode 0
+            $d2 = New-RunDirectory -RunsRoot $script:testEnv.RunsRoot -AgentId 'http-agent'
+            Write-RunMetadata -RunDirectory $d2 -AgentId 'http-agent' -AgentName 'HTTP Agent' `
+                -Prompt 'test' -StartTime ([datetime]::UtcNow.AddMinutes(-2)) `
+                -EndTime ([datetime]::UtcNow.AddMinutes(-1)) -ExitCode 0
+
+            $result = Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs" `
+                -Method Delete -ErrorAction Stop
+            $result.ok | Should -Be $true
+            $result.deleted | Should -BeGreaterOrEqual 2
+        }
+
+        It 'Filters by agent query parameter' {
+            # Create runs for two agents
+            $d1 = New-RunDirectory -RunsRoot $script:testEnv.RunsRoot -AgentId 'http-agent'
+            Write-RunMetadata -RunDirectory $d1 -AgentId 'http-agent' -AgentName 'HTTP Agent' `
+                -Prompt 'test' -StartTime ([datetime]::UtcNow.AddMinutes(-3)) `
+                -EndTime ([datetime]::UtcNow.AddMinutes(-2)) -ExitCode 0
+
+            $result = Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs?agent=http-agent" `
+                -Method Delete -ErrorAction Stop
+            $result.ok | Should -Be $true
+            $result.deleted | Should -BeGreaterOrEqual 1
+        }
+
+        It 'Returns 400 for invalid agent query parameter' {
+            $err = $null
+            try {
+                Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs?agent=../bad" `
+                    -Method Delete -ErrorAction Stop
+            } catch { $err = $_ }
+            $err | Should -Not -BeNullOrEmpty
+            $err.Exception.Response.StatusCode.value__ | Should -Be 400
+        }
+    }
+
     # ── Error Handling ───────────────────────────────────────────
 
     Context '404 handling' {

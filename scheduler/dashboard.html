@@ -171,6 +171,20 @@
   .tab-content { display: none; }
   .tab-content.active { display: block; }
 
+  /* ── Confirm dialog ───────────────────────────── */
+  .confirm-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 200;
+  }
+  .confirm-box {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 24px; max-width: 400px; width: 90%;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  .confirm-box p { margin-bottom: 16px; }
+  .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
   /* ── Responsive ─────────────────────────────── */
   @media (max-width: 768px) {
     main { padding: 12px; }
@@ -220,6 +234,9 @@
   <!-- ── Runs Tab ────────────────────────────── -->
   <div id="tab-runs" class="tab-content">
     <section>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+        <button class="btn btn-red" data-action="clearAllRuns" title="Clear all run history">🗑 Clear All</button>
+      </div>
       <table>
         <thead>
           <tr>
@@ -245,6 +262,7 @@
 </main>
 
 <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+<div id="confirm-dialog"></div>
 
 <script>
 // ── State ────────────────────────────────────────────────────────
@@ -449,6 +467,9 @@ function renderRuns() {
       <td>${feedbackBadge(r)}</td>
       <td>
         <button class="btn" data-action="showRunDetail" data-run-id="${esc(r.id)}">Details</button>
+        ${r.meta && (r.meta.exitCode === null || r.meta.exitCode === undefined) && !r.isIncomplete
+          ? `<button class="btn btn-red" disabled title="Cannot delete a running run">🗑</button>`
+          : `<button class="btn btn-red" data-action="deleteRun" data-run-id="${esc(r.id)}" aria-label="Delete run ${esc(r.id)}" title="Delete this run">🗑</button>`}
       </td>
     </tr>`;
   }).join('');
@@ -611,6 +632,85 @@ async function answerQuestionCustom(agentId, questionId) {
   await answerQuestion(agentId, questionId, answer);
 }
 
+// ── Confirm Dialog ──────────────────────────────────────────────
+function showConfirm(message) {
+  return new Promise(resolve => {
+    const container = document.getElementById('confirm-dialog');
+    const previouslyFocused = document.activeElement;
+
+    container.innerHTML = `
+      <div class="confirm-overlay">
+        <div class="confirm-box" role="dialog" aria-modal="true" aria-label="Confirm delete" aria-describedby="confirm-message" tabindex="-1">
+          <p id="confirm-message">${esc(message)}</p>
+          <div class="confirm-actions">
+            <button class="btn" id="confirm-cancel">Cancel</button>
+            <button class="btn btn-red" id="confirm-ok" style="background:var(--red);border-color:var(--red);color:#fff">Delete</button>
+          </div>
+        </div>
+      </div>`;
+
+    const cancelBtn = document.getElementById('confirm-cancel');
+    const okBtn = document.getElementById('confirm-ok');
+    const dialog = container.querySelector('[role="dialog"]');
+
+    function closeDialog(result) {
+      document.removeEventListener('keydown', handleKeydown, true);
+      container.innerHTML = '';
+      if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+        previouslyFocused.focus();
+      }
+      resolve(result);
+    }
+
+    function handleKeydown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeDialog(false);
+        return;
+      }
+      if (event.key === 'Tab') {
+        const focusable = [cancelBtn, okBtn];
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault(); last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault(); first.focus();
+        } else if (!dialog.contains(document.activeElement)) {
+          event.preventDefault(); first.focus();
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeydown, true);
+    cancelBtn.onclick = () => closeDialog(false);
+    okBtn.onclick = () => closeDialog(true);
+    cancelBtn.focus();
+  });
+}
+
+// ── Delete Actions ──────────────────────────────────────────────
+async function deleteRun(runId) {
+  const ok = await showConfirm(`Delete run ${runId}?`);
+  if (!ok) return;
+  try {
+    const res = await api('DELETE', `/api/runs/${encodeURIComponent(runId)}`);
+    showToast(res.message || 'Run deleted');
+    document.getElementById('run-detail').style.display = 'none';
+    await refreshRuns();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function clearAllRuns() {
+  const ok = await showConfirm('Delete ALL run history? This cannot be undone.');
+  if (!ok) return;
+  try {
+    const res = await api('DELETE', '/api/runs');
+    showToast(res.message || 'All runs cleared');
+    document.getElementById('run-detail').style.display = 'none';
+    await refreshRuns();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
 // ── HTML Escaping ───────────────────────────────────────────────
 function esc(str) {
   if (str == null) return '';
@@ -680,6 +780,8 @@ document.addEventListener('click', (e) => {
     case 'submitFeedback':    submitFeedback(runId); break;
     case 'answerQuestion':    answerQuestion(agentId, questionId, answer); break;
     case 'answerQuestionCustom': answerQuestionCustom(agentId, questionId); break;
+    case 'deleteRun':         deleteRun(runId); break;
+    case 'clearAllRuns':      clearAllRuns(); break;
   }
 });
 

@@ -593,6 +593,86 @@ function script:Invoke-Route {
             return
         }
 
+        # ── DELETE /api/runs (all or per agent via ?agent=X) ─────
+        if ($method -eq 'DELETE' -and $path -eq '/api/runs') {
+            $agentFilter = $request.QueryString['agent']
+            if ($agentFilter) {
+                if (-not (script:Test-SafeIdentifier -Value $agentFilter)) {
+                    script:Send-ErrorResponse -Response $response -Message 'Invalid agent ID format' -StatusCode 400
+                    return
+                }
+                $result = Clear-RunHistory -RunsRoot $RunsRoot -AgentId $agentFilter
+            }
+            else {
+                $result = Clear-RunHistory -RunsRoot $RunsRoot -All
+            }
+
+            $label = if ($agentFilter) { " for agent '$agentFilter'" } else { '' }
+            if ($result.Errors.Count -gt 0 -and $result.DeletedCount -eq 0) {
+                script:Send-JsonResponse -Response $response -Body ([ordered]@{
+                    ok      = $false
+                    message = "Failed to clear runs$label"
+                    deleted = 0
+                    skipped = $result.SkippedCount
+                    errors  = $result.Errors
+                }) -StatusCode 500
+            }
+            elseif ($result.Errors.Count -gt 0) {
+                script:Send-JsonResponse -Response $response -Body ([ordered]@{
+                    ok      = $true
+                    message = "Cleared $($result.DeletedCount) run(s)$label (some failed)"
+                    deleted = $result.DeletedCount
+                    skipped = $result.SkippedCount
+                    errors  = $result.Errors
+                })
+            }
+            else {
+                script:Send-JsonResponse -Response $response -Body ([ordered]@{
+                    ok      = $true
+                    message = "Cleared $($result.DeletedCount) run(s)$label"
+                    deleted = $result.DeletedCount
+                    skipped = $result.SkippedCount
+                })
+            }
+            return
+        }
+
+        # ── DELETE /api/runs/:id ─────────────────────────────────
+        if ($method -eq 'DELETE' -and $path -match '^/api/runs/(.+)$') {
+            $runId = $Matches[1]
+
+            $runDir = script:Test-SafeRunId -RunId $runId
+            if (-not $runDir) {
+                script:Send-ErrorResponse -Response $response -Message 'Invalid run ID format' -StatusCode 400
+                return
+            }
+
+            if (-not (Test-Path -LiteralPath $runDir)) {
+                script:Send-ErrorResponse -Response $response -Message 'Run not found' -StatusCode 404
+                return
+            }
+
+            $result = Clear-RunHistory -RunsRoot $RunsRoot -RunId $runId
+            if ($result.Errors.Count -gt 0) {
+                script:Send-JsonResponse -Response $response -Body ([ordered]@{
+                    ok      = $false
+                    message = $result.Errors[0]
+                    deleted = $result.DeletedCount
+                }) -StatusCode 409
+            }
+            elseif ($result.DeletedCount -eq 0) {
+                script:Send-ErrorResponse -Response $response -Message 'Run could not be deleted' -StatusCode 409
+            }
+            else {
+                script:Send-JsonResponse -Response $response -Body ([ordered]@{
+                    ok      = $true
+                    message = "Deleted run '$runId'"
+                    deleted = $result.DeletedCount
+                })
+            }
+            return
+        }
+
         # ── 404 ──────────────────────────────────────────────────
         script:Send-ErrorResponse -Response $response -Message "Not found: $path" -StatusCode 404
 

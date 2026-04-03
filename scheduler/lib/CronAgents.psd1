@@ -47,6 +47,7 @@
         'Initialize-RunMetadata',
         'Write-RunMetadata',
         'Get-RunHistory',
+        'Clear-RunHistory',
         'Test-FeedbackPresent',
         # PersonalRepo
         'ConvertTo-Slug',
