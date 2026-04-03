@@ -53,6 +53,26 @@ if (-not $RunsRoot) {
 # --- State file path ---
 $stateFile = Join-Path $stateRoot 'state.json'
 
+# --- Isolated copilot home (prevents IDE auto-connect hangs) ---
+$schedulerCopilotHome = $null
+$copilotAuthToken     = $null
+try {
+    $schedulerCopilotHome = Initialize-SchedulerCopilotHome -StateRoot $stateRoot
+    $copilotAuthToken     = Get-CopilotAuthToken
+    if (-not $copilotAuthToken) {
+        Write-CronAgentsLog -Level 'warn' -Message 'No GitHub token found — copilot process may fail to authenticate with isolated home.'
+    }
+}
+catch {
+    Write-CronAgentsLog -Level 'warn' -Message "Failed to initialize scheduler copilot home: $_ — falling back to default."
+}
+
+# Build environment overrides once at script scope — used by both the
+# main agent run and the post-run summarizer subprocess.
+$copilotEnvOverrides = @{}
+if ($schedulerCopilotHome) { $copilotEnvOverrides['COPILOT_HOME'] = $schedulerCopilotHome }
+if ($copilotAuthToken)     { $copilotEnvOverrides['GH_TOKEN']     = $copilotAuthToken }
+
 # --- Result tracking ---
 $exitCode     = -1
 $timedOut     = $false
@@ -97,7 +117,9 @@ function New-CommandProcessStartInfo {
         [Parameter(Mandatory)]
         [string]$WorkingDirectory,
 
-        [string[]]$Arguments
+        [string[]]$Arguments,
+
+        [hashtable]$EnvironmentOverrides
     )
 
     $commandParts = Split-CommandLine -CommandLine $CommandLine
@@ -124,6 +146,12 @@ function New-CommandProcessStartInfo {
         }
     }
 
+    if ($EnvironmentOverrides) {
+        foreach ($key in $EnvironmentOverrides.Keys) {
+            $psi.Environment[$key] = $EnvironmentOverrides[$key]
+        }
+    }
+
     return $psi
 }
 
@@ -147,7 +175,8 @@ function Invoke-CopilotRun {
 
     $psi = New-CommandProcessStartInfo -CommandLine $copilotPath `
         -WorkingDirectory $(if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }) `
-        -Arguments $Arguments
+        -Arguments $Arguments `
+        -EnvironmentOverrides $(if ($copilotEnvOverrides.Count -gt 0) { $copilotEnvOverrides } else { $null })
 
     $proc = [System.Diagnostics.Process]::new()
     $proc.StartInfo = $psi
@@ -477,7 +506,7 @@ try {
         $copilotPath   = if ($GlobalConfig.copilotPath) { $GlobalConfig.copilotPath } else { 'copilot' }
         $summaryFile   = Join-Path $runDir 'summary.md'
         $summaryShare  = Join-Path $runDir 'summarizer-session.md'
-        $schedulerDir  = Join-Path $RepoRoot 'scheduler'
+        $agentsDir     = Join-Path $RepoRoot 'scheduler' 'agents'
         $summaryPrompt = "Summarize the agent run in directory: $runDir. Read output.md and meta.json."
 
         $summaryArgs = @(
@@ -485,7 +514,7 @@ try {
             '-p'
             $summaryPrompt
             '--silent'
-            "--add-dir=$schedulerDir"
+            "--add-dir=$agentsDir"
             '--allow-all-tools'
             "--share=$summaryShare"
             '--no-ask-user'
@@ -495,13 +524,15 @@ try {
 
         $sumPsi = New-CommandProcessStartInfo -CommandLine $copilotPath `
             -WorkingDirectory $(if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }) `
-            -Arguments $summaryArgs
+            -Arguments $summaryArgs `
+            -EnvironmentOverrides $(if ($copilotEnvOverrides.Count -gt 0) { $copilotEnvOverrides } else { $null })
 
         $sumProc = [System.Diagnostics.Process]::new()
         $sumProc.StartInfo = $sumPsi
         $sumProc.Start() | Out-Null
 
         $sumStdout = $sumProc.StandardOutput.ReadToEndAsync()
+        $sumStderr = $sumProc.StandardError.ReadToEndAsync()
         # Allow summarizer up to 2 minutes
         if (-not $sumProc.WaitForExit(120000)) {
             Write-CronAgentsLog -Level 'warn' -Message "Run-summarizer timed out for '$AgentId' — killing."
@@ -509,7 +540,12 @@ try {
         }
 
         [void]$sumStdout.Wait(5000)
+        [void]$sumStderr.Wait(5000)
         $sumText = if ($sumStdout.IsCompleted) { $sumStdout.Result } else { '' }
+        $sumErrText = if ($sumStderr.IsCompleted) { $sumStderr.Result } else { '' }
+        if ($sumErrText) {
+            Write-CronAgentsLog -Level 'debug' -Message "Run-summarizer stderr for '$AgentId': $sumErrText"
+        }
         [System.IO.File]::WriteAllText($summaryFile, $sumText, [System.Text.Encoding]::UTF8)
         $sumProc.Dispose()
 
