@@ -242,14 +242,14 @@ function Build-CopilotArguments {
     # Silent mode
     $args_.Add('--silent')
 
+    # Unattended runs must auto-approve the available tool set.
+    $args_.Add('--allow-all-tools')
+
     # Agent mode vs prompt-only mode
     if ($AgentConfig.PSObject.Properties['agent'] -and
         -not [string]::IsNullOrWhiteSpace($AgentConfig.agent)) {
         $args_.Add("--agent=$($AgentConfig.agent)")
         $args_.Add('--add-dir=.github/agents')
-    }
-    else {
-        $args_.Add('--allow-all-tools')
     }
 
     # Session share file
@@ -277,9 +277,6 @@ function Build-CopilotArguments {
             $args_.Add($flag)
         }
     }
-
-    # Unattended runs must auto-approve the agent's scoped tool use.
-    $args_.Add('--allow-all-tools')
 
     # Working-directory scoping
     $agentWd = $null
