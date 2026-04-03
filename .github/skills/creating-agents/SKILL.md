@@ -8,16 +8,6 @@ argument-hint: "Describe what the agent should do (e.g., 'review PRs every morni
 
 Create a CronAgents scheduled entry: either a custom agent (`.agent.md` + `.agent-registration.json`) or a prompt-only invocation (`.agent-registration.json` only).
 
-## Tool Format
-
-CronAgents runs `.agent.md` profiles through **GitHub Copilot CLI**.
-
-If you specify `tools:`, use the official CLI tool aliases: `read`, `edit`, `search`, `execute`, and `agent`. Compatible aliases include `shell` / `Bash` / `powershell` for `execute`, and `Grep` / `Glob` for `search`. You can also reference MCP tools with `server-name/tool-name` or `server-name/*` for all tools from a server.
-
-Do **not** use VS Code-only tool names such as `editFiles`, `runCommands`, `runTasks`, `codebase`, `findTestFiles`, `usages`, `terminalLastCommand`, `terminalSelection`, or `vscodeAPI`.
-
-Keep the list minimal. If you are unsure, omit `tools:` rather than guessing.
-
 ## Personal Repo Setup — Do This Before Creating Anything
 
 Agent definitions and registrations live in the user's **personal repo** (`~/.cronagents/`), not in the infra repo.
@@ -102,6 +92,16 @@ No `.agent.md`. Omit `agent` field — scheduler invokes `copilot -p` with `--al
 ### Companion SKILL.md (optional, agent mode only)
 
 Create in `~/.cronagents/.github/skills/<agent-name>/SKILL.md` if the agent needs domain knowledge.
+
+## Tool Format
+
+CronAgents runs `.agent.md` profiles through **GitHub Copilot CLI**.
+
+If you specify `tools:`, use the official CLI tool aliases: `read`, `edit`, `search`, `execute`, and `agent`. Compatible aliases include `shell` / `Bash` / `powershell` for `execute`, and `Grep` / `Glob` for `search`. You can also reference MCP tools with `server-name/tool-name` or `server-name/*` for all tools from a server.
+
+Do **not** use VS Code-only tool names such as `editFiles`, `runCommands`, `runTasks`, `codebase`, `findTestFiles`, `usages`, `terminalLastCommand`, `terminalSelection`, or `vscodeAPI`.
+
+Keep the list minimal. If you are unsure, omit `tools:` rather than guessing.
 
 ## Validate
 
