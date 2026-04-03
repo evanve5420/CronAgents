@@ -9,20 +9,19 @@ Agent profiles are discovered by Copilot CLI from:
 - **Personal repo (default):** `~/.cronagents/.github/agents/<agent-name>.agent.md`
 - **User-global:** `~/.copilot/agents/<agent-name>.agent.md`
 
-## Important for CronAgents
+## Tool format for CronAgents
 
-CronAgents runs custom agents through **GitHub Copilot CLI**, so `.agent.md` files must use the CLI-compatible custom-agent format.
+CronAgents runs custom agents through **GitHub Copilot CLI**.
 
-- Prefer the official tool aliases `read`, `edit`, `search`, `execute`, and `agent`.
-- Namespaced MCP tools such as `github/*`, `playwright/*`, or `server-name/tool-name` are also valid when explicitly needed.
-- Compatible aliases include `shell`, `Bash`, and `powershell` for `execute`, plus `Grep` and `Glob` for `search`.
-- Do **not** use VS Code-only tool names such as `editFiles`, `runCommands`, `runTasks`, `codebase`, `findTestFiles`, `usages`, `terminalLastCommand`, `terminalSelection`, `changes`, `problems`, `githubRepo`, or `vscodeAPI` in CronAgents agent profiles. Copilot CLI/cloud-agent configuration ignores unrecognized tool names.
+If you specify `tools:`, use concrete CLI tool names such as `view`, `rg`, `glob`, `edit`, `apply_patch`, `powershell`, `read_powershell`, `write_powershell`, `stop_powershell`, `list_powershell`, `task`, `read_agent`, and `list_agents`.
+
+Do **not** use VS Code-style labels such as `read`, `search`, `shell`, `codebase`, `runCommands`, `usages`, or `vscodeAPI`.
 
 ## Format
 
 ```markdown
 ---
-name: <display-name>
+name: <agent-name>
 description: "<one-line description>"
 tools:
   - <tool-name>
@@ -36,30 +35,28 @@ tools:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `name` | No (recommended) | Display name for the custom agent. Keep it aligned with the file purpose for clarity. |
-| `description` | Yes | One-line description for documentation, discovery, and agent selection. |
-| `tools` | No | Array of CLI-compatible tool names the agent can use. Omit to allow all tools. |
-
-For CronAgents, the registration file's `agent` field should match the `.agent.md` **file stem** (for example, `security-scan` from `security-scan.agent.md`), not necessarily the frontmatter `name`.
+| `name` | Yes | Agent name, passed to Copilot CLI via `--agent`. Must match the registration's `agent` field. |
+| `description` | No | One-line description for documentation and discovery. |
+| `tools` | Yes | Array of tool names the agent can use. |
 
 ### Common tool sets
 
 | Use case | Tools | Notes |
 |----------|-------|-------|
-| Read-only analysis | `[read]` or `[read, search]` | Safest — can't modify anything. |
-| Code editing | `[read, edit, search]` | Can modify files but not run commands. |
-| Shell access (limited) | `[read, execute]` | `shell` is also accepted, but `execute` is the primary alias from the official custom-agent docs. Pair with `denyTools` in registration to block dangerous commands. |
-| Multi-agent coordination | `[read, search, agent]` | Lets the agent delegate to other custom agents without granting edit or shell access. |
+| Read-only analysis | `[view, rg, glob]` | Safest — can't modify anything. |
+| Code editing | `[view, edit, rg, glob]` | Can modify files but not run commands. |
+| Shell access (limited) | `[view, powershell, read_powershell, write_powershell, stop_powershell, list_powershell]` | Pair with `denyTools` in registration to block dangerous commands. |
+| Delegation | `[task, read_agent, list_agents]` | Lets the agent delegate work to sub-agents. |
 | Full access | All tools | Only when genuinely needed. Prefer scoped tools. |
 
 ### Tool names
 
-- `read` — read file contents
-- `search` — search/grep across files
+- `view` — read file contents
+- `rg` / `glob` — search for text or files
 - `edit` — modify files
-- `execute` — run shell commands (`shell`, `Bash`, and `powershell` are compatible aliases)
-- `agent` — delegate to another custom agent
-- `github/*`, `playwright/*`, or `server-name/tool-name` — namespaced MCP tools when configured
+- `apply_patch` — patch files
+- `powershell`, `read_powershell`, `write_powershell`, `stop_powershell`, `list_powershell` — shell access
+- `task`, `read_agent`, `list_agents` — delegate to sub-agents
 
 ## Example
 
@@ -68,8 +65,9 @@ For CronAgents, the registration file's `agent` field should match the `.agent.m
 name: security-scan
 description: "Scan for security vulnerabilities in code and dependencies"
 tools:
-  - read
-  - search
+  - view
+  - rg
+  - glob
 ---
 
 You are a security scanner. Check for:
@@ -83,7 +81,7 @@ Report each finding with severity, file, line, issue, and recommendation.
 
 ## Best practices
 
-- **Least privilege** — start with `[read]` or `[read, search]` and expand only if needed.
+- **Least privilege** — start with `[view, rg, glob]` and expand only if needed.
 - **Focused system prompts** — tell the agent exactly what to do and what format to use.
-- **CLI-first tools** — if a generated draft uses VS Code-style tool names, rewrite the list to CLI-compatible aliases before saving.
-- **No shell unless required** — if you need shell access, prefer `execute`/`shell` only when necessary and use `denyTools` in the registration to block destructive commands.
+- **CLI-first tools** — if a generated draft uses VS Code-style tool names, rewrite the list to CLI tool names before saving.
+- **No shell unless required** — if you need shell access, use `denyTools` in the registration to block destructive commands.

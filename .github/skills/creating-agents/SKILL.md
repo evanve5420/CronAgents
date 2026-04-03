@@ -8,19 +8,15 @@ argument-hint: "Describe what the agent should do (e.g., 'review PRs every morni
 
 Create a CronAgents scheduled entry: either a custom agent (`.agent.md` + `.agent-registration.json`) or a prompt-only invocation (`.agent-registration.json` only).
 
-## Important — CronAgents agent profiles must be CLI-compatible
+## Tool Format
 
-CronAgents ultimately runs these agents via **GitHub Copilot CLI**, not VS Code chat.
+CronAgents runs `.agent.md` profiles through **GitHub Copilot CLI**.
 
-When you create or edit a `.agent.md` profile for CronAgents:
+If you specify `tools:`, use concrete CLI tool names from the Copilot CLI reference, for example `view`, `rg`, `glob`, `edit`, `apply_patch`, or `powershell`.
 
-- Use the official custom-agent `tools` format that Copilot CLI supports.
-- Prefer the CLI-safe aliases: `read`, `edit`, `search`, `execute`, `agent`.
-- You may also use namespaced MCP tools such as `github/*`, `playwright/*`, or `server-name/tool-name` when intentionally needed.
-- Compatible aliases include `shell`/`Bash`/`powershell` for `execute`, and `Grep`/`Glob` for `search`.
-- **Do not** emit VS Code-only tool names or chat-mode tool sets such as `editFiles`, `runCommands`, `runTasks`, `codebase`, `findTestFiles`, `usages`, `terminalLastCommand`, `terminalSelection`, `changes`, `problems`, `githubRepo`, or `vscodeAPI`.
+Do **not** use VS Code-style labels such as `read`, `search`, `shell`, `codebase`, `runCommands`, `usages`, or `vscodeAPI`.
 
-If Copilot generates a draft agent profile using VS Code-style tool names, rewrite the `tools:` list before saving it so the profile stays correct for CLI execution.
+Keep the list minimal. If you are unsure, omit `tools:` rather than guessing.
 
 ## Personal Repo Setup — Do This Before Creating Anything
 
@@ -49,7 +45,7 @@ Skip anything already clear from context:
 1. **What should it do?**
 2. **Schedule** — daily at 9am, every 4h, weekly Monday, etc.
 3. **Agent or prompt-only?** — Prompt-only is simpler when no custom system instructions or tool scoping is needed. Agent mode when the task needs custom behavior, tool restrictions, or a system prompt.
-4. **What tools does it need?** — Scope to the **minimum required** and express them in **CLI-compatible tool aliases**. Start restrictive; the user can expand later. See [AGENT-PROFILE.md](references/AGENT-PROFILE.md) for the approved tool format and common tool sets.
+4. **What tools does it need?** — Scope to the **minimum required**. Use CLI tool names, not VS Code-style labels. See [AGENT-PROFILE.md](references/AGENT-PROFILE.md).
 5. **Model preference?**
 6. **Execution policies?** — timeout, skip on battery, retry on failure, `runIf` (see [RUNIF.md](references/RUNIF.md)), notify on failure (`notifyOnFailure`), notify on success (`notifyOnSuccess`)
 7. **Agent profile placement (agent mode only)** — personal repo `.github/agents/` (default) or user-global `~/.copilot/agents/`
@@ -69,8 +65,7 @@ Custom agent profile — see [AGENT-PROFILE.md](references/AGENT-PROFILE.md) for
 name: <agent-name>
 description: "<one-line description>"
 tools:
-  - <CLI-compatible tool alias>
-  - <CLI-compatible tool alias>
+  - <minimum CLI tools needed>
 ---
 
 <System prompt>
@@ -110,11 +105,10 @@ Create in `~/.cronagents/.github/skills/<agent-name>/SKILL.md` if the agent need
 
 ## Validate
 
-- Agent mode: `.agent.md` lives in `~/.cronagents/.github/agents/` or `~/.copilot/agents/`, has an explicit least-privilege `tools` list using **CLI-compatible aliases**, and `agent` in the registration matches the `.agent.md` file stem
+- Agent mode: `.agent.md` lives in `~/.cronagents/.github/agents/` or `~/.copilot/agents/`, has explicit `tools` list (least-privilege), and `agent` in the registration matches the `.agent.md` name
 - Prompt-only: registration has `prompt` + `schedule`, no `agent` field, `denyTools` considered
 - Both: registration file is named `~/.cronagents/.cronagents/agents/<agent-id>.agent-registration.json`
 - Both: schedule type is `interval`/`daily`/`weekly`, test with `cronagents.ps1 run <agent-id>`
-- Both: if a generated `.agent.md` contains VS Code-only tool names, normalize them before finishing
 
 ## Agent Questions (Deferred Decisions)
 

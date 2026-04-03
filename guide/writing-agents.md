@@ -81,9 +81,9 @@ Report each finding with:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `name` | No (recommended) | Display name for the custom agent |
-| `description` | Yes | One-line description for documentation and discovery |
-| `tools` | No | Array of CLI-compatible tool names the agent can use; omit to allow all tools |
+| `name` | Yes | Agent name, passed to Copilot CLI via `--agent` |
+| `description` | No | One-line description for documentation |
+| `tools` | Yes | Array of tool names the agent can use |
 
 Everything after the frontmatter is the **system prompt** that defines the agent's behavior.
 
@@ -104,7 +104,7 @@ Everything after the frontmatter is the **system prompt** that defines the agent
 }
 ```
 
-The `agent` field must match the `.agent.md` file stem that Copilot CLI discovers from `.github/agents/` or `~/.copilot/agents/`. For example, `security-scan` matches `security-scan.agent.md` even if the frontmatter `name` differs.
+The `agent` field must match the custom agent name that Copilot CLI discovers from `.github/agents/` or `~/.copilot/agents/`.
 
 ---
 
@@ -149,7 +149,7 @@ Follow the principle of **least privilege** — give agents only the tools they 
 |----------|-------|-------|
 | Read-only analysis | `[read]` or `[read, search]` | Safest. Can't modify anything. |
 | Code editing | `[read, edit, search]` | Can modify files but not run commands. |
-| Shell access (limited) | `[read, execute]` | `shell` is also accepted, but `execute` is the primary alias from the official custom-agent docs. Pair with `denyTools` to block dangerous commands. |
+| Shell access (limited) | `[read, shell]` | Pair with `denyTools` to block dangerous commands. |
 | Full access | All tools | Only when genuinely needed. Prefer agent mode with scoped tools. |
 
 ### Restricting shell commands
@@ -164,7 +164,7 @@ In prompt-only mode (all tools enabled), use `denyTools` to block specific shell
 ]
 ```
 
-In agent mode, simply omit `execute`/`shell` from the tools list to prevent all shell access.
+In agent mode, simply omit `shell` from the tools list to prevent all shell access.
 
 ### Tool resolution
 
@@ -173,10 +173,7 @@ For agent mode, Copilot CLI loads the custom agent profile by name from its supp
 - `read` — read file contents
 - `search` — search/grep across files
 - `edit` — modify files
-- `execute` — run shell commands (`shell`, `Bash`, and `powershell` are compatible aliases)
-- `agent` — delegate to another custom agent
-
-Because CronAgents runs these profiles through **Copilot CLI**, prefer the CLI-compatible aliases above in `.agent.md` files. Avoid VS Code-only tool names such as `editFiles`, `runCommands`, `runTasks`, `codebase`, `findTestFiles`, `usages`, `terminalLastCommand`, `terminalSelection`, `changes`, `problems`, `githubRepo`, and `vscodeAPI` in CronAgents agent profiles.
+- `shell` — run shell commands
 
 ---
 
