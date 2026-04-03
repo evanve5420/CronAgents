@@ -66,7 +66,7 @@ Additional flags passed to the Copilot CLI invocation.
 
 ### `workingDirectory` (string or null)
 
-Override the working directory and scope for this agent. When set, the scheduler grants access to that directory plus the personal repo and infra repo with `--add-dir`. When `null`, the scheduler runs from the personal repo root if available, otherwise the infra repo root, with `--allow-all`.
+Override the working directory and scope for this agent. When set, the scheduler grants access to that directory plus the personal repo and infra repo with `--add-dir`. When `null`, the scheduler runs from the personal repo root if available, otherwise the infra repo root, with `--allow-all`. In all unattended runs, CronAgents also passes `--allow-all-tools`.
 
 ### `envVars` (object, default `{}`)
 

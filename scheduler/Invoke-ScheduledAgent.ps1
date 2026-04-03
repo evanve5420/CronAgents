@@ -278,6 +278,9 @@ function Build-CopilotArguments {
         }
     }
 
+    # Unattended runs must auto-approve the agent's scoped tool use.
+    $args_.Add('--allow-all-tools')
+
     # Working-directory scoping
     $agentWd = $null
     if ($AgentConfig.PSObject.Properties['workingDirectory'] -and

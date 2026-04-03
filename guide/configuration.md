@@ -419,7 +419,7 @@ CronAgents invokes the script with named parameters `-RepoRoot`, `-AgentId`, and
 |---|---|
 | **Type** | `string` or `null` |
 | **Default** | `null` |
-| **Description** | Override the working directory and scope for this agent's Copilot CLI invocation. When set, the scheduler grants access to that directory plus the personal repo and infra repo with `--add-dir`. When `null`, the scheduler runs from the personal repo root if available, otherwise the infra repo root, with `--allow-all`. |
+| **Description** | Override the working directory and scope for this agent's Copilot CLI invocation. When set, the scheduler grants access to that directory plus the personal repo and infra repo with `--add-dir`. When `null`, the scheduler runs from the personal repo root if available, otherwise the infra repo root, with `--allow-all`. In all unattended runs, CronAgents also passes `--allow-all-tools`. |
 
 ```json
 "workingDirectory": "C:\\Projects\\my-app"

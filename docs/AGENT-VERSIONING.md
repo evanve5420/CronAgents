@@ -145,7 +145,7 @@ Fields in `cronagents.json`:
 }
 ```
 
-All fields are optional with sensible defaults. A user who never touches this section gets a personal repo at `~/.cronagents/`, auto-detected username, auto-committed feedback edits, and agents running from the personal repo root with `--allow-all`.
+All fields are optional with sensible defaults. A user who never touches this section gets a personal repo at `~/.cronagents/`, auto-detected username, auto-committed feedback edits, and agents running from the personal repo root with `--allow-all` plus unattended tool approval via `--allow-all-tools`.
 
 ---
 
@@ -155,7 +155,8 @@ The scheduler runs Copilot CLI with CWD set to the personal repo by default:
 
 - Agent profiles are discovered from `~/.cronagents/.github/agents/`
 - Registrations are read from `~/.cronagents/.cronagents/agents/`
-- `--allow-all` is passed by default (CWD = personal repo)
+- `--allow-all` is passed by default for directory scope (CWD = personal repo)
+- `--allow-all-tools` is passed for unattended runs
 - Per-agent `workingDirectory` config can restrict to specific project directories
 
 ---

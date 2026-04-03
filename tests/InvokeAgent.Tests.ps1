@@ -118,11 +118,12 @@ Describe 'Invoke-ScheduledAgent — Mock Copilot CLI Arguments' {
 
     It 'Mock invocation log shows correct --agent flag (agent mode)' {
         $mockCopilotPath = Join-Path $PSScriptRoot 'mocks' 'copilot.ps1'
-        $null = & pwsh -NoProfile -File $mockCopilotPath -Agent 'my-custom-agent' -p 'Do stuff' -Silent
+        $null = & pwsh -NoProfile -File $mockCopilotPath -Agent 'my-custom-agent' -p 'Do stuff' -Silent -AllowAllTools
 
         $invocations = Get-MockInvocations -LogPath $testEnv.MockLogPath
         $invocations.Count | Should -BeGreaterOrEqual 1
         $invocations[-1].agent | Should -Be 'my-custom-agent'
+        $invocations[-1].allowAllTools | Should -Be $true
     }
 
     It 'Mock invocation log shows --allow-all-tools (prompt-only mode)' {
