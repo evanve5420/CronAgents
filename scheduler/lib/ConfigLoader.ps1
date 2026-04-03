@@ -16,6 +16,7 @@ $script:ValidLogLevels   = @('debug', 'info', 'warn', 'error')
 $script:ValidScheduleTypes = @('interval', 'daily', 'weekly')
 $script:DurationPattern  = '^[0-9]+(m|h|s)?$|^0$'
 $script:TimePattern      = '^([01]\d|2[0-3]):[0-5]\d$'
+$script:SafeIdentifierPattern = '^[A-Za-z0-9._-]+$'
 
 # -------------------------------------------------------------------
 # Helper: Find-RepoRoot — walk up from the current directory to find
@@ -61,6 +62,26 @@ function ConvertTo-OrderedPSObject {
         return [PSCustomObject]$InputObject
     }
     return [PSCustomObject]@{}
+}
+
+# -------------------------------------------------------------------
+# Helper: Test-CronAgentsSafeIdentifier — validate filename-safe IDs
+# used for agent IDs, question IDs, and run directory segments.
+# -------------------------------------------------------------------
+function Test-CronAgentsSafeIdentifier {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+
+    return ($Value -match $script:SafeIdentifierPattern -and
+        $Value -eq [System.IO.Path]::GetFileName($Value))
 }
 
 # -------------------------------------------------------------------
@@ -270,6 +291,10 @@ function Import-SingleAgentConfig {
     }
 
     $fileName = $leafName.Substring(0, $leafName.Length - $script:AgentRegistrationSuffix.Length)
+    if (-not (Test-CronAgentsSafeIdentifier -Value $fileName)) {
+        Write-CronAgentsLog -Level 'warn' -Message "Agent config '$FilePath' skipped — filename stem '$fileName' must use only letters, numbers, dots, underscores, or hyphens."
+        return $null
+    }
 
     try {
         $raw = Get-Content -LiteralPath $FilePath -Raw -Encoding UTF8

@@ -201,18 +201,17 @@ function Get-RunHistory {
         return @()
     }
 
-    # List directories matching the <timestamp>_<agentId>_<nonce> pattern
-    $dirs = Get-ChildItem -LiteralPath $RunsRoot -Directory |
-        Where-Object { $_.Name -match '^(\d{8}T\d{6})_(.+)_([0-9a-f]{4})$' }
+    $dirs = Get-ChildItem -LiteralPath $RunsRoot -Directory
 
     $results = @()
 
     foreach ($dir in $dirs) {
-        if ($dir.Name -notmatch '^(\d{8}T\d{6})_(.+)_([0-9a-f]{4})$') {
+        $resolvedRun = Resolve-CronAgentsRunPath -RunId $dir.Name -RunsRoot $RunsRoot
+        if (-not $resolvedRun.IsValid -or -not $resolvedRun.Exists) {
             continue
         }
-        $tsRaw      = $Matches[1]
-        $extractedId = $Matches[2]
+        $tsRaw = $resolvedRun.TimestampToken
+        $extractedId = $resolvedRun.AgentId
 
         # Filter by AgentId if specified
         if ($AgentId -and $extractedId -ne $AgentId) {
@@ -253,7 +252,7 @@ function Get-RunHistory {
         $hasSummary  = Test-Path -LiteralPath $summaryPath
 
         $results += [PSCustomObject]@{
-            RunDirectory      = $dir.FullName
+            RunDirectory      = $resolvedRun.Path
             AgentId           = $extractedId
             Timestamp         = $parsedTime
             Meta              = $meta
@@ -275,6 +274,76 @@ function Get-RunHistory {
 }
 
 # -------------------------------------------------------------------
+# Resolve-CronAgentsRunPath — validate a run ID and resolve its path
+# -------------------------------------------------------------------
+function Resolve-CronAgentsRunPath {
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RunId,
+
+        [Parameter(Mandatory)]
+        [string]$RunsRoot
+    )
+
+    $invalidResult = [PSCustomObject]@{
+        IsValid        = $false
+        Exists         = $false
+        Path           = $null
+        AgentId        = $null
+        TimestampToken = $null
+        Reason         = 'invalid-format'
+    }
+
+    if ($RunId -ne [System.IO.Path]::GetFileName($RunId)) {
+        return $invalidResult
+    }
+
+    if ($RunId -notmatch '^(?<Timestamp>[0-9]{8}T[0-9]{6})_(?<AgentId>.+)_(?<Nonce>[0-9a-f]{4})$') {
+        return $invalidResult
+    }
+
+    $agentId = $Matches['AgentId']
+    if (-not (Test-CronAgentsSafeIdentifier -Value $agentId)) {
+        return $invalidResult
+    }
+
+    $runsRootFull = [System.IO.Path]::GetFullPath($RunsRoot)
+    $runDir = [System.IO.Path]::GetFullPath((Join-Path $RunsRoot $RunId))
+
+    # Ensure resolved path stays under runs root
+    $prefix = $runsRootFull.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    if (-not $runDir.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $invalidResult
+    }
+
+    $exists = Test-Path -LiteralPath $runDir -PathType Container
+    if ($exists) {
+        $item = Get-Item -LiteralPath $runDir -Force
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq [System.IO.FileAttributes]::ReparsePoint) {
+            return [PSCustomObject]@{
+                IsValid        = $false
+                Exists         = $true
+                Path           = $null
+                AgentId        = $agentId
+                TimestampToken = $Matches['Timestamp']
+                Reason         = 'reparse-point'
+            }
+        }
+    }
+
+    return [PSCustomObject]@{
+        IsValid        = $true
+        Exists         = $exists
+        Path           = $runDir
+        AgentId        = $agentId
+        TimestampToken = $Matches['Timestamp']
+        Reason         = $null
+    }
+}
+
+# -------------------------------------------------------------------
 # Test-SafeRunId — validate a run ID and resolve its directory path
 # -------------------------------------------------------------------
 function Test-SafeRunId {
@@ -288,22 +357,12 @@ function Test-SafeRunId {
         [string]$RunsRoot
     )
 
-    # Strict format: 20240101T123456_<safe-name>_1a2b
-    if ($RunId -notmatch '^[0-9]{8}T[0-9]{6}_[A-Za-z0-9._-]+_[0-9a-f]{4}$') {
+    $resolvedRun = Resolve-CronAgentsRunPath -RunId $RunId -RunsRoot $RunsRoot
+    if (-not $resolvedRun.IsValid) {
         return $null
     }
-    # Must not contain directory separators or traversal segments
-    if ($RunId -ne [System.IO.Path]::GetFileName($RunId)) {
-        return $null
-    }
-    $runsRootFull = [System.IO.Path]::GetFullPath($RunsRoot)
-    $runDir = [System.IO.Path]::GetFullPath((Join-Path $RunsRoot $RunId))
-    # Ensure resolved path stays under runs root
-    $prefix = $runsRootFull.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-    if (-not $runDir.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-        return $null
-    }
-    return $runDir
+
+    return $resolvedRun.Path
 }
 
 # -------------------------------------------------------------------
@@ -358,12 +417,13 @@ function Clear-RunHistory {
 
     # ── Single run ──────────────────────────────────────────────
     if ($RunId) {
-        $runDir = Test-SafeRunId -RunId $RunId -RunsRoot $RunsRoot
-        if (-not $runDir) {
+        $resolvedRun = Resolve-CronAgentsRunPath -RunId $RunId -RunsRoot $RunsRoot
+        if (-not $resolvedRun.IsValid) {
             throw "Invalid run ID format: $RunId"
         }
 
-        if (Test-Path -LiteralPath $runDir) {
+        if ($resolvedRun.Exists) {
+            $runDir = $resolvedRun.Path
             if (& $isRunActive $runDir) {
                 Write-CronAgentsLog -Level 'info' -Message "Skipping active run: $RunId"
                 $errors.Add("Run '$RunId' is still active and cannot be deleted.")

@@ -350,6 +350,18 @@ Describe 'Get-AgentConfigs' {
         $agents[0].Id | Should -Be 'my-custom-agent'
     }
 
+    It 'Skips configs whose filename stem is not a safe agent ID' {
+        $repoRoot = Join-Path $TestDrive 'repo-bad-id'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+
+        $json = '{ "prompt": "test", "schedule": { "type": "daily", "time": "08:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'my agent.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 0
+    }
+
     It 'Resolves .agent.md from .github/agents' {
         $repoRoot = Join-Path $TestDrive 'repo-gh-agents'
         $agentDir = Join-Path $repoRoot '.cronagents\agents'
