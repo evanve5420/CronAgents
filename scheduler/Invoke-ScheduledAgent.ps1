@@ -53,6 +53,20 @@ if (-not $RunsRoot) {
 # --- State file path ---
 $stateFile = Join-Path $stateRoot 'state.json'
 
+# --- Isolated copilot home (prevents IDE auto-connect hangs) ---
+$schedulerCopilotHome = $null
+$copilotAuthToken     = $null
+try {
+    $schedulerCopilotHome = Initialize-SchedulerCopilotHome -StateRoot $stateRoot
+    $copilotAuthToken     = Get-CopilotAuthToken
+    if (-not $copilotAuthToken) {
+        Write-CronAgentsLog -Level 'warn' -Message 'No GitHub token found — copilot process may fail to authenticate with isolated home.'
+    }
+}
+catch {
+    Write-CronAgentsLog -Level 'warn' -Message "Failed to initialize scheduler copilot home: $_ — falling back to default."
+}
+
 # --- Result tracking ---
 $exitCode     = -1
 $timedOut     = $false
@@ -97,7 +111,9 @@ function New-CommandProcessStartInfo {
         [Parameter(Mandatory)]
         [string]$WorkingDirectory,
 
-        [string[]]$Arguments
+        [string[]]$Arguments,
+
+        [hashtable]$EnvironmentOverrides
     )
 
     $commandParts = Split-CommandLine -CommandLine $CommandLine
@@ -124,6 +140,12 @@ function New-CommandProcessStartInfo {
         }
     }
 
+    if ($EnvironmentOverrides) {
+        foreach ($key in $EnvironmentOverrides.Keys) {
+            $psi.Environment[$key] = $EnvironmentOverrides[$key]
+        }
+    }
+
     return $psi
 }
 
@@ -145,9 +167,19 @@ function Invoke-CopilotRun {
 
     Write-CronAgentsLog -Level 'debug' -Message "Copilot command: $copilotPath $($Arguments -join ' ')"
 
+    # Build environment overrides for process isolation
+    $envOverrides = @{}
+    if ($schedulerCopilotHome) {
+        $envOverrides['COPILOT_HOME'] = $schedulerCopilotHome
+    }
+    if ($copilotAuthToken) {
+        $envOverrides['GH_TOKEN'] = $copilotAuthToken
+    }
+
     $psi = New-CommandProcessStartInfo -CommandLine $copilotPath `
         -WorkingDirectory $(if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }) `
-        -Arguments $Arguments
+        -Arguments $Arguments `
+        -EnvironmentOverrides $(if ($envOverrides.Count -gt 0) { $envOverrides } else { $null })
 
     $proc = [System.Diagnostics.Process]::new()
     $proc.StartInfo = $psi
@@ -477,7 +509,7 @@ try {
         $copilotPath   = if ($GlobalConfig.copilotPath) { $GlobalConfig.copilotPath } else { 'copilot' }
         $summaryFile   = Join-Path $runDir 'summary.md'
         $summaryShare  = Join-Path $runDir 'summarizer-session.md'
-        $schedulerDir  = Join-Path $RepoRoot 'scheduler'
+        $agentsDir     = Join-Path $RepoRoot 'scheduler' 'agents'
         $summaryPrompt = "Summarize the agent run in directory: $runDir. Read output.md and meta.json."
 
         $summaryArgs = @(
@@ -485,7 +517,7 @@ try {
             '-p'
             $summaryPrompt
             '--silent'
-            "--add-dir=$schedulerDir"
+            "--add-dir=$agentsDir"
             '--allow-all-tools'
             "--share=$summaryShare"
             '--no-ask-user'
@@ -495,7 +527,8 @@ try {
 
         $sumPsi = New-CommandProcessStartInfo -CommandLine $copilotPath `
             -WorkingDirectory $(if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }) `
-            -Arguments $summaryArgs
+            -Arguments $summaryArgs `
+            -EnvironmentOverrides $(if ($envOverrides.Count -gt 0) { $envOverrides } else { $null })
 
         $sumProc = [System.Diagnostics.Process]::new()
         $sumProc.StartInfo = $sumPsi

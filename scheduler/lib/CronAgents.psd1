@@ -15,7 +15,8 @@
         'PowerHelpers.ps1',
         'RetentionCleanup.ps1',
         'Notifier.ps1',
-        'QuestionsManager.ps1'
+        'QuestionsManager.ps1',
+        'CopilotHome.ps1'
     )
     FunctionsToExport = @(
         # Logger
@@ -78,7 +79,10 @@
         'Clear-AnsweredQuestions',
         'Remove-ExpiredQuestions',
         'Test-AgentHasPendingQuestions',
-        'Write-AnswersFile'
+        'Write-AnswersFile',
+        # CopilotHome
+        'Initialize-SchedulerCopilotHome',
+        'Get-CopilotAuthToken'
     )
     CmdletsToExport   = @()
     VariablesToExport  = @()
