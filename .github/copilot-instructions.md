@@ -24,3 +24,7 @@ No need to run tests for doc only changes.
 > containers import `CronAgents.psd1` in a single process. `Invoke-Tests.ps1`
 > runs each file in its own `pwsh` subprocess with a default maximum of 8
 > concurrent workers for reliable, isolated execution.
+
+## Before creating a PR
+
+Invoke the `code-reviewer` agent as a subagent to review all changes before opening a pull request. Skip this step for changes that are exclusively documentation or confined to `.github/`. For sufficiently simple or trivial changes, ask the user whether a review is needed before invoking.
