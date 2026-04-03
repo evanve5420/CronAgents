@@ -187,7 +187,7 @@ Describe 'Scheduler — Due Agent Collection' {
     }
 }
 
-Describe 'Scheduler startup entry script' {
+Describe 'Scheduler startup entry script' -Tag 'Slow' {
     BeforeEach {
         $script:testEnv = New-TestEnvironment -Name 'SchedStartup'
         $script:startScript = Join-Path $repoRoot 'scheduler' 'Start-CronAgents.ps1'

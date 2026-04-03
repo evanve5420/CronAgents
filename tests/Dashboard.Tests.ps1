@@ -83,7 +83,7 @@ Describe 'Dashboard — Data Layer' {
 
 # ── Integration Tests: HTTP Server ────────────────────────────────────
 
-Describe 'Dashboard — HTTP Server' {
+Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
     BeforeAll {
         $script:testEnv = New-TestEnvironment -Name 'DashHTTP'
         $null = New-TestAgentConfig -TestEnv $script:testEnv -AgentId 'http-agent' `

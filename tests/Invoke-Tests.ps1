@@ -11,18 +11,23 @@
     Optional wildcard filter for test file names (e.g. 'Config*').
 .PARAMETER MaxWorkers
     Maximum number of test-file subprocesses to run at once.
+.PARAMETER PollIntervalMs
+    Milliseconds to wait before checking for completed subprocesses again.
 .EXAMPLE
     ./tests/Invoke-Tests.ps1
     ./tests/Invoke-Tests.ps1 -Filter 'Schedule*'
     ./tests/Invoke-Tests.ps1 -ExcludeTag 'E2E','Slow'
     ./tests/Invoke-Tests.ps1 -MaxWorkers 8
+    ./tests/Invoke-Tests.ps1 -PollIntervalMs 100
 #>
 [CmdletBinding()]
 param(
     [string[]]$ExcludeTag = @('E2E'),
     [string]$Filter = '*',
     [ValidateRange(1, 64)]
-    [int]$MaxWorkers = 8
+    [int]$MaxWorkers = 8,
+    [ValidateRange(25, 2000)]
+    [int]$PollIntervalMs = 100
 )
 
 $ErrorActionPreference = 'Stop'
@@ -112,7 +117,7 @@ function Complete-TestProcess {
 
 Write-Host "CronAgents Test Runner" -ForegroundColor Cyan
 Write-Host ("=" * 50) -ForegroundColor Cyan
-Write-Host "Files: $($files.Count)  Exclude: $($ExcludeTag -join ', ')  Workers: $MaxWorkers"
+Write-Host "Files: $($files.Count)  Exclude: $($ExcludeTag -join ', ')  Workers: $MaxWorkers  Poll: ${PollIntervalMs}ms"
 Write-Host
 
 $pendingFiles = [System.Collections.Generic.Queue[System.IO.FileInfo]]::new()
@@ -129,7 +134,7 @@ while ($pendingFiles.Count -gt 0 -or $runningTests.Count -gt 0) {
 
     $completedTests = @($runningTests | Where-Object { $_.Process.HasExited })
     if ($completedTests.Count -eq 0) {
-        Start-Sleep -Milliseconds 200
+        Start-Sleep -Milliseconds $PollIntervalMs
         continue
     }
 

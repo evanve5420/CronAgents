@@ -9,6 +9,7 @@
 BeforeAll {
     $repoRoot = Split-Path $PSScriptRoot -Parent
     Import-Module (Join-Path $repoRoot 'scheduler/lib/CronAgents.psd1') -Force
+    Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
 }
 
 # ===== Get-PersonalRepoPath =====
@@ -75,11 +76,8 @@ Describe 'Test-PersonalRepoValid' {
 
     It 'Returns Valid=false when missing .github/agents/' {
         $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-noagents-$(Get-Random)"
-        New-Item $tempDir -ItemType Directory -Force | Out-Null
         try {
-            & git -C $tempDir init 2>&1 | Out-Null
-            & git -C $tempDir config user.email 'test@test.com' 2>&1 | Out-Null
-            & git -C $tempDir config user.name 'Test User' 2>&1 | Out-Null
+            Initialize-TestGitRepo -Path $tempDir | Out-Null
 
             $result = Test-PersonalRepoValid -Path $tempDir
             $result.Valid | Should -Be $false
@@ -92,11 +90,8 @@ Describe 'Test-PersonalRepoValid' {
 
     It 'Returns Valid=false when missing .cronagents/agents/' {
         $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-nocrondir-$(Get-Random)"
-        New-Item $tempDir -ItemType Directory -Force | Out-Null
         try {
-            & git -C $tempDir init 2>&1 | Out-Null
-            & git -C $tempDir config user.email 'test@test.com' 2>&1 | Out-Null
-            & git -C $tempDir config user.name 'Test User' 2>&1 | Out-Null
+            Initialize-TestGitRepo -Path $tempDir | Out-Null
             New-Item -ItemType Directory -Path (Join-Path $tempDir '.github' 'agents') -Force | Out-Null
 
             $result = Test-PersonalRepoValid -Path $tempDir
@@ -110,11 +105,8 @@ Describe 'Test-PersonalRepoValid' {
 
     It 'Returns Valid=true for complete structure' {
         $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-valid-$(Get-Random)"
-        New-Item $tempDir -ItemType Directory -Force | Out-Null
         try {
-            & git -C $tempDir init 2>&1 | Out-Null
-            & git -C $tempDir config user.email 'test@test.com' 2>&1 | Out-Null
-            & git -C $tempDir config user.name 'Test User' 2>&1 | Out-Null
+            Initialize-TestGitRepo -Path $tempDir | Out-Null
             New-Item -ItemType Directory -Path (Join-Path $tempDir '.github' 'agents') -Force | Out-Null
             New-Item -ItemType Directory -Path (Join-Path $tempDir '.cronagents' 'agents') -Force | Out-Null
 
@@ -215,13 +207,8 @@ Describe 'Initialize-PersonalRepo' {
     It 'Accepts optional InfraRepoRoot parameter' {
         $repoPath = Join-Path $script:initBaseDir 'infraroot-test'
         $infraDir = Join-Path $script:initBaseDir 'fake-infra'
-        New-Item $infraDir -ItemType Directory -Force | Out-Null
-        & git -C $infraDir init 2>&1 | Out-Null
-        & git -C $infraDir config user.email 'infra@test.com' 2>&1 | Out-Null
-        & git -C $infraDir config user.name 'Infra User' 2>&1 | Out-Null
-        Set-Content -Path (Join-Path $infraDir 'f.txt') -Value 'x'
-        & git -C $infraDir add . 2>&1 | Out-Null
-        & git -C $infraDir commit -m 'init' 2>&1 | Out-Null
+        Initialize-TestGitRepo -Path $infraDir -UserEmail 'infra@test.com' -UserName 'Infra User' | Out-Null
+        $null = New-TestGitCommit -Path $infraDir -FileName 'f.txt' -Content 'x' -Message 'init'
 
         $result = Initialize-PersonalRepo -Path $repoPath -UserName 'test-user' -InfraRepoRoot $infraDir
         $result.Created | Should -Be $true
@@ -233,13 +220,8 @@ Describe 'Initialize-PersonalRepo' {
     It 'Repairs partially initialized repo' {
         $repoPath = Join-Path $script:initBaseDir 'repair-test'
         # Create a partial structure — directory exists but missing required dirs
-        New-Item -ItemType Directory -Path $repoPath -Force | Out-Null
-        & git -C $repoPath init 2>&1 | Out-Null
-        & git -C $repoPath config user.email 'test@test.com' 2>&1 | Out-Null
-        & git -C $repoPath config user.name 'Test User' 2>&1 | Out-Null
-        Set-Content -Path (Join-Path $repoPath 'placeholder.txt') -Value 'temp'
-        & git -C $repoPath add . 2>&1 | Out-Null
-        & git -C $repoPath commit -m 'partial' 2>&1 | Out-Null
+        Initialize-TestGitRepo -Path $repoPath | Out-Null
+        $null = New-TestGitCommit -Path $repoPath -FileName 'placeholder.txt' -Content 'temp' -Message 'partial'
 
         # Validation should fail — missing required dirs
         $validation = Test-PersonalRepoValid -Path $repoPath
@@ -423,15 +405,9 @@ Describe 'Resolve-CronAgentsUserName' {
 
     It 'Prefers git config github.user when given a RepoRoot' {
         $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-ghuser-$(Get-Random)"
-        New-Item $tempDir -ItemType Directory -Force | Out-Null
         try {
-            & git -C $tempDir init 2>&1 | Out-Null
-            & git -C $tempDir config user.email 'test@test.com' 2>&1 | Out-Null
-            & git -C $tempDir config user.name 'Git Config User' 2>&1 | Out-Null
-            & git -C $tempDir config github.user 'octocat-user' 2>&1 | Out-Null
-            Set-Content -Path (Join-Path $tempDir 'f.txt') -Value 'x'
-            & git -C $tempDir add . 2>&1 | Out-Null
-            & git -C $tempDir commit -m 'init' 2>&1 | Out-Null
+            Initialize-TestGitRepo -Path $tempDir -UserName 'Git Config User' -GitHubUser 'octocat-user' | Out-Null
+            $null = New-TestGitCommit -Path $tempDir -FileName 'f.txt' -Content 'x' -Message 'init'
 
             $result = Resolve-CronAgentsUserName -RepoRoot $tempDir
             $result | Should -Be 'octocat-user'
@@ -443,20 +419,14 @@ Describe 'Resolve-CronAgentsUserName' {
 
     It 'Reads git config user.name when no GitHub handle is available' {
         $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-username-$(Get-Random)"
-        New-Item $tempDir -ItemType Directory -Force | Out-Null
         $stubDir = Join-Path $tempDir 'bin'
         $originalPath = $env:PATH
         try {
+            Initialize-TestGitRepo -Path $tempDir -UserName 'Git Config User' | Out-Null
             New-Item $stubDir -ItemType Directory -Force | Out-Null
             Set-Content -Path (Join-Path $stubDir 'gh.cmd') -Value "@echo off`r`nexit /b 1" -Encoding ASCII
             $env:PATH = "$stubDir;$originalPath"
-
-            & git -C $tempDir init 2>&1 | Out-Null
-            & git -C $tempDir config user.email 'test@test.com' 2>&1 | Out-Null
-            & git -C $tempDir config user.name 'Git Config User' 2>&1 | Out-Null
-            Set-Content -Path (Join-Path $tempDir 'f.txt') -Value 'x'
-            & git -C $tempDir add . 2>&1 | Out-Null
-            & git -C $tempDir commit -m 'init' 2>&1 | Out-Null
+            $null = New-TestGitCommit -Path $tempDir -FileName 'f.txt' -Content 'x' -Message 'init'
 
             $result = Resolve-CronAgentsUserName -RepoRoot $tempDir
             $result | Should -Be 'git-config-user'
@@ -469,14 +439,9 @@ Describe 'Resolve-CronAgentsUserName' {
 
     It 'ConfigUserName takes precedence over git config' {
         $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-username-$(Get-Random)"
-        New-Item $tempDir -ItemType Directory -Force | Out-Null
         try {
-            & git -C $tempDir init 2>&1 | Out-Null
-            & git -C $tempDir config user.email 'test@test.com' 2>&1 | Out-Null
-            & git -C $tempDir config user.name 'Git User' 2>&1 | Out-Null
-            Set-Content -Path (Join-Path $tempDir 'f.txt') -Value 'x'
-            & git -C $tempDir add . 2>&1 | Out-Null
-            & git -C $tempDir commit -m 'init' 2>&1 | Out-Null
+            Initialize-TestGitRepo -Path $tempDir -UserName 'Git User' | Out-Null
+            $null = New-TestGitCommit -Path $tempDir -FileName 'f.txt' -Content 'x' -Message 'init'
 
             $result = Resolve-CronAgentsUserName -ConfigUserName 'Override User' -RepoRoot $tempDir
             $result | Should -Be 'override-user'
@@ -492,13 +457,8 @@ Describe 'Resolve-CronAgentsUserName' {
 Describe 'New-FeedbackCommit' {
     BeforeAll {
         $script:feedbackRepoDir = Join-Path ([System.IO.Path]::GetTempPath()) "cronagents-feedback-$(Get-Random)"
-        New-Item -ItemType Directory -Path $script:feedbackRepoDir -Force | Out-Null
-        & git -C $script:feedbackRepoDir init --initial-branch=main 2>&1 | Out-Null
-        & git -C $script:feedbackRepoDir config user.email 'test@test.com' 2>&1 | Out-Null
-        & git -C $script:feedbackRepoDir config user.name 'Test User' 2>&1 | Out-Null
-        Set-Content -Path (Join-Path $script:feedbackRepoDir 'file.txt') -Value 'initial'
-        & git -C $script:feedbackRepoDir add . 2>&1 | Out-Null
-        & git -C $script:feedbackRepoDir commit -m 'init' 2>&1 | Out-Null
+        Initialize-TestGitRepo -Path $script:feedbackRepoDir -InitialBranch 'main' | Out-Null
+        $null = New-TestGitCommit -Path $script:feedbackRepoDir -FileName 'file.txt' -Content 'initial' -Message 'init'
     }
 
     AfterAll {
