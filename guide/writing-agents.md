@@ -31,6 +31,8 @@ The filename stem (e.g., `daily-review` from `daily-review.agent-registration.js
 - Run directories: `.cronstate/runs/20240115T143022_daily-review_a1b2/`
 - Dashboard links
 
+Agent IDs must use only letters, numbers, dots (`.`), underscores (`_`), and hyphens (`-`). Avoid spaces or other filename characters in the registration filename stem.
+
 ---
 
 ## Personal repo

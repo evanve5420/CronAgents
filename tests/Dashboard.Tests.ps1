@@ -311,14 +311,15 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             $err.Exception.Response.StatusCode.value__ | Should -Be 404
         }
 
-        It 'Returns 404 for invalid run ID format' {
+        It 'Returns 400 for invalid run ID format' {
             $err = $null
             try {
-                Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/../../etc/passwd" -ErrorAction Stop
+                Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/not-a-run-id" -ErrorAction Stop
             } catch {
                 $err = $_
             }
             $err | Should -Not -BeNullOrEmpty
+            $err.Exception.Response.StatusCode.value__ | Should -Be 400
         }
     }
 

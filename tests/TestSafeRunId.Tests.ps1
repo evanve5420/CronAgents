@@ -45,6 +45,11 @@ Describe 'Test-SafeRunId' {
     }
 
     Context 'Invalid format' {
+        It 'Returns null for run IDs whose agent segment contains spaces' {
+            $result = Test-SafeRunId -RunId '20260101T120000_my agent_abcd' -RunsRoot $testEnv.RunsRoot
+            $result | Should -BeNullOrEmpty
+        }
+
         It 'Returns null for plain text' {
             $result = Test-SafeRunId -RunId 'not-a-run-id' -RunsRoot $testEnv.RunsRoot
             $result | Should -BeNullOrEmpty
@@ -84,6 +89,23 @@ Describe 'Test-SafeRunId' {
 
         It 'Returns null for Windows absolute path injection' {
             $result = Test-SafeRunId -RunId 'C:\Windows\System32' -RunsRoot $testEnv.RunsRoot
+            $result | Should -BeNullOrEmpty
+        }
+
+        It 'Returns null for run directories backed by a reparse point' {
+            $runId = '20260101T120000_agent_abcd'
+            $outsideDir = Join-Path $TestDrive 'outside-run'
+            $runPath = Join-Path $testEnv.RunsRoot $runId
+
+            New-Item -ItemType Directory -Path $outsideDir -Force | Out-Null
+            if ($IsWindows -or $env:OS -eq 'Windows_NT') {
+                New-Item -ItemType Junction -Path $runPath -Target $outsideDir | Out-Null
+            }
+            else {
+                New-Item -ItemType SymbolicLink -Path $runPath -Target $outsideDir | Out-Null
+            }
+
+            $result = Test-SafeRunId -RunId $runId -RunsRoot $testEnv.RunsRoot
             $result | Should -BeNullOrEmpty
         }
     }
