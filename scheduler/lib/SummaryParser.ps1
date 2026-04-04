@@ -24,7 +24,10 @@ function Read-SummaryFrontmatter {
         - Headline   [string] — short one-liner for table display (or $null)
         - Body       [string] — the full summary text after the frontmatter
         - Raw        [string] — the original file content
+        - ReadError  [string] — error message if file could not be read (or $null)
         Gracefully handles files without frontmatter (returns defaults).
+        NOTE: Purpose-built parser for CronAgents summary frontmatter only.
+        Supports scalar values for: attention, headline.
     .PARAMETER Path
         Full path to the summary.md file.
     .PARAMETER Content
@@ -46,15 +49,20 @@ function Read-SummaryFrontmatter {
         Headline  = $null
         Body      = ''
         Raw       = ''
+        ReadError = $null
     }
 
     # Read content
     if ($PSCmdlet.ParameterSetName -eq 'ByPath') {
-        if (-not (Test-Path -LiteralPath $Path)) { return $defaults }
+        if (-not (Test-Path -LiteralPath $Path)) {
+            $defaults.ReadError = "File not found: $Path"
+            return $defaults
+        }
         try {
             $Content = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 -ErrorAction Stop
         }
         catch {
+            $defaults.ReadError = "Failed to read: $_"
             return $defaults
         }
     }
@@ -95,6 +103,7 @@ function Read-SummaryFrontmatter {
             Headline  = $headline
             Body      = $body.TrimEnd()
             Raw       = $Content
+            ReadError = $null
         }
     }
 

@@ -89,6 +89,7 @@ Describe 'Read-SummaryFrontmatter' {
             $result = Read-SummaryFrontmatter -Path (Join-Path $TestDrive 'nonexistent-summary.md')
             $result.Attention | Should -Be $false
             $result.Body      | Should -Be ''
+            $result.ReadError | Should -Not -BeNullOrEmpty
         }
 
         It 'Reads from file path' {
@@ -99,6 +100,7 @@ Describe 'Read-SummaryFrontmatter' {
             $result.Attention | Should -Be $true
             $result.Headline  | Should -Be 'From file'
             $result.Body      | Should -Be 'Body from file.'
+            $result.ReadError | Should -BeNullOrEmpty
         }
 
         It 'Handles multiline body after frontmatter' {

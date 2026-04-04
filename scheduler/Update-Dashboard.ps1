@@ -140,25 +140,41 @@ function Get-FeedbackCell {
 function Get-DetailCell {
     [CmdletBinding()]
     [OutputType([string])]
-    param([Parameter(Mandatory)][PSCustomObject]$Run)
+    param(
+        [Parameter(Mandatory)][PSCustomObject]$Run,
+        [Parameter(Mandatory)][hashtable]$SummaryCache
+    )
 
     if (-not $Run.HasSummary) { return 'summary pending' }
 
-    $summaryPath = Join-Path $Run.RunDirectory 'summary.md'
-    try {
-        $parsed = Read-SummaryFrontmatter -Path $summaryPath
-        $display = if ($parsed.Headline) { $parsed.Headline } elseif ($parsed.Body) { ($parsed.Body -split '\r?\n', 2)[0].TrimStart('#', ' ') } else { 'summary pending' }
-        if ($display.Length -gt 120) {
-            $display = $display.Substring(0, 120) + '...'
-        }
-        # Escape pipe characters to prevent Markdown table corruption
-        $display = $display -replace '\|', '\|'
-        return $display
+    $cached = $SummaryCache[$Run.RunDirectory]
+    if (-not $cached -or $cached.ReadError) { return 'summary pending' }
+
+    $parsed = $cached
+    $display = if ($parsed.Headline) { $parsed.Headline } elseif ($parsed.Body) { ($parsed.Body -split '\r?\n', 2)[0].TrimStart('#', ' ') } else { 'summary pending' }
+    if ($display.Length -gt 120) {
+        $display = $display.Substring(0, 120) + '...'
     }
-    catch {
-        Write-CronAgentsLog -Level 'debug' -Message "Failed to parse summary: $summaryPath — $_"
-        return 'summary pending'
-    }
+    # Escape Markdown metacharacters to prevent table/formatting corruption
+    $display = ConvertTo-SafeTableCell -Text $display
+    return $display
+}
+
+function ConvertTo-SafeTableCell {
+    <#
+    .SYNOPSIS
+        Escapes Markdown metacharacters in agent-controlled text for safe
+        embedding in Markdown table cells and inline contexts.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Text)
+
+    if ([string]::IsNullOrEmpty($Text)) { return '' }
+    $Text = $Text -replace '(\r\n|\n|\r)', ' '
+    # Escape pipe (table), brackets (links), backticks, asterisks, underscores
+    $Text = $Text -replace '([|`*_\[\]\\])', '\$1'
+    return $Text.Trim()
 }
 
 function Get-RelativePath {
@@ -220,22 +236,27 @@ $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine("> Last updated: $now")
 [void]$sb.AppendLine()
 
+# ── Pre-parse all summaries once ────────────────────────────────────
+$summaryCache = @{}
+foreach ($run in $runs) {
+    if (-not $run.HasSummary) { continue }
+    $summaryPath = Join-Path $run.RunDirectory 'summary.md'
+    $parsed = Read-SummaryFrontmatter -Path $summaryPath
+    if ($parsed.ReadError) {
+        Write-CronAgentsLog -Level 'debug' -Message "Failed to parse summary: $summaryPath — $($parsed.ReadError)"
+    }
+    $summaryCache[$run.RunDirectory] = $parsed
+}
+
 # ── Needs Attention section ─────────────────────────────────────────
 $attentionRuns = @()
 foreach ($run in $runs) {
     if (-not $run.HasSummary) { continue }
-    $summaryPath = Join-Path $run.RunDirectory 'summary.md'
-    try {
-        $parsed = Read-SummaryFrontmatter -Path $summaryPath
-        if ($parsed.Attention) {
-            $attentionRuns += [PSCustomObject]@{
-                Run    = $run
-                Parsed = $parsed
-            }
-        }
-    }
-    catch {
-        Write-CronAgentsLog -Level 'debug' -Message "Failed to parse summary for attention: $summaryPath — $_"
+    $parsed = $summaryCache[$run.RunDirectory]
+    if (-not $parsed -or $parsed.ReadError -or -not $parsed.Attention) { continue }
+    $attentionRuns += [PSCustomObject]@{
+        Run    = $run
+        Parsed = $parsed
     }
 }
 
@@ -249,9 +270,8 @@ if ($attentionRuns.Count -gt 0) {
         $rel    = Format-RunTime -Time $run.Timestamp
         $icon   = Get-StatusIcon -Run $run
         $headline = if ($parsed.Headline) { $parsed.Headline } else { ($parsed.Body -split '\r?\n', 2)[0].TrimStart('#', ' ') }
-        # Sanitize agent-controlled strings for safe Markdown embedding
-        $safeName     = ($name -replace '(\r\n|\n|\r)', ' ').Trim() -replace '\|', '\|'
-        $safeHeadline = ($headline -replace '(\r\n|\n|\r)', ' ').Trim() -replace '\|', '\|'
+        $safeName     = ConvertTo-SafeTableCell -Text $name
+        $safeHeadline = ConvertTo-SafeTableCell -Text $headline
         [void]$sb.AppendLine("- $icon **$safeName** ($rel) — $safeHeadline")
     }
     [void]$sb.AppendLine()
@@ -277,7 +297,7 @@ foreach ($agentId in $agentLatest.Keys) {
     $rel  = Format-RunTime   -Time $run.Timestamp
     $icon = Get-StatusIcon   -Run  $run
     $fb   = Get-FeedbackCell -Run  $run -RepoRoot $RepoRoot
-    $det  = Get-DetailCell   -Run  $run
+    $det  = Get-DetailCell   -Run  $run -SummaryCache $summaryCache
 
     # Questions count
     $agentQuestionCount = @($allPendingQuestions | Where-Object { $_.agentId -eq $agentId }).Count
@@ -323,17 +343,15 @@ foreach ($run in $runs) {
 
     # Summary content
     if ($run.HasSummary) {
-        $summaryPath = Join-Path $run.RunDirectory 'summary.md'
-        try {
-            $parsed = Read-SummaryFrontmatter -Path $summaryPath
-            $summaryContent = $parsed.Body
+        $parsed = $summaryCache[$run.RunDirectory]
+        if ($parsed -and -not $parsed.ReadError) {
             if ($parsed.Attention) {
                 [void]$sb.AppendLine('> ⚠️ **This run needs your attention.**')
                 [void]$sb.AppendLine()
             }
-            [void]$sb.AppendLine($summaryContent.TrimEnd())
+            [void]$sb.AppendLine($parsed.Body.TrimEnd())
         }
-        catch {
+        else {
             [void]$sb.AppendLine('*Summary could not be read.*')
         }
     }
