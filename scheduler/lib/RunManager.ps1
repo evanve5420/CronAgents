@@ -400,17 +400,22 @@ function Clear-RunHistory {
         }
     }
 
-    # Helper: returns $true when meta.json indicates the run is still active
+    # Helper: returns $true when meta.json indicates the run is still active.
+    # A run with no exitCode/endTime but an existing output.md is considered
+    # incomplete (the process exited without writing final metadata), not active.
     $isRunActive = {
         param([string]$Dir)
         $metaPath = Join-Path $Dir 'meta.json'
         if (-not (Test-Path -LiteralPath $metaPath)) { return $false }
         try {
             $meta = Get-Content -LiteralPath $metaPath -Raw -Encoding UTF8 | ConvertFrom-Json
-            # A run is active when it has no final exitCode and no endTime
             $noExit = ($null -eq $meta.PSObject.Properties['exitCode']) -or ($null -eq $meta.exitCode)
             $noEnd  = ($null -eq $meta.PSObject.Properties['endTime'])  -or [string]::IsNullOrEmpty($meta.endTime)
-            return ($noExit -and $noEnd)
+            if (-not ($noExit -and $noEnd)) { return $false }
+            # output.md is written after the agent process exits; its presence
+            # means the process finished but final metadata was never recorded.
+            $hasOutput = Test-Path -LiteralPath (Join-Path $Dir 'output.md')
+            return (-not $hasOutput)
         }
         catch { return $false }
     }

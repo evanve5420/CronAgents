@@ -293,11 +293,11 @@ function Build-CopilotArguments {
         }
     }
 
-    # Working-directory scoping
+    # Working-directory scoping — expand %VAR% env references
     $agentWd = $null
     if ($AgentConfig.PSObject.Properties['workingDirectory'] -and
         -not [string]::IsNullOrWhiteSpace($AgentConfig.workingDirectory)) {
-        $agentWd = $AgentConfig.workingDirectory
+        $agentWd = [System.Environment]::ExpandEnvironmentVariables($AgentConfig.workingDirectory)
     }
 
     if ($agentWd) {

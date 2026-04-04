@@ -201,6 +201,21 @@ Describe 'Clear-RunHistory' {
             $result.SkippedCount | Should -Be 1
         }
 
+        It 'Allows deleting an incomplete run (active metadata but output.md exists)' {
+            $ts = [datetime]::UtcNow.AddMinutes(-10)
+            $dir = New-FakeRunDir -RunsRoot $testEnv.RunsRoot -AgentId 'agent-a' -Timestamp $ts -Active
+            # Simulate incomplete run: output.md exists but final metadata was never written
+            Set-Content -LiteralPath (Join-Path $dir 'output.md') -Value 'some output' -Encoding UTF8
+            $runId = Split-Path $dir -Leaf
+
+            $result = Clear-RunHistory -RunsRoot $testEnv.RunsRoot -RunId $runId
+
+            Test-Path $dir | Should -Be $false
+            $result.DeletedCount | Should -Be 1
+            $result.SkippedCount | Should -Be 0
+            $result.Errors.Count | Should -Be 0
+        }
+
         It 'Skips active runs when clearing all' {
             $ts1 = [datetime]::UtcNow.AddHours(-1)
             $ts2 = [datetime]::UtcNow.AddMinutes(-2)
@@ -213,6 +228,21 @@ Describe 'Clear-RunHistory' {
             Test-Path $activeDir | Should -Be $true
             $result.DeletedCount | Should -Be 1
             $result.SkippedCount | Should -Be 1
+        }
+
+        It 'Deletes incomplete runs when clearing all' {
+            $ts1 = [datetime]::UtcNow.AddHours(-1)
+            $ts2 = [datetime]::UtcNow.AddMinutes(-5)
+            $finishedDir   = New-FakeRunDir -RunsRoot $testEnv.RunsRoot -AgentId 'agent-a' -Timestamp $ts1 -Nonce 'aa01'
+            $incompleteDir = New-FakeRunDir -RunsRoot $testEnv.RunsRoot -AgentId 'agent-b' -Timestamp $ts2 -Nonce 'bb01' -Active
+            Set-Content -LiteralPath (Join-Path $incompleteDir 'output.md') -Value 'output' -Encoding UTF8
+
+            $result = Clear-RunHistory -RunsRoot $testEnv.RunsRoot -All
+
+            Test-Path $finishedDir | Should -Be $false
+            Test-Path $incompleteDir | Should -Be $false
+            $result.DeletedCount | Should -Be 2
+            $result.SkippedCount | Should -Be 0
         }
     }
 

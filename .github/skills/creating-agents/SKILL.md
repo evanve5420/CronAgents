@@ -35,7 +35,7 @@ Skip anything already clear from context:
 1. **What should it do?**
 2. **Schedule** — daily at 9am, every 4h, weekly Monday, etc.
 3. **Agent or prompt-only?** — Prompt-only is simpler when no custom system instructions or tool scoping is needed. Agent mode when the task needs custom behavior, tool restrictions, or a system prompt.
-4. **What tools does it need?** — Scope to the **minimum required**. Start restrictive; the user can expand later. See [AGENT-PROFILE.md](references/AGENT-PROFILE.md) for common tool sets.
+4. **What tools does it need?** — Scope to the **minimum required**. Use CLI tool names, not VS Code-style labels. See [AGENT-PROFILE.md](references/AGENT-PROFILE.md).
 5. **Model preference?**
 6. **Execution policies?** — timeout, skip on battery, retry on failure, `runIf` (see [RUNIF.md](references/RUNIF.md)), notify on failure (`notifyOnFailure`), notify on success (`notifyOnSuccess`)
 7. **Agent profile placement (agent mode only)** — personal repo `.github/agents/` (default) or user-global `~/.copilot/agents/`
@@ -55,7 +55,7 @@ Custom agent profile — see [AGENT-PROFILE.md](references/AGENT-PROFILE.md) for
 name: <agent-name>
 description: "<one-line description>"
 tools:
-  - <minimum tools needed>
+  - <minimum CLI tools needed>
 ---
 
 <System prompt>
@@ -92,6 +92,16 @@ No `.agent.md`. Omit `agent` field — scheduler invokes `copilot -p` with `--al
 ### Companion SKILL.md (optional, agent mode only)
 
 Create in `~/.cronagents/.github/skills/<agent-name>/SKILL.md` if the agent needs domain knowledge.
+
+## Tool Format
+
+CronAgents runs `.agent.md` profiles through **GitHub Copilot CLI**.
+
+If you specify `tools:`, use the official CLI tool aliases: `read`, `edit`, `search`, `execute`, and `agent`. Compatible aliases include `shell` / `Bash` / `powershell` for `execute`, and `Grep` / `Glob` for `search`. You can also reference MCP tools with `server-name/tool-name` or `server-name/*` for all tools from a server.
+
+Do **not** use VS Code-only tool names such as `editFiles`, `runCommands`, `runTasks`, `codebase`, `findTestFiles`, `usages`, `terminalLastCommand`, `terminalSelection`, or `vscodeAPI`.
+
+Keep the list minimal. If you are unsure, omit `tools:` rather than guessing.
 
 ## Validate
 

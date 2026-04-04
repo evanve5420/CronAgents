@@ -35,17 +35,28 @@ tools:
 
 | Use case | Tools | Notes |
 |----------|-------|-------|
-| Read-only analysis | `[read]` or `[read, search]` | Safest — can't modify anything. |
+| Read-only analysis | `[read, search]` | Safest — can't modify anything. |
 | Code editing | `[read, edit, search]` | Can modify files but not run commands. |
-| Shell access (limited) | `[read, shell]` | Pair with `denyTools` in registration to block dangerous commands. |
+| Shell access (limited) | `[read, execute]` | Pair with `denyTools` in registration to block dangerous commands. |
+| Delegation | `[agent]` | Lets the agent delegate work to sub-agents. |
 | Full access | All tools | Only when genuinely needed. Prefer scoped tools. |
+
+## Tool format for CronAgents
+
+CronAgents runs custom agents through **GitHub Copilot CLI**, so `.agent.md` files must use CLI-compatible tool aliases.
+
+If you specify `tools:`, use the official CLI tool aliases: `read`, `edit`, `search`, `execute`, and `agent`. Compatible aliases include `shell` / `Bash` / `powershell` for `execute`, and `Grep` / `Glob` for `search`. You can also reference MCP tools with `server-name/tool-name` or `server-name/*` for all tools from a server.
+
+Do **not** use VS Code-only tool names such as `editFiles`, `runCommands`, `runTasks`, `codebase`, `findTestFiles`, `usages`, `terminalLastCommand`, `terminalSelection`, or `vscodeAPI`.
 
 ### Tool names
 
-- `read` — read file contents
-- `search` — search/grep across files
-- `edit` — modify files
-- `shell` — run shell commands
+- `read` — read file contents (aliases: `Read`, `NotebookRead`)
+- `edit` — modify files (aliases: `Edit`, `MultiEdit`, `Write`, `NotebookEdit`)
+- `search` — search for text or files (aliases: `Grep`, `Glob`)
+- `execute` — run shell commands (aliases: `shell`, `Bash`, `powershell`)
+- `agent` — delegate to sub-agents (aliases: `custom-agent`, `Task`)
+- `web` — fetch URLs and perform web searches (aliases: `WebSearch`, `WebFetch`)
 
 ## Example
 
@@ -69,6 +80,7 @@ Report each finding with severity, file, line, issue, and recommendation.
 
 ## Best practices
 
-- **Least privilege** — start with `[read]` or `[read, search]` and expand only if needed.
+- **Least privilege** — start with `[read, search]` and expand only if needed.
 - **Focused system prompts** — tell the agent exactly what to do and what format to use.
-- **No shell unless required** — if you need shell, use `denyTools` in the registration to block destructive commands.
+- **CLI-first tools** — if a generated draft uses VS Code-only tool names, rewrite the list to official CLI aliases before saving.
+- **No shell unless required** — if you need shell access, use `denyTools` in the registration to block destructive commands.

@@ -129,16 +129,14 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
                 choices = @('red','green','blue'); recommended = 'green'; context = 'For the UI theme'
             })
 
-        # Find an open port
-        $script:port = 19077
-        for ($p = 19077; $p -lt 19100; $p++) {
-            try {
-                $tcp = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $p)
-                $tcp.Start()
-                $tcp.Stop()
-                $script:port = $p
-                break
-            } catch { continue }
+        # Ask the OS for a free loopback port to avoid collisions with other test workers.
+        $portProbe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+        try {
+            $portProbe.Start()
+            $script:port = ([System.Net.IPEndPoint]$portProbe.LocalEndpoint).Port
+        }
+        finally {
+            $portProbe.Stop()
         }
 
         $script:baseUrl = "http://127.0.0.1:$($script:port)"
@@ -150,8 +148,9 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             & $s -RepoRoot $r -Port $p -NoBrowser
         } -ArgumentList $dashScript, $script:testEnv.Root, $script:port
 
-        # Wait for the server to become responsive (up to 15 seconds)
-        $deadline = (Get-Date).AddSeconds(15)
+        # Wait for the server to become responsive. Under the multi-worker test runner,
+        # the dashboard process can take longer to start on busy CI hosts.
+        $deadline = (Get-Date).AddSeconds(60)
         $ready = $false
         while ((Get-Date) -lt $deadline) {
             Start-Sleep -Milliseconds 300
@@ -166,7 +165,7 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             $output = Receive-Job $script:job 2>&1 | Out-String
             Stop-Job $script:job -ErrorAction SilentlyContinue
             Remove-Job $script:job -Force -ErrorAction SilentlyContinue
-            throw "Dashboard server did not become ready within 15 seconds. Output: $output"
+            throw "Dashboard server did not become ready within 60 seconds. Output: $output"
         }
     }
 
@@ -510,10 +509,12 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
         }
 
         It 'Runs a working-directory agent through the dashboard job path' {
-            $beforeRuns = @(
+            $existingRunNames = @(
                 Get-ChildItem -LiteralPath $script:testEnv.RunsRoot -Directory -ErrorAction SilentlyContinue |
-                    Where-Object { $_.Name -like '*http-working-dir*' }
-            ).Count
+                    Where-Object { $_.Name -like '*http-working-dir*' } |
+                    Select-Object -ExpandProperty Name
+            )
+            $beforeRuns = $existingRunNames.Count
 
             $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/run/http-working-dir" `
                 -Method Post -ErrorAction Stop
@@ -522,12 +523,15 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             # Poll for the run to complete. The background job chain is:
             # dashboard Start-Job → agent runner Start-Job → copilot process → summarizer process
             # On CI with parallel workers this can take significant time.
-            $deadline = (Get-Date).AddSeconds(45)
+            $deadline = (Get-Date).AddSeconds(60)
             $newRunDir = $null
             while ((Get-Date) -lt $deadline -and -not $newRunDir) {
                 Start-Sleep -Milliseconds 500
                 $newRunDir = Get-ChildItem -LiteralPath $script:testEnv.RunsRoot -Directory -ErrorAction SilentlyContinue |
-                    Where-Object { $_.Name -like '*http-working-dir*' } |
+                    Where-Object {
+                        $_.Name -like '*http-working-dir*' -and
+                        $_.Name -notin $existingRunNames
+                    } |
                     Sort-Object LastWriteTime -Descending |
                     Select-Object -First 1
 
@@ -636,6 +640,21 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             Test-Path $activeDir | Should -Be $true
             # Clean up
             Remove-Item -LiteralPath $activeDir -Recurse -Force
+        }
+
+        It 'Allows deleting an incomplete run (no final metadata but output.md exists)' {
+            # Create a run with active metadata but an output.md file (incomplete)
+            $incompleteDir = New-RunDirectory -RunsRoot $script:testEnv.RunsRoot -AgentId 'http-agent'
+            Initialize-RunMetadata -RunDirectory $incompleteDir -AgentId 'http-agent' `
+                -AgentName 'HTTP Agent' -Prompt 'incomplete test'
+            Set-Content -LiteralPath (Join-Path $incompleteDir 'output.md') -Value 'agent output' -Encoding UTF8
+            $incompleteRunId = Split-Path $incompleteDir -Leaf
+
+            $result = Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/$incompleteRunId" `
+                -Method Delete -ErrorAction Stop
+            $result.ok | Should -Be $true
+            $result.deleted | Should -Be 1
+            Test-Path $incompleteDir | Should -Be $false
         }
     }
 
