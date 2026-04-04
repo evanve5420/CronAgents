@@ -641,6 +641,21 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             # Clean up
             Remove-Item -LiteralPath $activeDir -Recurse -Force
         }
+
+        It 'Allows deleting an incomplete run (no final metadata but output.md exists)' {
+            # Create a run with active metadata but an output.md file (incomplete)
+            $incompleteDir = New-RunDirectory -RunsRoot $script:testEnv.RunsRoot -AgentId 'http-agent'
+            Initialize-RunMetadata -RunDirectory $incompleteDir -AgentId 'http-agent' `
+                -AgentName 'HTTP Agent' -Prompt 'incomplete test'
+            Set-Content -LiteralPath (Join-Path $incompleteDir 'output.md') -Value 'agent output' -Encoding UTF8
+            $incompleteRunId = Split-Path $incompleteDir -Leaf
+
+            $result = Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/$incompleteRunId" `
+                -Method Delete -ErrorAction Stop
+            $result.ok | Should -Be $true
+            $result.deleted | Should -Be 1
+            Test-Path $incompleteDir | Should -Be $false
+        }
     }
 
     Context 'DELETE /api/runs (bulk)' {
