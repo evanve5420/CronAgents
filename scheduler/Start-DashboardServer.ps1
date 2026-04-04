@@ -175,14 +175,26 @@ function script:Get-RunsPayload {
             }
         }
 
-        # Read summary first line only (full content available via GET /api/runs/:id)
+        # Read summary with frontmatter parsing (full content available via GET /api/runs/:id)
         $summaryExcerpt = $null
+        $attention = $false
+        $headline = $null
         if ($r.HasSummary) {
             $summaryPath = Join-Path $r.RunDirectory 'summary.md'
             try {
-                $firstLine = Get-Content -LiteralPath $summaryPath -Encoding UTF8 -TotalCount 1 -ErrorAction Stop
-                if ($null -ne $firstLine) { $summaryExcerpt = $firstLine.TrimEnd() }
-            } catch { }
+                $parsed = Read-SummaryFrontmatter -Path $summaryPath -MetadataOnly
+                $attention = $parsed.Attention
+                $headline  = $parsed.Headline
+                # Use headline for the excerpt; fall back to first line of body
+                if ($headline) {
+                    $summaryExcerpt = $headline
+                } elseif ($parsed.Body) {
+                    $firstLine = ($parsed.Body -split '\r?\n', 2)[0].TrimEnd()
+                    if ($null -ne $firstLine) { $summaryExcerpt = $firstLine }
+                }
+            } catch {
+                Write-CronAgentsLog -Level 'debug' -Message "Failed to parse summary for run list: $summaryPath — $_"
+            }
         }
 
         $result += [ordered]@{
@@ -196,6 +208,8 @@ function script:Get-RunsPayload {
             feedbackProcessed = $r.FeedbackProcessed
             hasSummary        = $r.HasSummary
             summary           = $summaryExcerpt
+            attention         = $attention
+            headline          = $headline
         }
     }
     return $result
@@ -245,9 +259,14 @@ function script:Get-RunDetailPayload {
     }
 
     $summary = $null
+    $attention = $false
+    $headline = $null
     $summaryPath = Join-Path $runDir 'summary.md'
     if (Test-Path -LiteralPath $summaryPath) {
-        try { $summary = Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8 } catch { }
+        $parsed = Read-SummaryFrontmatter -Path $summaryPath
+        $summary   = $parsed.Body
+        $attention = $parsed.Attention
+        $headline  = $parsed.Headline
     }
 
     $output = $null
@@ -293,6 +312,8 @@ function script:Get-RunDetailPayload {
             hasOutput      = $hasOutput
             isIncomplete   = $isIncomplete
             summary        = $summary
+            attention      = $attention
+            headline       = $headline
             output         = $output
             schedulerLog   = $schedulerLog
             feedback       = $feedback

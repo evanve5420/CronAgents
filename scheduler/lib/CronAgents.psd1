@@ -16,7 +16,8 @@
         'RetentionCleanup.ps1',
         'Notifier.ps1',
         'QuestionsManager.ps1',
-        'CopilotHome.ps1'
+        'CopilotHome.ps1',
+        'SummaryParser.ps1'
     )
     FunctionsToExport = @(
         # Logger
@@ -88,7 +89,9 @@
         'Initialize-RunCopilotHome',
         'Initialize-SchedulerCopilotHome',
         'Clear-CopilotDaemonState',
-        'Get-CopilotAuthToken'
+        'Get-CopilotAuthToken',
+        # SummaryParser
+        'Read-SummaryFrontmatter'
     )
     CmdletsToExport   = @()
     VariablesToExport  = @()
