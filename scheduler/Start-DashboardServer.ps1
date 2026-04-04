@@ -182,7 +182,7 @@ function script:Get-RunsPayload {
         if ($r.HasSummary) {
             $summaryPath = Join-Path $r.RunDirectory 'summary.md'
             try {
-                $parsed = Read-SummaryFrontmatter -Path $summaryPath
+                $parsed = Read-SummaryFrontmatter -Path $summaryPath -MetadataOnly
                 $attention = $parsed.Attention
                 $headline  = $parsed.Headline
                 # Use headline for the excerpt; fall back to first line of body

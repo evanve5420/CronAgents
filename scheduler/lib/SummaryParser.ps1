@@ -41,7 +41,9 @@ function Read-SummaryFrontmatter {
 
         [Parameter(Mandatory, ParameterSetName = 'ByContent')]
         [AllowEmptyString()]
-        [string]$Content
+        [string]$Content,
+
+        [switch]$MetadataOnly
     )
 
     $defaults = [PSCustomObject]@{
@@ -52,14 +54,19 @@ function Read-SummaryFrontmatter {
         ReadError = $null
     }
 
-    # Read content
+    # Read content — when MetadataOnly, read just the first 20 lines (enough for frontmatter + first body line)
     if ($PSCmdlet.ParameterSetName -eq 'ByPath') {
         if (-not (Test-Path -LiteralPath $Path)) {
             $defaults.ReadError = "File not found: $Path"
             return $defaults
         }
         try {
-            $Content = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 -ErrorAction Stop
+            if ($MetadataOnly) {
+                $lines = @(Get-Content -LiteralPath $Path -Encoding UTF8 -TotalCount 20 -ErrorAction Stop)
+                $Content = $lines -join "`n"
+            } else {
+                $Content = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 -ErrorAction Stop
+            }
         }
         catch {
             $defaults.ReadError = "Failed to read: $_"
@@ -101,7 +108,7 @@ function Read-SummaryFrontmatter {
         return [PSCustomObject]@{
             Attention = $attention
             Headline  = $headline
-            Body      = $body.TrimEnd()
+            Body      = $body.TrimStart("`r", "`n").TrimEnd()
             Raw       = $Content
             ReadError = $null
         }

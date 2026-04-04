@@ -122,5 +122,22 @@ Describe 'Read-SummaryFrontmatter' {
             $result.Attention | Should -Be $false
             $result.Body      | Should -Match 'No closing delimiter'
         }
+
+        It 'Trims leading newlines from body after frontmatter' {
+            $content = "---`nattention: false`nheadline: Test`n---`n`n`nActual body starts here."
+            $result = Read-SummaryFrontmatter -Content $content
+            $result.Body | Should -Be 'Actual body starts here.'
+        }
+
+        It 'MetadataOnly returns frontmatter without full file read' {
+            $summaryPath = Join-Path $TestDrive 'metadata-only.md'
+            $longBody = 'X' * 5000
+            $content = "---`nattention: true`nheadline: `"Quick check`"`n---`nFirst line.`n$longBody"
+            Set-Content -Path $summaryPath -Value $content -Encoding UTF8 -NoNewline
+            $result = Read-SummaryFrontmatter -Path $summaryPath -MetadataOnly
+            $result.Attention | Should -Be $true
+            $result.Headline  | Should -Be 'Quick check'
+            $result.Body      | Should -Match 'First line'
+        }
     }
 }

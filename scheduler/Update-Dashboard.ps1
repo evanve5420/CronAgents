@@ -294,6 +294,7 @@ catch { }
 foreach ($agentId in $agentLatest.Keys) {
     $run  = $agentLatest[$agentId]
     $name = if ($run.Meta -and $run.Meta.agentName) { $run.Meta.agentName } else { $agentId }
+    $safeName = ConvertTo-SafeTableCell -Text $name
     $rel  = Format-RunTime   -Time $run.Timestamp
     $icon = Get-StatusIcon   -Run  $run
     $fb   = Get-FeedbackCell -Run  $run -RepoRoot $RepoRoot
@@ -305,7 +306,7 @@ foreach ($agentId in $agentLatest.Keys) {
         "❓ [$agentQuestionCount pending](questions.md)"
     } else { '—' }
 
-    [void]$sb.AppendLine("| $name | $rel | $icon | $qCell | $fb | $det |")
+    [void]$sb.AppendLine("| $safeName | $rel | $icon | $qCell | $fb | $det |")
 }
 
 if ($agentLatest.Count -eq 0) {
