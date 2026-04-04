@@ -337,7 +337,7 @@ Describe 'Update-Dashboard' {
             $sumTrOut  = Join-Path $sumTrRepo 'dashboard.md'
             New-Item -Path $sumTrRuns -ItemType Directory -Force | Out-Null
 
-            $longSummary = 'B' * 120
+            $longSummary = 'B' * 200
 
             New-TestRun -RunsRoot $sumTrRuns `
                         -AgentId 'sumtr-agent' `
@@ -350,8 +350,8 @@ Describe 'Update-Dashboard' {
             $script:SumTrDash = Get-Content -LiteralPath $sumTrOut -Raw -Encoding UTF8
         }
 
-        It 'Truncates summary first line to 80 chars in table' {
-            $script:SumTrDash | Should -Match ('B' * 80 + '\.\.\.')
+        It 'Truncates summary first line to 120 chars in table' {
+            $script:SumTrDash | Should -Match ('B' * 120 + '\.\.\.')
         }
     }
 
@@ -463,6 +463,117 @@ Describe 'Update-Dashboard' {
         It 'Uses the same personal state root for pending questions' {
             $script:PersonalDefaultDash | Should -Match '1 pending'
             Test-Path (Join-Path $TestDrive 'dashboard-infra-repo' 'questions.md') | Should -Be $true
+        }
+    }
+
+    Context 'Summary with attention frontmatter' {
+        BeforeAll {
+            $attRepo = Join-Path $TestDrive 'attention-repo'
+            $attRuns = Join-Path $attRepo '.cronstate\runs'
+            $attOut  = Join-Path $attRepo 'dashboard.md'
+            New-Item -Path $attRuns -ItemType Directory -Force | Out-Null
+
+            $attSummary = "---`nattention: true`nheadline: `"New Taylor Swift album released!`"`n---`nDetected new album release from monitored artist."
+
+            New-TestRun -RunsRoot $attRuns `
+                        -AgentId 'music-monitor' `
+                        -AgentName 'Music Monitor' `
+                        -Timestamp ([datetime]::UtcNow.AddMinutes(-10)) `
+                        -ExitCode 0 `
+                        -SummaryContent $attSummary
+
+            & $script:DashboardScript -RepoRoot $attRepo -RunsRoot $attRuns -OutputPath $attOut
+            $script:AttDash = Get-Content -LiteralPath $attOut -Raw -Encoding UTF8
+        }
+
+        It 'Shows Needs Attention section' {
+            $script:AttDash | Should -Match 'Needs Attention'
+        }
+
+        It 'Shows the headline in the attention section' {
+            $script:AttDash | Should -Match 'New Taylor Swift album released!'
+        }
+
+        It 'Shows agent name in the attention section' {
+            $script:AttDash | Should -Match 'Music Monitor'
+        }
+
+        It 'Uses headline in the detail column of the summary table' {
+            $script:AttDash | Should -Match 'New Taylor Swift album released!'
+        }
+
+        It 'Shows attention callout in the Recent Runs section' {
+            $script:AttDash | Should -Match 'This run needs your attention'
+        }
+
+        It 'Shows the summary body without frontmatter in Recent Runs' {
+            $script:AttDash | Should -Match 'Detected new album release'
+            $script:AttDash | Should -Not -Match 'attention: true'
+        }
+    }
+
+    Context 'Summary without attention flag (no attention section)' {
+        BeforeAll {
+            $noAttRepo = Join-Path $TestDrive 'no-attention-repo'
+            $noAttRuns = Join-Path $noAttRepo '.cronstate\runs'
+            $noAttOut  = Join-Path $noAttRepo 'dashboard.md'
+            New-Item -Path $noAttRuns -ItemType Directory -Force | Out-Null
+
+            $noAttSummary = "---`nattention: false`nheadline: `"Routine check complete`"`n---`nAll systems nominal."
+
+            New-TestRun -RunsRoot $noAttRuns `
+                        -AgentId 'health-check' `
+                        -AgentName 'Health Check' `
+                        -Timestamp ([datetime]::UtcNow.AddMinutes(-5)) `
+                        -ExitCode 0 `
+                        -SummaryContent $noAttSummary
+
+            & $script:DashboardScript -RepoRoot $noAttRepo -RunsRoot $noAttRuns -OutputPath $noAttOut
+            $script:NoAttDash = Get-Content -LiteralPath $noAttOut -Raw -Encoding UTF8
+        }
+
+        It 'Does not show Needs Attention section' {
+            $script:NoAttDash | Should -Not -Match 'Needs Attention'
+        }
+
+        It 'Uses headline in the detail column' {
+            $script:NoAttDash | Should -Match 'Routine check complete'
+        }
+
+        It 'Shows body without frontmatter in Recent Runs' {
+            $script:NoAttDash | Should -Match 'All systems nominal'
+            $script:NoAttDash | Should -Not -Match 'attention: false'
+        }
+    }
+
+    Context 'Legacy summary without frontmatter (backwards compatibility)' {
+        BeforeAll {
+            $legRepo = Join-Path $TestDrive 'legacy-repo'
+            $legRuns = Join-Path $legRepo '.cronstate\runs'
+            $legOut  = Join-Path $legRepo 'dashboard.md'
+            New-Item -Path $legRuns -ItemType Directory -Force | Out-Null
+
+            New-TestRun -RunsRoot $legRuns `
+                        -AgentId 'legacy-agent' `
+                        -AgentName 'Legacy Agent' `
+                        -Timestamp ([datetime]::UtcNow.AddMinutes(-3)) `
+                        -ExitCode 0 `
+                        -SummaryContent 'Reviewed 5 files with no critical issues found.'
+
+            & $script:DashboardScript -RepoRoot $legRepo -RunsRoot $legRuns -OutputPath $legOut
+            $script:LegDash = Get-Content -LiteralPath $legOut -Raw -Encoding UTF8
+        }
+
+        It 'Does not show Needs Attention section for legacy summaries' {
+            $script:LegDash | Should -Not -Match 'Needs Attention'
+        }
+
+        It 'Shows summary content in detail column' {
+            $script:LegDash | Should -Match 'Reviewed 5 files'
+        }
+
+        It 'Shows full summary in Recent Runs' {
+            $script:LegDash | Should -Match 'Reviewed 5 files with no critical issues found'
         }
     }
 }
