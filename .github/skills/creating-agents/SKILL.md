@@ -1,12 +1,12 @@
 ---
 name: creating-agents
-description: "Use when asked to create a new CronAgents agent or prompt-only scheduled invocation. Helps create the required agent profile and registration in the personal repo."
+description: "Use when asked to create a new CronAgents agent or prompt-only invocation — scheduled or manual (ad-hoc). Helps create the required agent profile and registration in the personal repo."
 argument-hint: "Describe what the agent should do (e.g., 'review PRs every morning')"
 ---
 
 # Agent Creator
 
-Create a CronAgents scheduled entry: either a custom agent (`.agent.md` + `.agent-registration.json`) or a prompt-only invocation (`.agent-registration.json` only).
+Create a CronAgents entry: a custom agent (`.agent.md` + `.agent-registration.json`) or a prompt-only invocation (`.agent-registration.json` only). Agents can be scheduled or manual (ad-hoc only).
 
 ## Personal Repo Setup — Do This Before Creating Anything
 
@@ -33,7 +33,7 @@ Agent definitions and registrations live in the user's **personal repo** (`~/.cr
 Skip anything already clear from context:
 
 1. **What should it do?**
-2. **Schedule** — daily at 9am, every 4h, weekly Monday, etc.
+2. **Schedule** — daily at 9am, every 4h, weekly Monday, etc. Or **manual** (no schedule) if the agent should only be triggered via the dashboard or `cronagents.ps1 run`.
 3. **Agent or prompt-only?** — Prompt-only is simpler when no custom system instructions or tool scoping is needed. Agent mode when the task needs custom behavior, tool restrictions, or a system prompt.
 4. **What tools does it need?** — Scope to the **minimum required**. Use CLI tool names, not VS Code-style labels. See [AGENT-PROFILE.md](references/AGENT-PROFILE.md).
 5. **Model preference?**
@@ -89,6 +89,29 @@ No `.agent.md`. Omit `agent` field — scheduler invokes `copilot -p` with `--al
 }
 ```
 
+### Manual (ad-hoc) mode
+
+For agents that should only run when manually triggered via `cronagents.ps1 run <id>` or the dashboard `POST /api/run/<id>`, omit `schedule`:
+
+```jsonc
+// Agent mode — manual
+{
+  "$schema": "../../cronagents-agent.schema.json",
+  "name": "<Display Name>",
+  "agent": "<agent-name>",
+  "prompt": "<run prompt>"
+}
+
+// Prompt-only mode — manual
+{
+  "$schema": "../../cronagents-agent.schema.json",
+  "name": "<Display Name>",
+  "prompt": "<full prompt>"
+}
+```
+
+Manual agents appear in the dashboard and CLI status with a "manual" schedule label. They are never auto-triggered by the scheduler.
+
 ### Companion SKILL.md (optional, agent mode only)
 
 Create in `~/.cronagents/.github/skills/<agent-name>/SKILL.md` if the agent needs domain knowledge.
@@ -106,9 +129,11 @@ Keep the list minimal. If you are unsure, omit `tools:` rather than guessing.
 ## Validate
 
 - Agent mode: `.agent.md` lives in `~/.cronagents/.github/agents/` or `~/.copilot/agents/`, has explicit `tools` list (least-privilege), and `agent` in the registration matches the `.agent.md` name
-- Prompt-only: registration has `prompt` + `schedule`, no `agent` field, `denyTools` considered
+- Prompt-only: registration has `prompt`, no `agent` field, `denyTools` considered
+- Scheduled: registration includes `schedule` with type `interval`/`daily`/`weekly`
+- Manual: registration omits `schedule` — agent only runs via `cronagents.ps1 run <id>` or dashboard
 - Both: registration file is named `~/.cronagents/.cronagents/agents/<agent-id>.agent-registration.json`
-- Both: schedule type is `interval`/`daily`/`weekly`, test with `cronagents.ps1 run <agent-id>`
+- Both: test with `cronagents.ps1 run <agent-id>`
 
 ## Agent Questions (Deferred Decisions)
 

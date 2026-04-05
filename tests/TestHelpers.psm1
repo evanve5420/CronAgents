@@ -251,7 +251,7 @@ function New-TestAgentConfig {
     param(
         [Parameter(Mandatory)][PSCustomObject]$TestEnv,
         [Parameter(Mandatory)][string]$AgentId,
-        [Parameter(Mandatory)][hashtable]$Schedule,
+        [AllowNull()][hashtable]$Schedule,
         [Parameter(Mandatory)][string]$Prompt,
         [string]$Agent,
         [string]$Timeout,
@@ -262,8 +262,8 @@ function New-TestAgentConfig {
     $agentConfig = [ordered]@{
         name     = if ($Name) { $Name } else { $AgentId }
         prompt   = $Prompt
-        schedule = $Schedule
     }
+    if ($null -ne $Schedule) { $agentConfig['schedule'] = $Schedule }
 
     if ($Agent) { $agentConfig['agent'] = $Agent }
     if ($Timeout) { $agentConfig['timeout'] = $Timeout }

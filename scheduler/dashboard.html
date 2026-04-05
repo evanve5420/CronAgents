@@ -433,7 +433,7 @@ function timeUntil(iso) {
 }
 
 function formatSchedule(sched) {
-  if (!sched) return '—';
+  if (!sched) return 'manual';
   switch (sched.type) {
     case 'interval': return `every ${sched.every}`;
     case 'daily':    return `daily at ${sched.time}`;

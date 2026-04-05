@@ -362,7 +362,11 @@ try {
                     }
                 }
 
-                # Build schedule hashtable from config
+                # Build schedule hashtable from config (null for manual-only agents)
+                if ($null -eq $agent.Config.schedule) {
+                    Write-CronAgentsLog -Level 'debug' -Message "Agent '$agentId' has no schedule (manual-only) — skipping"
+                    continue
+                }
                 $schedule = @{ type = $agent.Config.schedule.type }
                 if ($agent.Config.schedule.PSObject.Properties['every']) {
                     $schedule['every'] = $agent.Config.schedule.every
@@ -547,6 +551,8 @@ try {
         foreach ($agent in $agents) {
             $agentState = if ($state.agents.ContainsKey($agent.Id)) { $state.agents[$agent.Id] } else { $null }
             if ($agentState -and $agentState.enabled -eq $false) { continue }
+            # Skip manual-only agents (no schedule) in next-due calculation
+            if ($null -eq $agent.Config.schedule) { continue }
 
             $lastRun = $null
             if ($agentState -and $agentState.lastRun) {

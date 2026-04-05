@@ -155,6 +155,30 @@ Describe 'Scheduler — Due Agent Collection' {
         $due | Should -Contain 'agent-three'
     }
 
+    It 'Manual agents (no schedule) are never due' {
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'scheduled-agent' `
+            -Schedule @{ type = 'interval'; every = '30m' } `
+            -Prompt 'Scheduled task'
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'manual-agent' `
+            -Prompt 'Manual task'
+
+        $agents = Get-AgentConfigs -RepoRoot $testEnv.Root
+        $now = [datetime]::UtcNow
+
+        $due = @()
+        foreach ($agent in $agents) {
+            if ($null -eq $agent.Config.schedule) { continue }
+            $schedule = @{ type = $agent.Config.schedule.type; every = $agent.Config.schedule.every }
+            if (Test-AgentDue -Schedule $schedule -LastRun $null -Now $now) {
+                $due += $agent.Id
+            }
+        }
+
+        $due.Count | Should -Be 1
+        $due | Should -Contain 'scheduled-agent'
+        $due | Should -Not -Contain 'manual-agent'
+    }
+
     It 'runIf can suppress an otherwise-due agent' {
         $trackedFile = Join-Path $testEnv.Root 'package.json'
         Set-Content -Path $trackedFile -Value '{ "name": "scheduler-test" }' -Encoding UTF8

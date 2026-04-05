@@ -8,9 +8,9 @@ All fields for `.agent-registration.json` files. Schema: `cronagents-agent.schem
 
 The prompt sent to Copilot CLI. In agent mode, supplements the system prompt. In prompt-only mode, this is the entire instruction.
 
-### `schedule` (object)
+### `schedule` (object) — optional
 
-When the agent runs. One of three types:
+When the agent runs. Omit entirely for manual (ad-hoc) agents that are only triggered via `cronagents.ps1 run` or the dashboard. One of three types:
 
 ```json
 { "type": "interval", "every": "2h" }       // min 30m, pattern: ^[0-9]+(h|m)$
@@ -88,6 +88,7 @@ Show a Windows toast notification when the agent completes successfully. Require
 
 | | Agent mode | Prompt-only mode |
 |---|---|---|
-| **Required** | `agent` + `prompt` + `schedule` | `prompt` + `schedule` |
+| **Required (scheduled)** | `agent` + `prompt` + `schedule` | `prompt` + `schedule` |
+| **Required (manual)** | `agent` + `prompt` | `prompt` |
 | **Tool scoping** | Via `.agent.md` `tools` list | All tools (`--allow-all-tools`) |
 | **Tool restriction** | Omit tools from `.agent.md` | `denyTools` in registration |
