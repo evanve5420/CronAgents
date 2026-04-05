@@ -42,7 +42,7 @@ A scaffold-internal agent that reviews recent diffs to agent definitions, skills
 
 Currently agents run sequentially in discovery order. A future version could add parallel execution for independent agents plus a `dependsOn: ["other-agent-id"]` config to express ordering constraints, with the scheduler building a dependency graph and running independent branches concurrently. Parallelism would make 30-minute schedules more attractive, but it adds complexity: Copilot CLI rate limits, concurrent `.cronstate/state.json` access (already designed with file-level locking), output interleaving, and topological sort. Not worth it until someone has enough agents to feel the sequential bottleneck. Run directory naming already includes a random nonce to prevent collisions.
 
-> **Note:** For parallelism *within* a single agent run, see the [orchestrator pattern](ORCHESTRATOR-PATTERN.md) — an agent can decompose its own work into parallel subagents via the `task` tool today, without scheduler changes. The future item here is about running *separate* agent entries concurrently. Additionally, Copilot CLI's `/fleet` command provides automatic task decomposition in interactive mode but has no `--fleet` CLI flag for non-interactive use yet.
+> **Note:** For parallelism *within* a single agent run, see the [orchestrator pattern](ORCHESTRATOR-PATTERN.md) — an agent can decompose its own work into parallel subagents via the `agent` tool today, without scheduler changes. The future item here is about running *separate* agent entries concurrently. Additionally, Copilot CLI's `/fleet` command provides automatic task decomposition in interactive mode but has no `--fleet` CLI flag for non-interactive use yet.
 
 ### 8. Cloud Reporting
 

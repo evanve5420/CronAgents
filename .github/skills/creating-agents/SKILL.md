@@ -36,7 +36,7 @@ Skip anything already clear from context:
 2. **Schedule** — daily at 9am, every 4h, weekly Monday, etc.
 3. **Agent or prompt-only?** — Prompt-only is simpler when no custom system instructions or tool scoping is needed. Agent mode when the task needs custom behavior, tool restrictions, or a system prompt.
 4. **What tools does it need?** — Scope to the **minimum required**. Use CLI tool names, not VS Code-style labels. See [AGENT-PROFILE.md](references/AGENT-PROFILE.md).
-5. **Parallel decomposition?** — If the task is broad (many files, modules, or independent subtasks), the agent can orchestrate parallel subagents via the `task` tool. This requires `agent` in the tools list and an orchestrator-style system prompt. Only ask this when the described task sounds parallelizable. See [ORCHESTRATOR-PATTERN.md](../../../docs/ORCHESTRATOR-PATTERN.md) for the full pattern.
+5. **Parallel decomposition?** — If the task is broad (many files, modules, or independent subtasks), the agent can orchestrate parallel subagents via the `agent` tool. This requires `agent` in the tools list and an orchestrator-style system prompt. Only ask this when the described task sounds parallelizable. See [ORCHESTRATOR-PATTERN.md](../../../docs/ORCHESTRATOR-PATTERN.md) for the full pattern.
 6. **Model preference?**
 7. **Execution policies?** — timeout, skip on battery, retry on failure, `runIf` (see [RUNIF.md](references/RUNIF.md)), notify on failure (`notifyOnFailure`), notify on success (`notifyOnSuccess`)
 8. **Agent profile placement (agent mode only)** — personal repo `.github/agents/` (default) or user-global `~/.copilot/agents/`
