@@ -25,6 +25,7 @@ clear, actionable feedback with a high signal-to-noise ratio.
    | **@privacy-reviewer**      | Handles personal data, logging, analytics, cookies/storage, or third-party integrations  |
    | **@a11y-reviewer**         | Includes UI components, HTML/templates, CSS, frontend JS, or user-facing output          |
    | **@maintainability-reviewer** | Contains complex logic, large functions, deep nesting, or significant architectural shifts |
+   | **@docs-reviewer**          | Adds or changes docs, skills, agent profiles, schemas, READMEs, or alters behavior that existing docs describe |
 
 4. **Synthesize.** Combine your general review with any sub-agent findings into
    a single, unified report.
