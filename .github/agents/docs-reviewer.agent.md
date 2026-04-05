@@ -19,8 +19,8 @@ missing, or inconsistent. You may be invoked directly or as a sub-agent of
 - **Completeness** — Are new features, parameters, or agents documented? Are
   removed items cleaned up?
 - **Cross-references** — Do links, file paths, and @-mentions still resolve?
-- **Skill files** — Does `.github/skills/*/SKILL.md` reflect the latest schema
-  and workflow?
+- **Skills** — Do `.github/skills/` trees (SKILL.md and supporting references)
+  reflect the latest schema and workflow?
 - **Agent profiles** — Do `.agent.md` descriptions and instructions match actual
   capabilities?
 - **Consistency** — Do related documents agree with each other (e.g., schema
