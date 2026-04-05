@@ -39,6 +39,7 @@ tools:
 | Code editing | `[read, edit, search]` | Can modify files but not run commands. |
 | Shell access (limited) | `[read, execute]` | Pair with `denyTools` in registration to block dangerous commands. |
 | Delegation | `[agent]` | Lets the agent delegate work to sub-agents. |
+| Orchestrator | `[read, search, agent]` | Decomposes work into parallel subagents. See [ORCHESTRATOR-PATTERN.md](../../../../docs/ORCHESTRATOR-PATTERN.md). |
 | Full access | All tools | Only when genuinely needed. Prefer scoped tools. |
 
 ## Tool format for CronAgents
