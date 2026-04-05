@@ -149,7 +149,9 @@ Follow the principle of **least privilege** — give agents only the tools they 
 |----------|-------|-------|
 | Read-only analysis | `[read]` or `[read, search]` | Safest. Can't modify anything. |
 | Code editing | `[read, edit, search]` | Can modify files but not run commands. |
-| Shell access (limited) | `[read, shell]` | Pair with `denyTools` to block dangerous commands. |
+| Shell access (limited) | `[read, execute]` | Pair with `denyTools` to block dangerous commands. `shell` is an alias. |
+| Delegation | `[agent]` | Lets the agent delegate work to sub-agents. |
+| Orchestrator | `[read, search, agent]` | Decomposes work into parallel subagents. See [Orchestrator Pattern](../docs/ORCHESTRATOR-PATTERN.md). |
 | Full access | All tools | Only when genuinely needed. Prefer agent mode with scoped tools. |
 
 ### Restricting shell commands
@@ -164,7 +166,7 @@ In prompt-only mode (all tools enabled), use `denyTools` to block specific shell
 ]
 ```
 
-In agent mode, simply omit `shell` from the tools list to prevent all shell access.
+In agent mode, simply omit `execute` (or its alias `shell`) from the tools list to prevent all shell access.
 
 ### Tool resolution
 
@@ -173,7 +175,8 @@ For agent mode, Copilot CLI loads the custom agent profile by name from its supp
 - `read` — read file contents
 - `search` — search/grep across files
 - `edit` — modify files
-- `shell` — run shell commands
+- `execute` — run shell commands (`shell` is an alias)
+- `agent` — delegate to sub-agents
 
 ---
 
@@ -265,8 +268,8 @@ The skill runs an interactive interview:
 1. **What should this agent do?** — Describe the task
 2. **Agent mode or prompt-only?** — Guided recommendation
 3. **What tools does it need?** — Least-privilege suggestions
-4. **Schedule** — Interval, daily, or weekly
-5. **Additional options** — Timeout, retry, battery, model
+4. **Parallel decomposition?** — For broad tasks, delegate to parallel subagents
+5. **Schedule and execution policies** — Interval/daily/weekly, timeout, retry, battery, model
 
 It then generates the `.agent.md` profile and `.agent-registration.json` registration file for you, validates them against the schemas, and places them in the correct locations.
 
