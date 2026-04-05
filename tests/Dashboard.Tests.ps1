@@ -542,7 +542,12 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
                     }
                     else {
                         # Wait for the run to finish — exitCode is set by Write-RunMetadata
-                        $meta = Get-Content -LiteralPath $metaPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction SilentlyContinue
+                        # ConvertFrom-Json can throw a terminating error on partial writes,
+                        # so wrap in try/catch rather than relying on -ErrorAction.
+                        $meta = $null
+                        try {
+                            $meta = Get-Content -LiteralPath $metaPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                        } catch { }
                         if ($null -eq $meta -or $null -eq $meta.exitCode) {
                             $newRunDir = $null
                         }
@@ -702,6 +707,54 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
 
     # ── Error Handling ───────────────────────────────────────────
 
+    # ── GET /api/freshness ──────────────────────────────────────
+
+    Context 'GET /api/freshness' {
+        It 'Returns freshness payload with server info' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/freshness" -ErrorAction Stop
+            $data.server | Should -Not -BeNullOrEmpty
+            $data.server.pid | Should -BeGreaterThan 0
+            $data.server.startedAt | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Server reports not stale on a fresh start' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/freshness" -ErrorAction Stop
+            $data.server.stale | Should -Be $false
+        }
+
+        It 'Includes page section with lastModified' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/freshness" -ErrorAction Stop
+            $data.page | Should -Not -BeNullOrEmpty
+            $data.page.lastModified | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    # ── POST /api/server/restart ────────────────────────────────
+
+    Context 'POST /api/server/restart' {
+        It 'Returns 403 when no Origin or Referer header is provided' {
+            $err = $null
+            try {
+                Invoke-RestMethod -Uri "$($script:baseUrl)/api/server/restart" `
+                    -Method Post -ErrorAction Stop
+            } catch { $err = $_ }
+            $err | Should -Not -BeNullOrEmpty
+            $err.Exception.Response.StatusCode.value__ | Should -Be 403
+        }
+
+        It 'Returns 403 for untrusted origin' {
+            $err = $null
+            try {
+                Invoke-RestMethod -Uri "$($script:baseUrl)/api/server/restart" `
+                    -Method Post -Headers @{ Origin = 'http://evil.example.com:9999' } -ErrorAction Stop
+            } catch { $err = $_ }
+            $err | Should -Not -BeNullOrEmpty
+            $err.Exception.Response.StatusCode.value__ | Should -Be 403
+        }
+    }
+
+    # ── Error Handling ───────────────────────────────────────────
+
     Context '404 handling' {
         It 'Returns 404 for unknown routes' {
             $err = $null
@@ -741,6 +794,7 @@ Describe 'Dashboard — File Integrity' {
         $content | Should -Match '/api/pause'
         $content | Should -Match '/api/resume'
         $content | Should -Match '/api/feedback'
+        $content | Should -Match '/api/freshness'
     }
 
     It 'Start-DashboardServer.ps1 exists' {

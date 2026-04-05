@@ -39,7 +39,40 @@
     padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem;
   }
   .pause-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .refresh-btn {
+    background: none; border: 1px solid var(--border); color: var(--text);
+    padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem;
+  }
+  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .refresh-btn.stale {
+    border-color: var(--yellow); color: var(--yellow); animation: pulse-border 2s infinite;
+  }
+  @keyframes pulse-border {
+    0%, 100% { border-color: var(--yellow); }
+    50% { border-color: var(--orange); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .refresh-btn.stale { animation: none; }
+  }
   #last-updated { font-size: 0.75rem; color: var(--muted); }
+
+  /* ── Staleness Banner ───────────────────────────── */
+  .staleness-banner {
+    background: #1c1407; border: 1px solid var(--yellow); border-radius: 6px;
+    padding: 12px 16px; margin-bottom: 16px; font-size: 0.85rem;
+  }
+  .staleness-banner .stale-item {
+    display: flex; align-items: center; gap: 8px; padding: 4px 0;
+  }
+  .staleness-banner .stale-item + .stale-item { border-top: 1px solid #30302a; }
+  .staleness-banner .stale-icon { flex-shrink: 0; }
+  .staleness-banner .stale-text { flex: 1; color: var(--text); }
+  .staleness-banner .stale-action {
+    background: none; border: 1px solid var(--yellow); color: var(--yellow);
+    padding: 2px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;
+    white-space: nowrap;
+  }
+  .staleness-banner .stale-action:hover { background: var(--yellow); color: var(--bg); }
 
   /* ── Layout ──────────────────────────────────── */
   main { max-width: 1200px; margin: 0 auto; padding: 24px; }
@@ -255,11 +288,13 @@
   <div class="header-controls">
     <span id="scheduler-status"></span>
     <button class="pause-btn" id="global-pause-btn" data-action="toggleGlobalPause" aria-label="Pause all schedules">Pause all</button>
+    <button class="refresh-btn" id="full-refresh-btn" data-action="fullRefresh" aria-label="Full refresh" title="Check for updates and refresh">🔄 Refresh</button>
     <span id="last-updated"></span>
   </div>
 </header>
 
 <main>
+  <div id="staleness-banner" class="staleness-banner" style="display:none;" role="status" aria-live="polite"></div>
   <div class="tab-bar">
     <button class="tab active" data-tab="agents" data-action="switchTab">Agents</button>
     <button class="tab" data-tab="runs" data-action="switchTab">Recent Runs</button>
@@ -355,6 +390,9 @@ let hasLoadedQuestions = false;
 let pollTimer = null;
 let filterAgent = '';
 let filterStatus = '';
+let freshness = null;
+let freshnessIssues = [];
+const pageLoadedAt = new Date().toISOString();
 
 // ── API helpers ──────────────────────────────────────────────────
 async function api(method, path, body) {
@@ -792,18 +830,20 @@ async function answerQuestionCustom(agentId, questionId) {
 }
 
 // ── Confirm Dialog ──────────────────────────────────────────────
-function showConfirm(message) {
+function showConfirm(message, options = {}) {
+  const okLabel = options.okLabel || 'Delete';
+  const okColor = options.okColor || 'var(--red)';
   return new Promise(resolve => {
     const container = document.getElementById('confirm-dialog');
     const previouslyFocused = document.activeElement;
 
     container.innerHTML = `
       <div class="confirm-overlay">
-        <div class="confirm-box" role="dialog" aria-modal="true" aria-label="Confirm delete" aria-describedby="confirm-message" tabindex="-1">
+        <div class="confirm-box" role="dialog" aria-modal="true" aria-label="Confirm action" aria-describedby="confirm-message" tabindex="-1">
           <p id="confirm-message">${esc(message)}</p>
           <div class="confirm-actions">
             <button class="btn" id="confirm-cancel">Cancel</button>
-            <button class="btn btn-red" id="confirm-ok" style="background:var(--red);border-color:var(--red);color:#fff">Delete</button>
+            <button class="btn btn-action" id="confirm-ok" style="background:${okColor};border-color:${okColor};color:#fff">${esc(okLabel)}</button>
           </div>
         </div>
       </div>`;
@@ -915,7 +955,170 @@ async function refreshQuestions() {
 }
 
 async function refresh() {
-  await Promise.all([refreshStatus(), refreshRuns(), refreshQuestions()]);
+  await Promise.all([refreshStatus(), refreshRuns(), refreshQuestions(), checkFreshness()]);
+}
+
+// ── Freshness Detection ──────────────────────────────────────────
+async function checkFreshness() {
+  try {
+    freshness = await api('GET', '/api/freshness');
+    freshnessIssues = getStalenessIssues();
+    renderFreshnessBanner();
+    updateRefreshButton();
+  } catch (err) {
+    console.warn('checkFreshness failed:', err);
+    freshness = null;
+    freshnessIssues = [];
+    renderFreshnessBanner();
+    updateRefreshButton();
+  }
+}
+
+function getStalenessIssues() {
+  if (!freshness) return [];
+  const issues = [];
+
+  // Page staleness: server-reported HTML mtime vs. when this page was loaded
+  if (freshness.page?.lastModified) {
+    const pageModified = new Date(freshness.page.lastModified);
+    const loaded = new Date(pageLoadedAt);
+    if (pageModified > loaded) {
+      issues.push({
+        level: 'info',
+        icon: '📄',
+        text: 'Dashboard page has been updated since it was loaded.',
+        actionLabel: 'Reload page',
+        actionType: 'reload'
+      });
+    }
+  }
+
+  // Dashboard server staleness
+  if (freshness.server?.stale) {
+    issues.push({
+      level: 'warn',
+      icon: '🖥️',
+      text: 'Dashboard server code has changed since it started.',
+      actionLabel: 'Restart server',
+      actionType: 'restart-server'
+    });
+  }
+
+  // Scheduler staleness
+  if (freshness.scheduler?.stale && freshness.scheduler?.running) {
+    issues.push({
+      level: 'warn',
+      icon: '⏰',
+      text: 'Scheduler code has changed since it started. Restart the scheduler to pick up changes.',
+      actionLabel: null,
+      actionType: 'info'
+    });
+  }
+
+  return issues;
+}
+
+function renderFreshnessBanner() {
+  const banner = document.getElementById('staleness-banner');
+
+  if (freshnessIssues.length === 0) {
+    banner.style.display = 'none';
+    return;
+  }
+
+  const newHtml = freshnessIssues.map(issue => {
+    const actionHtml = issue.actionLabel
+      ? `<button class="stale-action" data-action="stalenessAction" data-stale-type="${issue.actionType}">${esc(issue.actionLabel)}</button>`
+      : '';
+    return `<div class="stale-item">
+      <span class="stale-icon" aria-hidden="true">${issue.icon}</span>
+      <span class="stale-text">${esc(issue.text)}</span>
+      ${actionHtml}
+    </div>`;
+  }).join('');
+
+  if (banner.innerHTML !== newHtml) {
+    banner.style.display = 'block';
+    banner.innerHTML = newHtml;
+  }
+}
+
+function updateRefreshButton() {
+  const btn = document.getElementById('full-refresh-btn');
+  if (freshnessIssues.length > 0) {
+    btn.classList.add('stale');
+    btn.title = `${freshnessIssues.length} update(s) available`;
+  } else {
+    btn.classList.remove('stale');
+    btn.title = 'Check for updates and refresh';
+  }
+}
+
+async function fullRefresh() {
+  const btn = document.getElementById('full-refresh-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Checking…';
+  btn.setAttribute('aria-label', 'Checking for updates');
+
+  try {
+    await checkFreshness();
+
+    if (freshnessIssues.some(i => i.actionType === 'restart-server')) {
+      const ok = await showConfirm(
+        'Dashboard server code has changed since it started. Restart the server and reload?',
+        { okLabel: 'Restart', okColor: 'var(--accent)' }
+      );
+      if (ok) {
+        await restartServer();
+        return;
+      }
+    }
+
+    // Default: hard-reload the page (cache-busting)
+    window.location.reload();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔄 Refresh';
+    btn.setAttribute('aria-label', 'Full refresh');
+  }
+}
+
+async function restartServer() {
+  const oldPid = freshness?.server?.pid;
+  showToast('Restarting dashboard server…', 'info');
+  try {
+    await api('POST', '/api/server/restart');
+    await waitForServer(oldPid);
+    window.location.reload();
+  } catch (err) {
+    showToast('Restart failed: ' + err.message, 'error');
+  }
+}
+
+async function waitForServer(oldPid) {
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    try {
+      const res = await fetch('/api/freshness');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.server?.pid !== oldPid) return;
+      }
+    } catch { }
+  }
+  throw new Error('Server did not come back after restart');
+}
+
+async function handleStalenessAction(actionType) {
+  if (actionType === 'reload') {
+    window.location.reload();
+  } else if (actionType === 'restart-server') {
+    const ok = await showConfirm(
+      'Restart the dashboard server and reload the page?',
+      { okLabel: 'Restart', okColor: 'var(--accent)' }
+    );
+    if (ok) await restartServer();
+  }
 }
 
 // ── Event Delegation ─────────────────────────────────────────────
@@ -955,6 +1158,8 @@ document.addEventListener('click', (e) => {
     case 'answerQuestionCustom': answerQuestionCustom(agentId, questionId); break;
     case 'deleteRun':         deleteRun(runId); break;
     case 'clearAllRuns':      clearAllRuns(); break;
+    case 'fullRefresh':       fullRefresh(); break;
+    case 'stalenessAction':   handleStalenessAction(btn.dataset.staleType); break;
   }
 });
 

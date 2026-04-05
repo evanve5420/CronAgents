@@ -43,6 +43,14 @@ $StateRoot = Join-Path $PersonalRepoPath '.cronstate'
 $InvokeScriptPath = Join-Path $PSScriptRoot 'Invoke-ScheduledAgent.ps1'
 $DashboardHtmlPath = Join-Path $PSScriptRoot 'dashboard.html'
 
+# ── Freshness tracking ───────────────────────────────────────────────
+$ServerStartTime = [datetime]::UtcNow
+$ServerPid = $PID
+$DashboardPidFile = Join-Path $StateRoot 'dashboard.pid'
+$LibDir = Join-Path $PSScriptRoot 'lib'
+$TrackedLibFiles = @(Get-ChildItem -Path $LibDir -Include '*.ps1','*.psd1' -File -Recurse |
+    Select-Object -ExpandProperty FullName)
+
 # ── Helpers ──────────────────────────────────────────────────────────
 
 function script:Normalize-IsoTimestamp {
@@ -390,6 +398,78 @@ function script:Read-RequestBody {
 
 # ── Route Handler ────────────────────────────────────────────────────
 
+function script:Get-LatestFileTime {
+    [OutputType([System.Nullable[datetime]])]
+    param([string[]]$Paths)
+    $latest = $null
+    foreach ($f in $Paths) {
+        if (Test-Path -LiteralPath $f) {
+            $mtime = (Get-Item -LiteralPath $f).LastWriteTimeUtc
+            if ($null -eq $latest -or $mtime -gt $latest) { $latest = $mtime }
+        }
+    }
+    return $latest
+}
+
+function script:Get-FreshnessPayload {
+    [OutputType([hashtable])]
+    param()
+
+    $schedulerDir = $PSScriptRoot
+
+    $pageFiles = @($DashboardHtmlPath)
+    $serverFiles = @(Join-Path $schedulerDir 'Start-DashboardServer.ps1') + $TrackedLibFiles
+    $schedulerFiles = @(
+        (Join-Path $schedulerDir 'Start-CronAgents.ps1'),
+        (Join-Path $schedulerDir 'Invoke-ScheduledAgent.ps1')
+    ) + $TrackedLibFiles
+
+    $pageLatest      = script:Get-LatestFileTime -Paths $pageFiles
+    $serverLatest    = script:Get-LatestFileTime -Paths $serverFiles
+    $schedulerLatest = script:Get-LatestFileTime -Paths $schedulerFiles
+
+    # Read scheduler PID file
+    $schedulerInfo = $null
+    $schedulerPidFile = Join-Path $StateRoot 'scheduler.pid'
+    if (Test-Path -LiteralPath $schedulerPidFile) {
+        try {
+            $pidData = Get-Content -LiteralPath $schedulerPidFile -Raw | ConvertFrom-Json
+            $schedulerRunning = $false
+            try {
+                $proc = Get-Process -Id ([int]$pidData.pid) -ErrorAction SilentlyContinue
+                if ($proc -and -not $proc.HasExited) {
+                    $procStart = $proc.StartTime.ToUniversalTime()
+                    $pidStart  = [datetime]::Parse($pidData.startedAt).ToUniversalTime()
+                    if ([Math]::Abs(($procStart - $pidStart).TotalSeconds) -lt 5) {
+                        $schedulerRunning = $true
+                    }
+                }
+            } catch { }
+            $schedulerStartedAt = [datetime]::Parse($pidData.startedAt).ToUniversalTime()
+            $schedulerInfo = [ordered]@{
+                pid       = [int]$pidData.pid
+                startedAt = $schedulerStartedAt.ToString('o')
+                running   = $schedulerRunning
+                stale     = ($null -ne $schedulerLatest -and $schedulerLatest -gt $schedulerStartedAt)
+            }
+        } catch {
+            Write-CronAgentsLog -Level 'debug' -Message "Failed to read scheduler PID file: $_"
+        }
+    }
+
+    return [ordered]@{
+        server = [ordered]@{
+            pid       = $ServerPid
+            startedAt = $ServerStartTime.ToString('o')
+            stale     = ($null -ne $serverLatest -and $serverLatest -gt $ServerStartTime)
+        }
+        scheduler = $schedulerInfo
+        page = [ordered]@{
+            lastModified = if ($pageLatest) { $pageLatest.ToString('o') } else { $null }
+        }
+    }
+}
+
 function script:Invoke-Route {
     param([System.Net.HttpListenerContext]$Context)
 
@@ -453,6 +533,52 @@ function script:Invoke-Route {
             $agentFilter = $request.QueryString['agent']
             $payload = @(script:Get-QuestionsPayload -AgentId $agentFilter)
             script:Send-JsonResponse -Response $response -Body $payload
+            return
+        }
+
+        # ── GET /api/freshness ──────────────────────────────────
+        if ($method -eq 'GET' -and $path -eq '/api/freshness') {
+            $payload = script:Get-FreshnessPayload
+            script:Send-JsonResponse -Response $response -Body $payload
+            return
+        }
+
+        # ── POST /api/server/restart ────────────────────────────
+        if ($method -eq 'POST' -and $path -eq '/api/server/restart') {
+            $originHeader = $request.Headers['Origin']
+            $refererHeader = $request.Headers['Referer']
+            $allowedHosts = @('localhost', '127.0.0.1')
+            $isTrustedRequest = $false
+            foreach ($headerValue in @($originHeader, $refererHeader)) {
+                if ([string]::IsNullOrWhiteSpace($headerValue)) { continue }
+                $headerUri = $null
+                if (-not [uri]::TryCreate($headerValue, [System.UriKind]::Absolute, [ref]$headerUri)) { continue }
+                if ($allowedHosts -contains $headerUri.Host -and $headerUri.Port -eq $Port) {
+                    $isTrustedRequest = $true
+                    break
+                }
+            }
+            if (-not $isTrustedRequest) {
+                script:Send-ErrorResponse -Response $response -Message 'Forbidden: restart requests must originate from the local dashboard' -StatusCode 403
+                return
+            }
+
+            if (($script:lastRestartTime) -and ([datetime]::UtcNow - $script:lastRestartTime).TotalSeconds -lt 10) {
+                script:Send-ErrorResponse -Response $response -Message 'Restart already in progress' -StatusCode 429
+                return
+            }
+            $script:lastRestartTime = [datetime]::UtcNow
+            $argList = @('-NoProfile', '-File', $PSCommandPath, '-Port', $Port, '-NoBrowser')
+            if ($RepoRoot) { $argList += @('-RepoRoot', $RepoRoot) }
+            $quotedArgList = $argList | ForEach-Object { [System.Management.Automation.Language.CodeGeneration]::QuoteArgument([string]$_) }
+            Start-Process pwsh -ArgumentList ($quotedArgList -join ' ')
+            script:Send-JsonResponse -Response $response -Body ([ordered]@{
+                ok      = $true
+                message = 'Server restarting'
+            })
+            Start-Sleep -Milliseconds 500
+            $script:shutdownRequested = $true
+            $shutdownRequested = $true
             return
         }
 
@@ -714,12 +840,33 @@ $prefix = "http://127.0.0.1:$Port/"
 $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add($prefix)
 
+$maxBindRetries = 30
+$bindRetryCount = 0
+while ($true) {
+    try {
+        $listener.Start()
+        break
+    } catch {
+        $bindRetryCount++
+        if ($bindRetryCount -ge $maxBindRetries) {
+            Write-Host "Failed to start dashboard server on port $Port after $maxBindRetries attempts: $_" -ForegroundColor Red
+            exit 1
+        }
+        Write-Host "Port $Port in use, retrying ($bindRetryCount/$maxBindRetries)..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 1
+    }
+}
+
+# Write dashboard PID file
 try {
-    $listener.Start()
+    $pidPayload = @{
+        pid       = $ServerPid
+        startedAt = $ServerStartTime.ToString('o')
+        port      = $Port
+    } | ConvertTo-Json
+    [System.IO.File]::WriteAllText($DashboardPidFile, $pidPayload, [System.Text.Encoding]::UTF8)
 } catch {
-    Write-Host "Failed to start dashboard server on port $Port`: $_" -ForegroundColor Red
-    Write-Host "Is another process using port $Port?" -ForegroundColor Yellow
-    exit 1
+    Write-Host "Warning: could not write dashboard PID file: $_" -ForegroundColor Yellow
 }
 
 Write-Host ""
@@ -760,4 +907,7 @@ try {
     Write-Host "`nStopping dashboard server..." -ForegroundColor Yellow
     try { $listener.Stop() } catch { }
     try { $listener.Close() } catch { }
+    if ($DashboardPidFile -and (Test-Path -LiteralPath $DashboardPidFile)) {
+        Remove-Item -LiteralPath $DashboardPidFile -Force -ErrorAction SilentlyContinue
+    }
 }

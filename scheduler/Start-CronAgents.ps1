@@ -89,6 +89,19 @@ catch {
 Write-CronAgentsLog -Level 'info' -Message 'CronAgents scheduler starting'
 
 # -----------------------------------------------------------------------
+# 7a. Write scheduler PID file for freshness detection
+# -----------------------------------------------------------------------
+$script:schedulerPidFile = Join-Path $cronStateDir 'scheduler.pid'
+$pidPayload = @{ pid = $PID; startedAt = [datetime]::UtcNow.ToString('o') } | ConvertTo-Json
+try {
+    [System.IO.File]::WriteAllText($script:schedulerPidFile, $pidPayload, [System.Text.Encoding]::UTF8)
+    Write-CronAgentsLog -Level 'debug' -Message "Wrote scheduler PID file: $($script:schedulerPidFile)"
+}
+catch {
+    Write-CronAgentsLog -Level 'warn' -Message "Failed to write scheduler PID file '$($script:schedulerPidFile)': $_ — continuing without freshness PID file."
+}
+
+# -----------------------------------------------------------------------
 # Ctrl+C handling
 # -----------------------------------------------------------------------
 $script:running = $true
@@ -581,4 +594,7 @@ try {
 }
 finally {
     Write-CronAgentsLog -Level 'info' -Message 'Scheduler shutting down gracefully'
+    if ($script:schedulerPidFile -and (Test-Path $script:schedulerPidFile)) {
+        Remove-Item $script:schedulerPidFile -Force -ErrorAction SilentlyContinue
+    }
 }
