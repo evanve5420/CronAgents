@@ -311,10 +311,8 @@ function Import-SingleAgentConfig {
     if (-not $parsed.PSObject.Properties['prompt'] -or [string]::IsNullOrWhiteSpace($parsed.prompt)) {
         $valErrors.Add('prompt is required')
     }
-    if (-not $parsed.PSObject.Properties['schedule'] -or $null -eq $parsed.schedule) {
-        $valErrors.Add('schedule is required')
-    }
-    else {
+    $hasSchedule = $parsed.PSObject.Properties['schedule'] -and $null -ne $parsed.schedule
+    if ($hasSchedule) {
         if (-not $parsed.schedule.PSObject.Properties['type'] -or
             $parsed.schedule.type -notin $script:ValidScheduleTypes) {
             $valErrors.Add("schedule.type must be one of: $($script:ValidScheduleTypes -join ', ')")
@@ -348,7 +346,7 @@ function Import-SingleAgentConfig {
         name          = if ($parsed.PSObject.Properties['name'] -and -not [string]::IsNullOrWhiteSpace($parsed.name))
                         { $parsed.name } else { $fileName }
         prompt        = $parsed.prompt
-        schedule      = $parsed.schedule
+        schedule      = if ($hasSchedule) { $parsed.schedule } else { $null }
         timeout       = if ($parsed.PSObject.Properties['timeout'] -and -not [string]::IsNullOrWhiteSpace($parsed.timeout))
                         { $parsed.timeout } else { '10m' }
         skipOnBattery = if ($parsed.PSObject.Properties['skipOnBattery'] -and $null -ne $parsed.skipOnBattery)

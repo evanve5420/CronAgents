@@ -102,24 +102,30 @@ function script:Get-AgentsList {
         }
 
         $nextRunStr = $null
-        try {
-            $schedHt = @{ type = $a.Config.schedule.type }
-            if ($a.Config.schedule.PSObject.Properties['every']) { $schedHt['every'] = $a.Config.schedule.every }
-            if ($a.Config.schedule.PSObject.Properties['time'])  { $schedHt['time']  = $a.Config.schedule.time }
-            if ($a.Config.schedule.PSObject.Properties['day'])   { $schedHt['day']   = $a.Config.schedule.day }
-            $nextRun = Get-NextRunTime -Schedule $schedHt -LastRun $lastRunDt -Now $now
-            $nextRunStr = $nextRun.ToString('o')
-        } catch { }
-
-        $result += [ordered]@{
-            id       = $a.Id
-            name     = $a.Config.name
-            schedule = [ordered]@{
+        $schedPayload = $null
+        if ($null -ne $a.Config.schedule) {
+            try {
+                $schedHt = @{ type = $a.Config.schedule.type }
+                if ($a.Config.schedule.PSObject.Properties['every']) { $schedHt['every'] = $a.Config.schedule.every }
+                if ($a.Config.schedule.PSObject.Properties['time'])  { $schedHt['time']  = $a.Config.schedule.time }
+                if ($a.Config.schedule.PSObject.Properties['day'])   { $schedHt['day']   = $a.Config.schedule.day }
+                $nextRun = Get-NextRunTime -Schedule $schedHt -LastRun $lastRunDt -Now $now
+                if ($null -ne $nextRun) {
+                    $nextRunStr = $nextRun.ToString('o')
+                }
+            } catch { }
+            $schedPayload = [ordered]@{
                 type  = $a.Config.schedule.type
                 every = if ($a.Config.schedule.PSObject.Properties['every']) { $a.Config.schedule.every } else { $null }
                 time  = if ($a.Config.schedule.PSObject.Properties['time'])  { $a.Config.schedule.time }  else { $null }
                 day   = if ($a.Config.schedule.PSObject.Properties['day'])   { $a.Config.schedule.day }   else { $null }
             }
+        }
+
+        $result += [ordered]@{
+            id       = $a.Id
+            name     = $a.Config.name
+            schedule = $schedPayload
             enabled  = $enabled
             lastRun  = $lastRunStr
             nextRun  = $nextRunStr

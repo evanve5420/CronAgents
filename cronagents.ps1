@@ -70,7 +70,8 @@ function Resolve-Agent {
 
 function ConvertTo-ScheduleHashtable {
     [OutputType([hashtable])]
-    param([Parameter(Mandatory)]$Schedule)
+    param([AllowNull()]$Schedule)
+    if ($null -eq $Schedule) { return $null }
     $ht = @{ type = $Schedule.type }
     if ($Schedule.PSObject.Properties['every']) { $ht['every'] = $Schedule.every }
     if ($Schedule.PSObject.Properties['time'])  { $ht['time']  = $Schedule.time }
@@ -80,7 +81,8 @@ function ConvertTo-ScheduleHashtable {
 
 function Format-Schedule {
     [OutputType([string])]
-    param([Parameter(Mandatory)]$Schedule)
+    param([AllowNull()]$Schedule)
+    if ($null -eq $Schedule) { return 'manual' }
     switch ($Schedule.type) {
         'interval' { return "every $($Schedule.every)" }
         'daily'    { return "daily at $($Schedule.time)" }
@@ -204,11 +206,13 @@ function Invoke-StatusCommand {
         }
 
         # Next run
-        $nextRunStr = '-'
+        $nextRunStr = if ($null -eq $a.Config.schedule) { 'n/a' } else { '-' }
         try {
             $schedHt  = ConvertTo-ScheduleHashtable -Schedule $a.Config.schedule
             $nextRun  = Get-NextRunTime -Schedule $schedHt -LastRun $lastRunDt -Now $now
-            $nextRunStr = $nextRun.ToLocalTime().ToString('yyyy-MM-dd HH:mm')
+            if ($null -ne $nextRun) {
+                $nextRunStr = $nextRun.ToLocalTime().ToString('yyyy-MM-dd HH:mm')
+            }
         }
         catch { }
 
@@ -269,11 +273,13 @@ function Invoke-ListCommand {
             try { $lastRunDt = [datetime]::Parse($agentState.lastRun) } catch { }
         }
 
-        $nextRunStr = '-'
+        $nextRunStr = if ($null -eq $a.Config.schedule) { 'n/a' } else { '-' }
         try {
             $schedHt  = ConvertTo-ScheduleHashtable -Schedule $a.Config.schedule
             $nextRun  = Get-NextRunTime -Schedule $schedHt -LastRun $lastRunDt -Now $now
-            $nextRunStr = $nextRun.ToLocalTime().ToString('yyyy-MM-dd HH:mm')
+            if ($null -ne $nextRun) {
+                $nextRunStr = $nextRun.ToLocalTime().ToString('yyyy-MM-dd HH:mm')
+            }
         }
         catch { }
 

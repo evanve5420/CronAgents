@@ -409,14 +409,16 @@ Describe 'Get-AgentConfigs' {
         $agents | Should -HaveCount 0
     }
 
-    It 'Skips configs missing schedule' {
+    It 'Loads config without schedule as manual agent' {
         $repoRoot = Join-Path $TestDrive 'repo-nosched'
         $agentDir = Join-Path $repoRoot '.cronagents\agents'
         New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
         Set-Content -Path (Join-Path $agentDir 'no-sched.agent-registration.json') -Value '{ "prompt": "hello" }' -Encoding UTF8
 
         $agents = Get-AgentConfigs -RepoRoot $repoRoot
-        $agents | Should -HaveCount 0
+        $agents | Should -HaveCount 1
+        $agents[0].Config.schedule | Should -BeNullOrEmpty
+        $agents[0].Config.prompt | Should -Be 'hello'
     }
 
     It 'Skips configs with unknown schedule type' {
@@ -562,6 +564,34 @@ Describe 'Get-AgentConfigs' {
         $agents | Should -HaveCount 1
         $agents[0].Config.agent | Should -Be 'code-reviewer'
         $agents[0].Config.prompt | Should -Be 'Review code'
+    }
+
+    It 'Validates manual agent mode (agent + prompt, no schedule)' {
+        $repoRoot = Join-Path $TestDrive 'repo-manual-agent'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "agent": "release-notes", "prompt": "Generate release notes" }'
+        Set-Content -Path (Join-Path $agentDir 'manual-agent.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 1
+        $agents[0].Config.agent | Should -Be 'release-notes'
+        $agents[0].Config.prompt | Should -Be 'Generate release notes'
+        $agents[0].Config.schedule | Should -BeNullOrEmpty
+    }
+
+    It 'Validates manual prompt-only mode (prompt only, no schedule)' {
+        $repoRoot = Join-Path $TestDrive 'repo-manual-prompt'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "Run a one-off task" }'
+        Set-Content -Path (Join-Path $agentDir 'manual-prompt.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 1
+        $agents[0].Config.PSObject.Properties['agent'] | Should -BeNullOrEmpty
+        $agents[0].Config.prompt | Should -Be 'Run a one-off task'
+        $agents[0].Config.schedule | Should -BeNullOrEmpty
     }
 }
 

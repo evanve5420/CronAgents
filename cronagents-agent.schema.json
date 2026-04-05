@@ -179,6 +179,19 @@
       "required": ["prompt", "schedule"],
       "not": { "required": ["agent"] },
       "description": "Prompt-only mode: runs a prompt without a specific agent on a schedule."
+    },
+    {
+      "required": ["agent", "prompt"],
+      "not": { "required": ["schedule"] },
+      "description": "Manual agent mode: runs a named agent with a prompt, triggered only via CLI or dashboard."
+    },
+    {
+      "required": ["prompt"],
+      "allOf": [
+        { "not": { "required": ["agent"] } },
+        { "not": { "required": ["schedule"] } }
+      ],
+      "description": "Manual prompt-only mode: runs a prompt without a specific agent, triggered only via CLI or dashboard."
     }
   ]
 }

@@ -48,7 +48,7 @@ function Test-AgentDue {
     [CmdletBinding()]
     [OutputType([bool])]
     param(
-        [Parameter(Mandatory = $true)]
+        [AllowNull()]
         [hashtable]$Schedule,
 
         [AllowNull()]
@@ -57,6 +57,9 @@ function Test-AgentDue {
         [Parameter(Mandatory = $true)]
         [datetime]$Now
     )
+
+    # Manual-only agents (no schedule) are never auto-due
+    if ($null -eq $Schedule) { return $false }
 
     switch ($Schedule.type) {
         'interval' {
@@ -98,9 +101,9 @@ function Test-AgentDue {
 # ---------------------------------------------------------------------------
 function Get-NextRunTime {
     [CmdletBinding()]
-    [OutputType([datetime])]
+    [OutputType([Nullable[datetime]])]
     param(
-        [Parameter(Mandatory = $true)]
+        [AllowNull()]
         [hashtable]$Schedule,
 
         [AllowNull()]
@@ -109,6 +112,9 @@ function Get-NextRunTime {
         [Parameter(Mandatory = $true)]
         [datetime]$Now
     )
+
+    # Manual-only agents have no next scheduled run
+    if ($null -eq $Schedule) { return $null }
 
     switch ($Schedule.type) {
         'interval' {

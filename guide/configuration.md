@@ -223,6 +223,21 @@ Each agent has a JSON config file. The filename stem (for example, `daily-review
 }
 ```
 
+### Manual (ad-hoc) agent example
+
+Omit `schedule` to create an agent that is only triggered manually via `cronagents.ps1 run <id>` or the dashboard:
+
+```json
+{
+  "$schema": "../../cronagents-agent.schema.json",
+  "name": "Release Notes Generator",
+  "agent": "release-notes",
+  "prompt": "Generate release notes for the latest tag"
+}
+```
+
+Manual agents appear in the dashboard and CLI status with a "manual" schedule label and no next-run time.
+
 ### Field reference
 
 #### `name`
@@ -254,9 +269,9 @@ Each agent has a JSON config file. The filename stem (for example, `daily-review
 
 | | |
 |---|---|
-| **Type** | `object` |
-| **Required** | Yes |
-| **Description** | When the agent should run. One of three types: |
+| **Type** | `object` or omitted |
+| **Required** | No |
+| **Description** | When the agent should run. Omit entirely for manual (ad-hoc) agents that are only triggered via `cronagents.ps1 run` or the dashboard. One of three types: |
 
 **Interval schedule** — run every N hours/minutes (minimum 30 minutes):
 
@@ -429,11 +444,12 @@ CronAgents invokes the script with named parameters `-RepoRoot`, `-AgentId`, and
 
 ## Agent mode vs prompt-only mode
 
-CronAgents supports two modes, determined by whether the `agent` field is present:
+CronAgents supports two modes, determined by whether the `agent` field is present. Both modes can be scheduled or manual.
 
 | | Agent mode | Prompt-only mode |
 |---|---|---|
-| **Config fields** | `agent` + `prompt` + `schedule` (required) | `prompt` + `schedule` (required) |
+| **Config fields (scheduled)** | `agent` + `prompt` + `schedule` | `prompt` + `schedule` |
+| **Config fields (manual)** | `agent` + `prompt` | `prompt` |
 | **`.agent.md` file** | Required (`.github/agents/` or `~/.copilot/agents/`) | Not used |
 | **Tool scoping** | Defined in `.agent.md` frontmatter `tools` list | All tools enabled (`--allow-all-tools`) |
 | **Tool restriction** | Via `.agent.md` frontmatter | Via `denyTools` in config |
@@ -441,6 +457,8 @@ CronAgents supports two modes, determined by whether the `agent` field is presen
 | **Best for** | Reusable, well-defined agents | Quick one-off tasks, simple automation |
 
 **Use agent mode** when you want a stable agent definition with scoped tools and a persistent system prompt. **Use prompt-only mode** for quick tasks where writing a full `.agent.md` file is overkill.
+
+**Use manual mode** (omit `schedule`) when the agent should only run on-demand — for example, a release-notes generator or a one-time migration helper. Manual agents are visible in the dashboard and CLI but the scheduler never auto-triggers them.
 
 ---
 

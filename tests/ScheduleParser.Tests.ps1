@@ -291,3 +291,33 @@ Describe 'Get-NextRunTime - Weekly' {
         { Get-NextRunTime -Schedule $schedule -LastRun $null -Now $now } | Should -Throw '*Unknown schedule type*'
     }
 }
+
+# ===== Manual (no schedule) agents =====
+
+Describe 'Test-AgentDue - Manual (null schedule)' {
+    It 'Returns false when schedule is null' {
+        $now = [datetime]::new(2025, 6, 15, 10, 0, 0)
+        Test-AgentDue -Schedule $null -LastRun $null -Now $now | Should -Be $false
+    }
+
+    It 'Returns false with a previous lastRun' {
+        $now     = [datetime]::new(2025, 6, 15, 10, 0, 0)
+        $lastRun = [datetime]::new(2025, 6, 14, 9, 0, 0)
+        Test-AgentDue -Schedule $null -LastRun $lastRun -Now $now | Should -Be $false
+    }
+}
+
+Describe 'Get-NextRunTime - Manual (null schedule)' {
+    It 'Returns null when schedule is null' {
+        $now = [datetime]::new(2025, 6, 15, 10, 0, 0)
+        $result = Get-NextRunTime -Schedule $null -LastRun $null -Now $now
+        $result | Should -BeNullOrEmpty
+    }
+
+    It 'Returns null even with a previous lastRun' {
+        $now     = [datetime]::new(2025, 6, 15, 10, 0, 0)
+        $lastRun = [datetime]::new(2025, 6, 14, 9, 0, 0)
+        $result = Get-NextRunTime -Schedule $null -LastRun $lastRun -Now $now
+        $result | Should -BeNullOrEmpty
+    }
+}
