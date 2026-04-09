@@ -50,10 +50,23 @@ function Test-SchedulerRunning {
         if (-not $proc) { return $false }
 
         # Validate the process command line actually matches the scheduler
-        try {
-            $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $targetPid" -ErrorAction SilentlyContinue).CommandLine
+        $cmdLine = $null
+        if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+            try {
+                $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $targetPid" -ErrorAction SilentlyContinue).CommandLine
+            }
+            catch { <# fallback below #> }
         }
-        catch { return $false }
+        else {
+            # Linux/macOS: read /proc/<pid>/cmdline
+            $procCmdFile = "/proc/$targetPid/cmdline"
+            if (Test-Path -LiteralPath $procCmdFile) {
+                try {
+                    $cmdLine = (Get-Content -LiteralPath $procCmdFile -Raw -ErrorAction SilentlyContinue) -replace "`0", ' '
+                }
+                catch { <# best-effort #> }
+            }
+        }
 
         return ($cmdLine -and $cmdLine -match 'Start-CronAgents\.ps1')
     }
