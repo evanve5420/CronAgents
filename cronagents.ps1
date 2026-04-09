@@ -158,6 +158,23 @@ function Invoke-StatusCommand {
         Write-Host ""
     }
 
+    # Scheduler process liveness
+    $schedulerAlive = $false
+    try {
+        $pidFile = Join-Path $PersonalRepoPath '.cronstate' 'scheduler.pid'
+        $schedulerAlive = Test-SchedulerRunning -PidFilePath $pidFile
+    } catch { }
+
+    Write-Host ""
+    if ($schedulerAlive) {
+        Write-Host "  Scheduler process: " -NoNewline
+        Write-Host "Running" -ForegroundColor Green
+    }
+    else {
+        Write-Host "  Scheduler process: " -NoNewline
+        Write-Host "Not running" -ForegroundColor Red
+    }
+
     # Branch info
     try {
         $validation = Test-PersonalRepoValid -Path $PersonalRepoPath

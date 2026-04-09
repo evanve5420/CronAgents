@@ -102,6 +102,17 @@ catch {
 }
 
 # -----------------------------------------------------------------------
+# 6b. Single-instance guard — exit if another scheduler is already running.
+#     This prevents duplicate processes when the periodic trigger fires
+#     while a scheduler is already active.
+# -----------------------------------------------------------------------
+$existingPidFile = Join-Path $cronStateDir 'scheduler.pid'
+if (Test-SchedulerRunning -PidFilePath $existingPidFile -ExcludePid $PID) {
+    Write-CronAgentsLog -Level 'info' -Message 'Another scheduler instance is already running. Exiting.'
+    exit 0
+}
+
+# -----------------------------------------------------------------------
 # 7. Log startup
 # -----------------------------------------------------------------------
 Write-CronAgentsLog -Level 'info' -Message 'CronAgents scheduler starting'
@@ -117,6 +128,28 @@ try {
 }
 catch {
     Write-CronAgentsLog -Level 'warn' -Message "Failed to write scheduler PID file '$($script:schedulerPidFile)': $_ — continuing without freshness PID file."
+}
+
+# -----------------------------------------------------------------------
+# 7b. Recovery detection — check for missed runs after a crash/restart
+# -----------------------------------------------------------------------
+try {
+    $missedAgents = Get-OverdueAgents -RepoRoot $RepoRoot `
+        -PersonalRepoPath $personalRepoPath `
+        -StateFile $stateFile -Now (Get-Date).ToUniversalTime()
+
+    if ($missedAgents.Count -gt 0) {
+        $list = $missedAgents -join ', '
+        Write-CronAgentsLog -Level 'warn' -Message "Recovery: $($missedAgents.Count) agent(s) are overdue and will run this tick: $list"
+        try {
+            Send-SchedulerErrorNotification -Operation 'Scheduler recovery' `
+                -ErrorMessage "Scheduler restarted. $($missedAgents.Count) overdue agent(s) will run shortly: $list" `
+                -GlobalConfig $config
+        } catch { <# best-effort #> }
+    }
+}
+catch {
+    Write-CronAgentsLog -Level 'warn' -Message "Recovery detection skipped: $_"
 }
 
 # -----------------------------------------------------------------------

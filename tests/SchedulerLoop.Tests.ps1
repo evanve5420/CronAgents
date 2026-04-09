@@ -277,4 +277,108 @@ Describe 'Scheduler startup entry script' -Tag 'Slow' {
 
         (Get-Content $dashboardPath -Raw) | Should -Match '# CronAgents Dashboard'
     }
+
+    It 'Exits cleanly when another scheduler is already running' {
+        # Start the first scheduler instance
+        $startArgs1 = @{
+            FilePath               = 'pwsh'
+            ArgumentList           = @('-NoProfile', '-File', $script:startScript, '-RepoRoot', $script:testEnv.Root, '-ConfigPath', $script:testEnv.ConfigPath)
+            PassThru               = $true
+            RedirectStandardOutput = $script:stdoutPath
+            RedirectStandardError  = $script:stderrPath
+        }
+        if ($IsWindows) { $startArgs1.WindowStyle = 'Hidden' }
+        $script:schedulerProcess = Start-Process @startArgs1
+
+        # Wait for the PID file to appear
+        $pidFile = Join-Path $script:testEnv.PersonalRepoRoot '.cronstate' 'scheduler.pid'
+        $deadline = (Get-Date).AddSeconds(15)
+        while ((Get-Date) -lt $deadline -and -not (Test-Path $pidFile)) {
+            if ($script:schedulerProcess.HasExited) { break }
+            Start-Sleep -Milliseconds 250
+        }
+
+        $script:schedulerProcess.HasExited | Should -Be $false
+        (Test-Path $pidFile) | Should -Be $true
+
+        # Start a second scheduler instance — it should exit immediately
+        $stdout2 = Join-Path $script:testEnv.Root 'scheduler-stdout2.log'
+        $stderr2 = Join-Path $script:testEnv.Root 'scheduler-stderr2.log'
+        $startArgs2 = @{
+            FilePath               = 'pwsh'
+            ArgumentList           = @('-NoProfile', '-File', $script:startScript, '-RepoRoot', $script:testEnv.Root, '-ConfigPath', $script:testEnv.ConfigPath)
+            PassThru               = $true
+            RedirectStandardOutput = $stdout2
+            RedirectStandardError  = $stderr2
+        }
+        if ($IsWindows) { $startArgs2.WindowStyle = 'Hidden' }
+        $proc2 = Start-Process @startArgs2
+
+        # Wait for the second instance to exit
+        $proc2.WaitForExit(15000) | Should -Be $true
+        $proc2.ExitCode | Should -Be 0
+    }
+}
+
+Describe 'Scheduler — Recovery Detection' {
+    BeforeEach {
+        $testEnv = New-TestEnvironment -Name 'SchedRecovery'
+        $script:stateFile = Join-Path $testEnv.PersonalRepoRoot '.cronstate' 'state.json'
+    }
+    AfterEach {
+        Remove-TestEnvironment -TestEnv $testEnv
+    }
+
+    It 'Detects overdue daily agents after scheduler downtime' {
+        # Create a daily agent scheduled at 09:00
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'daily-check' `
+            -Schedule @{ type = 'daily'; time = '09:00' } `
+            -Prompt 'Daily task'
+
+        # Set lastRun to 2 days ago
+        $twoDaysAgo = [datetime]::UtcNow.AddDays(-2)
+        Set-AgentState -StateFile $script:stateFile -AgentId 'daily-check' -LastRun $twoDaysAgo
+
+        $missed = Get-OverdueAgents -RepoRoot $testEnv.Root `
+            -StateFile $script:stateFile -Now ([datetime]::UtcNow)
+
+        $missed | Should -Contain 'daily-check'
+    }
+
+    It 'Does not flag recently-run agents as missed' {
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'recent-agent' `
+            -Schedule @{ type = 'daily'; time = '09:00' } `
+            -Prompt 'Recent task'
+
+        # Set lastRun to just now
+        Set-AgentState -StateFile $script:stateFile -AgentId 'recent-agent' -LastRun ([datetime]::UtcNow)
+
+        $missed = Get-OverdueAgents -RepoRoot $testEnv.Root `
+            -StateFile $script:stateFile -Now ([datetime]::UtcNow)
+
+        $missed | Should -Not -Contain 'recent-agent'
+    }
+
+    It 'Skips disabled agents in overdue detection' {
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'disabled-agent' `
+            -Schedule @{ type = 'interval'; every = '30m' } `
+            -Prompt 'Disabled task'
+
+        Set-AgentState -StateFile $script:stateFile -AgentId 'disabled-agent' -Enabled $false
+
+        $missed = Get-OverdueAgents -RepoRoot $testEnv.Root `
+            -StateFile $script:stateFile -Now ([datetime]::UtcNow)
+
+        $missed | Should -Not -Contain 'disabled-agent'
+    }
+
+    It 'Skips manual-only agents in overdue detection' {
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'manual-agent' `
+            -Prompt 'Manual task'
+
+        $missed = Get-OverdueAgents -RepoRoot $testEnv.Root `
+            -StateFile $script:stateFile -Now ([datetime]::UtcNow)
+
+        $missed | Should -Not -Contain 'manual-agent'
+    }
 }

@@ -63,12 +63,21 @@ $action = New-ScheduledTaskAction `
     -Argument $expectedArgs `
     -WorkingDirectory $RepoRoot
 
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+
+# Periodic trigger — restarts the scheduler every 15 minutes so it
+# auto-recovers from crashes without waiting for the next logon.
+# The scheduler itself guards against duplicate instances.
+$periodicTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+    -RepetitionInterval (New-TimeSpan -Minutes 15)
+
+$trigger = @($logonTrigger, $periodicTrigger)
 
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
     -StartWhenAvailable `
+    -MultipleInstances IgnoreNew `
     -RestartCount 3 `
     -RestartInterval (New-TimeSpan -Minutes 5) `
     -ExecutionTimeLimit (New-TimeSpan -Days 0)
@@ -78,7 +87,7 @@ $principal = New-ScheduledTaskPrincipal `
     -LogonType Interactive `
     -RunLevel Limited
 
-$taskDescription = 'CronAgents — runs scheduled Copilot agents at logon.'
+$taskDescription = 'CronAgents — runs scheduled Copilot agents at logon and every 15 minutes for crash recovery.'
 
 # ── Helper: compare existing task against expected definition ────────
 function Test-TaskCurrent {
@@ -161,7 +170,7 @@ Write-CronAgentsLog -Level 'info' -Message "Install: personal repo '$personalRep
 # ── Summary ──────────────────────────────────────────────────────────
 Write-Host ''
 Write-Host '  Task path    : ' -NoNewline; Write-Host "$TaskPath$TaskName"
-Write-Host '  Trigger      : ' -NoNewline; Write-Host "At logon ($env:USERNAME)"
+Write-Host '  Trigger      : ' -NoNewline; Write-Host "At logon ($env:USERNAME) + every 15 min"
 Write-Host '  Scheduler    : ' -NoNewline; Write-Host $schedulerScript
 Write-Host '  Personal repo: ' -NoNewline; Write-Host $personalRepoPath
 Write-Host ''

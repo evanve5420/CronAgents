@@ -65,6 +65,8 @@
         'Import-PersonalRepoConfig',
         # PowerHelpers
         'Test-OnBatteryPower',
+        'Test-SchedulerRunning',
+        'Get-OverdueAgents',
         # RetentionCleanup
         'Invoke-RetentionCleanup',
         # Notifier
