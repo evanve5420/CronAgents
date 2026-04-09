@@ -61,6 +61,24 @@ Set-CronAgentsLogLevel -Level $config.logLevel
 Set-CronAgentsLogFile  -Path $logFile
 
 # -----------------------------------------------------------------------
+# 5a. Resolve bare copilotPath to an absolute path.
+#     Process.Start with UseShellExecute=$false may not search the user
+#     PATH in non-interactive contexts (e.g., Task Scheduler). Resolving
+#     up front avoids "file not found" errors at agent-launch time.
+# -----------------------------------------------------------------------
+if ($config.copilotPath -notmatch '[\\/]') {
+    $resolvedCmd = Get-Command $config.copilotPath -CommandType Application -ErrorAction SilentlyContinue |
+                   Select-Object -First 1
+    if ($resolvedCmd) {
+        $config.copilotPath = $resolvedCmd.Source
+        Write-CronAgentsLog -Level 'debug' -Message "Resolved copilotPath to: $($config.copilotPath)"
+    }
+    else {
+        Write-CronAgentsLog -Level 'warn' -Message "Could not resolve copilotPath '$($config.copilotPath)' — agent runs may fail."
+    }
+}
+
+# -----------------------------------------------------------------------
 # 6. Ensure .cronstate/ exists
 # -----------------------------------------------------------------------
 if (-not (Test-Path $cronStateDir)) {
