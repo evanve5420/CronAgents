@@ -788,7 +788,84 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
     }
 }
 
-# ── HTML File Existence ──────────────────────────────────────────────
+# ── Restart Endpoint (dedicated server instance) ─────────────────────
+# The happy-path restart test triggers a real server shutdown, so it runs
+# against its own short-lived server to avoid killing the main test instance.
+
+Describe 'Dashboard — Restart Endpoint' -Tag 'Slow' {
+    BeforeAll {
+        $script:restartEnv = New-TestEnvironment -Name 'DashRestart'
+        $null = New-TestAgentConfig -TestEnv $script:restartEnv -AgentId 'restart-agent' `
+            -Schedule @{ type = 'daily'; time = '10:00' } `
+            -Prompt 'Restart test prompt' -Name 'Restart Agent'
+
+        $configPath = $script:restartEnv.ConfigPath
+        $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        $config.personalRepo.path = $script:restartEnv.Root
+        $config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath -Encoding UTF8
+
+        $portProbe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+        try {
+            $portProbe.Start()
+            $script:restartPort = ([System.Net.IPEndPoint]$portProbe.LocalEndpoint).Port
+        } finally {
+            $portProbe.Stop()
+        }
+
+        $script:restartBaseUrl = "http://127.0.0.1:$($script:restartPort)"
+
+        $dashScript = $script:dashboardScript
+        $script:restartJob = Start-Job -ScriptBlock {
+            param($s, $r, $p)
+            & $s -RepoRoot $r -Port $p -NoBrowser
+        } -ArgumentList $dashScript, $script:restartEnv.Root, $script:restartPort
+
+        $deadline = (Get-Date).AddSeconds(60)
+        $ready = $false
+        while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 300
+            try {
+                $null = Invoke-RestMethod -Uri "$($script:restartBaseUrl)/api/status" -TimeoutSec 2 -ErrorAction Stop
+                $ready = $true
+                break
+            } catch { }
+        }
+
+        if (-not $ready) {
+            $output = Receive-Job $script:restartJob 2>&1 | Out-String
+            Stop-Job $script:restartJob -ErrorAction SilentlyContinue
+            Remove-Job $script:restartJob -Force -ErrorAction SilentlyContinue
+            throw "Restart-test dashboard server did not become ready within 60 seconds. Output: $output"
+        }
+    }
+
+    AfterAll {
+        if ($script:restartJob) {
+            Stop-Job $script:restartJob -ErrorAction SilentlyContinue
+            Remove-Job $script:restartJob -Force -ErrorAction SilentlyContinue
+        }
+        # The restart happy-path spawns an independent pwsh process.
+        # Clean up via the dashboard PID file that the new server writes.
+        $pidFile = Join-Path $script:restartEnv.StatePath 'dashboard.pid'
+        if (Test-Path -LiteralPath $pidFile) {
+            try {
+                $pidData = Get-Content -LiteralPath $pidFile -Raw | ConvertFrom-Json
+                $orphan = Get-Process -Id ([int]$pidData.pid) -ErrorAction SilentlyContinue
+                if ($orphan -and -not $orphan.HasExited) {
+                    Stop-Process -Id $orphan.Id -Force -ErrorAction SilentlyContinue
+                }
+            } catch { }
+        }
+        Remove-TestEnvironment -TestEnv $script:restartEnv
+    }
+
+    It 'Returns 200 with ok:true for trusted Referer' {
+        $data = Invoke-RestMethod -Uri "$($script:restartBaseUrl)/api/server/restart" `
+            -Method Post -Headers @{ Referer = "$($script:restartBaseUrl)/" } -ErrorAction Stop
+        $data.ok | Should -Be $true
+        $data.message | Should -Be 'Server restarting'
+    }
+}
 
 Describe 'Dashboard — File Integrity' {
     It 'dashboard.html exists in scheduler directory' {

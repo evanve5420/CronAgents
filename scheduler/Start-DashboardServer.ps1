@@ -590,17 +590,19 @@ function script:Invoke-Route {
                 return
             }
             $script:lastRestartTime = [datetime]::UtcNow
-            $argList = @('-NoProfile', '-File', $PSCommandPath, '-Port', $Port, '-NoBrowser')
+            $argList = @('-NoProfile', '-File', $PSCommandPath, '-Port', [string]$Port, '-NoBrowser')
             if ($RepoRoot) { $argList += @('-RepoRoot', $RepoRoot) }
-            $quotedArgList = $argList | ForEach-Object { [System.Management.Automation.Language.CodeGeneration]::QuoteArgument([string]$_) }
-            Start-Process pwsh -ArgumentList ($quotedArgList -join ' ')
+            $psi = [System.Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = (Get-Process -Id $PID).Path
+            $psi.UseShellExecute = $false
+            foreach ($a in $argList) { $psi.ArgumentList.Add($a) }
+            [System.Diagnostics.Process]::Start($psi) | Out-Null
             script:Send-JsonResponse -Response $response -Body ([ordered]@{
                 ok      = $true
                 message = 'Server restarting'
             })
             Start-Sleep -Milliseconds 500
             $script:shutdownRequested = $true
-            $shutdownRequested = $true
             return
         }
 
