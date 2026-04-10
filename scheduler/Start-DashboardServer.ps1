@@ -47,6 +47,7 @@ $DashboardHtmlPath = Join-Path $PSScriptRoot 'dashboard.html'
 $ServerStartTime = [datetime]::UtcNow
 $ServerPid = $PID
 $DashboardPidFile = Join-Path $StateRoot 'dashboard.pid'
+$script:lastRestartTime = $null
 $LibDir = Join-Path $PSScriptRoot 'lib'
 $TrackedLibFiles = @(Get-ChildItem -Path $LibDir -Include '*.ps1','*.psd1' -File -Recurse |
     Select-Object -ExpandProperty FullName)

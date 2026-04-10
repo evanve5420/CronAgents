@@ -46,7 +46,7 @@ tools:
 
 CronAgents runs custom agents through **GitHub Copilot CLI**, so `.agent.md` files must use CLI-compatible tool aliases.
 
-If you specify `tools:`, use the official CLI tool aliases: `read`, `edit`, `search`, `execute`, and `agent`. Compatible aliases include `shell` / `Bash` / `powershell` for `execute`, and `Grep` / `Glob` for `search`. You can also reference MCP tools with `server-name/tool-name` or `server-name/*` for all tools from a server.
+If you specify `tools:`, use the official tool aliases: `read`, `edit`, `search`, `execute`, `agent`, and `web`. Compatible aliases include `shell` / `Bash` / `powershell` for `execute`, and `Grep` / `Glob` for `search`.
 
 Do **not** use VS Code-only tool names such as `editFiles`, `runCommands`, `runTasks`, `codebase`, `findTestFiles`, `usages`, `terminalLastCommand`, `terminalSelection`, or `vscodeAPI`.
 
@@ -57,6 +57,30 @@ Do **not** use VS Code-only tool names such as `editFiles`, `runCommands`, `runT
 - `search` — search for text or files (aliases: `Grep`, `Glob`)
 - `execute` — run shell commands (aliases: `shell`, `Bash`, `powershell`)
 - `agent` — delegate to sub-agents (aliases: `custom-agent`, `Task`)
+
+### MCP tool references
+
+Reference MCP server tools in the `tools:` frontmatter using `server-name/tool-name` or `server-name/*` for all tools from a server. **Only the slash format works** — using the hyphen format (`server-tool`) is silently ignored by the CLI and the tools will not be available to the agent.
+
+```yaml
+tools:
+  - read
+  - search
+  - playwright/browser_snapshot   # ✅ correct — slash format
+  - github/*                      # ✅ correct — slash wildcard
+  # - playwright-browser_snapshot # ❌ WRONG — silently ignored
+```
+
+> **VS Code vs CLI MCP tool naming.** VS Code and CLI expose MCP tools under different runtime names. The `.agent.md` `tools:` frontmatter uses the cross-platform **slash** format (`server/tool`) in both environments — CLI translates internally. However, the actual tool names the model sees at runtime differ:
+>
+> | Context | Format | Example |
+> |---------|--------|---------|
+> | `.agent.md` `tools:` frontmatter | `server/tool` | `playwright/browser_click` |
+> | VS Code runtime (model sees) | `server/tool` | `playwright/browser_click` |
+> | CLI runtime (model sees) | `server-tool` | `playwright-browser_click` |
+> | CLI `--deny-tool` / `denyTools` | `server(tool)` | `playwright(browser_click)` |
+>
+> Since CronAgents agents run in CLI, `denyTools` entries in the registration JSON must use the **parenthesized** CLI permission-pattern: `server-name(tool-name)` for a specific tool or `server-name()` for all tools from a server. Do **not** use the slash format in `denyTools`.
 
 ## Example
 
