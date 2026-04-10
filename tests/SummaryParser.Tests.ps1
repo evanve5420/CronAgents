@@ -140,4 +140,63 @@ Describe 'Read-SummaryFrontmatter' {
             $result.Body      | Should -Match 'First line'
         }
     }
+
+    Context 'Brief extraction' {
+        It 'Extracts first paragraph as brief from multi-paragraph body with frontmatter' {
+            $content = "---`nattention: false`nheadline: Test`n---`nFirst paragraph line 1.`nFirst paragraph line 2.`n`nSecond paragraph detail."
+            $result = Read-SummaryFrontmatter -Content $content
+            $result.Brief | Should -Be "First paragraph line 1.`nFirst paragraph line 2."
+            $result.Body  | Should -Match 'Second paragraph detail'
+        }
+
+        It 'Sets brief equal to entire body for single-paragraph content' {
+            $content = "---`nattention: false`nheadline: Simple`n---`nJust one paragraph here."
+            $result = Read-SummaryFrontmatter -Content $content
+            $result.Brief | Should -Be 'Just one paragraph here.'
+            $result.Brief | Should -Be $result.Body
+        }
+
+        It 'Returns null brief for empty body' {
+            $result = Read-SummaryFrontmatter -Content ''
+            $result.Brief | Should -BeNullOrEmpty
+        }
+
+        It 'Returns null brief for whitespace-only content' {
+            $result = Read-SummaryFrontmatter -Content "   `n  "
+            $result.Brief | Should -BeNullOrEmpty
+        }
+
+        It 'Extracts brief from no-frontmatter multi-paragraph content' {
+            $content = "The agent ran successfully.`n`nDetails: checked 10 files, no issues found."
+            $result = Read-SummaryFrontmatter -Content $content
+            $result.Brief | Should -Be 'The agent ran successfully.'
+            $result.Body  | Should -Match 'Details:'
+        }
+
+        It 'Handles CRLF line endings in brief extraction' {
+            $content = "---`r`nattention: false`r`nheadline: CRLF test`r`n---`r`nBrief paragraph.`r`n`r`nDetail paragraph."
+            $result = Read-SummaryFrontmatter -Content $content
+            $result.Brief | Should -Be 'Brief paragraph.'
+        }
+
+        It 'Extracts brief correctly with MetadataOnly flag' {
+            $summaryPath = Join-Path $TestDrive 'brief-metadata-only.md'
+            $content = "---`nattention: true`nheadline: Test`n---`nBrief here.`n`nExtra details not needed."
+            Set-Content -Path $summaryPath -Value $content -Encoding UTF8 -NoNewline
+            $result = Read-SummaryFrontmatter -Path $summaryPath -MetadataOnly
+            $result.Brief | Should -Be 'Brief here.'
+        }
+
+        It 'Handles no-frontmatter content with leading blank lines' {
+            $content = "`n`nActual content starts here."
+            $result = Read-SummaryFrontmatter -Content $content
+            $result.Brief | Should -Be 'Actual content starts here.'
+        }
+
+        It 'Splits on whitespace-only blank lines between paragraphs' {
+            $content = "---`nattention: false`nheadline: Test`n---`nBrief paragraph.`n   `nDetail paragraph."
+            $result = Read-SummaryFrontmatter -Content $content
+            $result.Brief | Should -Be 'Brief paragraph.'
+        }
+    }
 }

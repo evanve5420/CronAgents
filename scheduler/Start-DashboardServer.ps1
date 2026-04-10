@@ -193,12 +193,14 @@ function script:Get-RunsPayload {
         $summaryExcerpt = $null
         $attention = $false
         $headline = $null
+        $brief = $null
         if ($r.HasSummary) {
             $summaryPath = Join-Path $r.RunDirectory 'summary.md'
             try {
                 $parsed = Read-SummaryFrontmatter -Path $summaryPath -MetadataOnly
                 $attention = $parsed.Attention
                 $headline  = $parsed.Headline
+                $brief     = $parsed.Brief
                 # Use headline for the excerpt; fall back to first line of body
                 if ($headline) {
                     $summaryExcerpt = $headline
@@ -224,6 +226,7 @@ function script:Get-RunsPayload {
             summary           = $summaryExcerpt
             attention         = $attention
             headline          = $headline
+            brief             = $brief
         }
     }
     return $result
@@ -275,12 +278,14 @@ function script:Get-RunDetailPayload {
     $summary = $null
     $attention = $false
     $headline = $null
+    $brief = $null
     $summaryPath = Join-Path $runDir 'summary.md'
     if (Test-Path -LiteralPath $summaryPath) {
         $parsed = Read-SummaryFrontmatter -Path $summaryPath
         $summary   = $parsed.Body
         $attention = $parsed.Attention
         $headline  = $parsed.Headline
+        $brief     = $parsed.Brief
     }
 
     $output = $null
@@ -326,6 +331,7 @@ function script:Get-RunDetailPayload {
             hasOutput      = $hasOutput
             isIncomplete   = $isIncomplete
             summary        = $summary
+            brief          = $brief
             attention      = $attention
             headline       = $headline
             output         = $output
