@@ -192,5 +192,11 @@ Describe 'Read-SummaryFrontmatter' {
             $result = Read-SummaryFrontmatter -Content $content
             $result.Brief | Should -Be 'Actual content starts here.'
         }
+
+        It 'Splits on whitespace-only blank lines between paragraphs' {
+            $content = "---`nattention: false`nheadline: Test`n---`nBrief paragraph.`n   `nDetail paragraph."
+            $result = Read-SummaryFrontmatter -Content $content
+            $result.Brief | Should -Be 'Brief paragraph.'
+        }
     }
 }

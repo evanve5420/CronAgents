@@ -143,8 +143,8 @@ function script:Extract-Brief {
 
     if ([string]::IsNullOrWhiteSpace($Body)) { return $null }
 
-    # Split on the first blank line (two consecutive newlines with optional \r)
-    $parts = $Body -split '(?:\r?\n){2,}', 2
+    # Split on the first blank line (whitespace-only lines count as blank)
+    $parts = $Body -split '\r?\n[ \t]*\r?\n', 2
     $first = $parts[0].Trim()
     if ($first.Length -eq 0) { return $null }
     return $first

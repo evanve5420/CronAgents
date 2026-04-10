@@ -660,7 +660,8 @@ function renderRuns() {
     } else if (r.meta && (r.meta.exitCode === null || r.meta.exitCode === undefined)) {
       summaryCell = '<span style="color:var(--muted);font-style:italic">running…</span>';
     } else if (r.brief) {
-      summaryCell = esc(r.brief);
+      const text = r.brief.replace(/^#+\s*/, '');
+      summaryCell = esc(text);
     } else if (r.summary) {
       const text = r.summary.replace(/^#+\s*/, '');
       const truncated = text.length > 120 ? text.substring(0, 120) + '…' : text;
@@ -721,7 +722,7 @@ async function showRunDetail(runId) {
     }
 
     if (detail.summary) {
-      const hasExtra = detail.brief && detail.summary.length > (detail.brief.length + 10);
+      const hasExtra = detail.brief ? detail.summary.replace(/\s+/g, '') !== detail.brief.replace(/\s+/g, '') : false;
       if (hasExtra) {
         html += `<details><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Full Summarizer Output</summary><pre>${esc(detail.summary)}</pre></details>`;
       } else if (!detail.brief) {
