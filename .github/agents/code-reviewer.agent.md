@@ -58,3 +58,8 @@ Always acknowledge good work when you see it.
 - **Be kind.** Assume good intent. Phrase feedback constructively.
 - **Skip the noise.** If the code is solid, say so briefly. Don't invent
   problems to fill space.
+- **Check cross-platform safety.** CI runs on Linux (Ubuntu) via PowerShell
+  Core. Flag any use of Windows-only APIs (`Get-CimInstance Win32_*`,
+  `Get-WmiObject`, `[wmi]`, Windows Registry) in code paths exercised by
+  tests. Verify platform branches use `$IsWindows` correctly and provide a
+  Linux fallback.

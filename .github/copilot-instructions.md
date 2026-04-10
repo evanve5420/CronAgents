@@ -6,6 +6,8 @@
 
 2. **No duplicated logic.** Make use of the shared PowerShell module (`scheduler/lib/CronAgents.psd1`) and its nested modules. If a function is needed in more than one script, it belongs in `lib/`. The CLI wrapper, scheduler, health check, and tests must all call the same functions — never reimplement.
 
+3. **Cross-platform safe.** CI runs on Linux (Ubuntu) via PowerShell Core. Avoid Windows-only APIs (`Get-CimInstance Win32_*`, `[wmi]`, `Get-WmiObject`, Windows Registry, etc.) in any code path exercised by tests. When platform-specific logic is unavoidable, branch on `$IsWindows` (remembering it doesn't exist in Windows PowerShell 5.1 — guard with `Test-Path variable:IsWindows`) and provide a Linux fallback (e.g., `/proc/<pid>/cmdline`). Tag tests that genuinely require Windows with `'WindowsOnly'` so CI can exclude them.
+
 ## Keep in sync
 
 When changing the config schema (`cronagents.json`, `cronagents.schema.json`, `cronagents-agent.schema.json`) or `.agent.md` structure, update `.github/skills/creating-agents/SKILL.md` to match. That skill is how users create new agents — if it falls out of date, they'll get bad scaffolding.
