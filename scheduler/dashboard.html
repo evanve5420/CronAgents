@@ -127,6 +127,7 @@
   .badge-info    { background: rgba(88,166,255,0.15); color: var(--accent); }
   .badge-muted   { background: rgba(139,148,158,0.15); color: var(--muted); }
   .badge-attention { background: rgba(219,109,40,0.15); color: #e8853a; }
+  .badge-question  { background: rgba(210,153,34,0.15); color: var(--yellow); }
 
   /* ── Attention banner ───────────────────────── */
   .attention-banner {
@@ -573,7 +574,9 @@ function renderAgents() {
       <td>${esc(formatSchedule(a.schedule))}</td>
       <td>${a.enabled
         ? '<span class="badge badge-success">Enabled</span>'
-        : '<span class="badge badge-muted">Disabled</span>'}</td>
+        : '<span class="badge badge-muted">Disabled</span>'}${a.pendingQuestions > 0
+        ? ` <span class="badge badge-question" title="${a.pendingQuestions} pending question${a.pendingQuestions === 1 ? '' : 's'}">❓ ${a.pendingQuestions}</span>`
+        : ''}</td>
       <td>${relativeTime(a.lastRun)}</td>
       <td>${a.enabled ? timeUntil(a.nextRun) : '—'}</td>
       <td>
@@ -897,6 +900,7 @@ async function triggerRun(agentId) {
   try {
     await api('POST', `/api/run/${encodeURIComponent(agentId)}`);
     showToast(`Run triggered: ${agentId}`);
+    await refresh();
   } catch (err) { showToast(err.message, 'error'); }
 }
 
