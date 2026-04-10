@@ -134,7 +134,9 @@ function script:Get-AgentsList {
         try {
             $pq = Get-PendingQuestions -StateRoot $StateRoot -AgentId $a.Id
             $pendingCount = $pq.Count
-        } catch { }
+        } catch {
+            Write-CronAgentsLog -Level 'debug' -Message "Failed to get pending questions for '$($a.Id)': $_"
+        }
 
         $result += [ordered]@{
             id               = $a.Id

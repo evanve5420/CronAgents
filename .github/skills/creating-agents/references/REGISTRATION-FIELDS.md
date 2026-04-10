@@ -54,7 +54,7 @@ Override Copilot CLI model. `null` uses the CLI default.
 
 ### `denyTools` (array of string, default `[]`)
 
-Tools to deny. Most useful in prompt-only mode (which gets `--allow-all-tools`).
+Tools to deny. Most useful in prompt-only mode (which gets `--allow-all-tools`). Use bare names to deny an entire tool (`"edit"`), or parenthesized patterns to deny specific commands (`"shell(rm)"`, `"shell(git push)"`).
 
 ```json
 "denyTools": ["edit", "shell(rm)", "shell(git push)"]
