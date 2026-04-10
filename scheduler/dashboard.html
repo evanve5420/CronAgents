@@ -75,7 +75,7 @@
   .staleness-banner .stale-action:hover { background: var(--yellow); color: var(--bg); }
 
   /* ── Layout ──────────────────────────────────── */
-  main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  main { max-width: 1400px; margin: 0 auto; padding: 24px; }
   section { margin-bottom: 32px; }
   section > h2 {
     font-size: 1rem; font-weight: 600; margin-bottom: 12px;
@@ -94,6 +94,11 @@
   th { color: var(--muted); font-weight: 500; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
   tr:last-child td { border-bottom: none; }
   tr:hover td { background: var(--hover); }
+  .summary-cell {
+    min-width: 300px; max-width: 600px;
+    white-space: normal; word-break: break-word;
+    line-height: 1.45; font-size: 0.85rem;
+  }
 
   /* ── Buttons ─────────────────────────────────── */
   .btn {
@@ -130,6 +135,18 @@
   }
   .attention-banner h3 {
     font-size: 0.9rem; font-weight: 600; margin-bottom: 8px; color: var(--orange);
+  }
+  .brief-summary {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 18px; margin: 12px 0;
+  }
+  .brief-summary h4 {
+    font-size: 0.8rem; font-weight: 500; color: var(--accent);
+    text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 8px;
+  }
+  .brief-summary p {
+    font-size: 0.9rem; line-height: 1.55; color: var(--text);
+    white-space: pre-wrap; margin: 0;
   }
   .attention-item {
     display: flex; align-items: baseline; gap: 8px;
@@ -642,6 +659,8 @@ function renderRuns() {
       summaryCell = '<span style="color:var(--yellow);font-style:italic">run ended without final metadata</span>';
     } else if (r.meta && (r.meta.exitCode === null || r.meta.exitCode === undefined)) {
       summaryCell = '<span style="color:var(--muted);font-style:italic">running…</span>';
+    } else if (r.brief) {
+      summaryCell = esc(r.brief);
     } else if (r.summary) {
       const text = r.summary.replace(/^#+\s*/, '');
       const truncated = text.length > 120 ? text.substring(0, 120) + '…' : text;
@@ -656,7 +675,7 @@ function renderRuns() {
       <td>${relativeTime(r.timestamp)}</td>
       <td>${statusBadge(r)}</td>
       <td>${formatDuration(r.meta)}</td>
-      <td style="max-width:400px;white-space:normal;word-break:break-word">${attentionIndicator}${summaryCell}</td>
+      <td class="summary-cell">${attentionIndicator}${summaryCell}</td>
       <td>${feedbackBadge(r)}</td>
       <td>
         <button class="btn" data-action="showRunDetail" data-run-id="${esc(r.id)}">Details</button>
@@ -697,8 +716,17 @@ async function showRunDetail(runId) {
       }
     }
 
+    if (detail.brief) {
+      html += `<div class="brief-summary"><h4>Summary</h4><p>${esc(detail.brief)}</p></div>`;
+    }
+
     if (detail.summary) {
-      html += `<details open><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Summary</summary><pre>${esc(detail.summary)}</pre></details>`;
+      const hasExtra = detail.brief && detail.summary.length > (detail.brief.length + 10);
+      if (hasExtra) {
+        html += `<details><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Full Summarizer Output</summary><pre>${esc(detail.summary)}</pre></details>`;
+      } else if (!detail.brief) {
+        html += `<details open><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Summary</summary><pre>${esc(detail.summary)}</pre></details>`;
+      }
     }
 
     if (detail.feedbackResult) {

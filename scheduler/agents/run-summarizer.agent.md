@@ -27,7 +27,23 @@ headline: "Short one-line description (under 80 chars)"
 - **`attention`** — set to `true` when the user should notice this run. See the Attention Rules below.
 - **`headline`** — a short plain-text sentence (under 80 characters) suitable for display in a table cell.
 
-After the closing `---`, write the full summary as a short markdown snippet (no code fences).
+After the closing `---`, write the summary in **two sections** separated by a blank line:
+
+1. **Brief** (first paragraph) — A concise at-a-glance summary in **1–5 sentences**. This is shown prominently in the dashboard. Cover only what matters: what happened, whether it succeeded, and any key result. No markdown headings, no bullet lists — just plain sentences.
+
+2. **Details** (everything after the first blank line) — Optional. Include only when there is meaningful context worth preserving: error traces, specific file changes, notable warnings. Omit this section entirely for routine no-op or simple-success runs.
+
+**Example — work happened:**
+```
+The agent opened PR #42 adding retry logic to the upload endpoint. Two existing tests were updated; all checks pass.
+
+Changed files: src/upload.ts, tests/upload.test.ts. The PR targets the main branch and is ready for review.
+```
+
+**Example — no-op run:**
+```
+✓ No changes detected.
+```
 
 ## Attention Rules
 
@@ -46,8 +62,8 @@ Set `attention: false` when:
 
 Adapt detail level to what happened:
 
-- **Failures** (non-zero exit code): Expanded detail — error context, which tools failed, suggested next steps
-- **Work happened** (non-trivial output, file edits mentioned): Meaningful summary of what changed
-- **No-op runs** (empty or trivial output): Single line: "✓ no changes"
+- **Failures** (non-zero exit code): Brief states what failed. Details section has error context, which tools failed, suggested next steps.
+- **Work happened** (non-trivial output, file edits mentioned): Brief states what was done and the outcome. Details section lists specifics if useful.
+- **No-op runs** (empty or trivial output): Brief only: "✓ No changes detected." — no details section needed.
 
-Keep summaries under 200 words. Do not include the full output — summarize.
+The **brief must never exceed 5 sentences**. Keep total summary (brief + details) under 200 words. Do not reproduce the full output — summarize.

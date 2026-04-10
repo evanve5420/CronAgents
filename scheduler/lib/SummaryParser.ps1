@@ -7,7 +7,9 @@
 #   attention: true
 #   headline: "Short one-line description"
 #   ---
-#   Full summary body text here...
+#   Brief 1-5 sentence summary (first paragraph).
+#
+#   Optional details after a blank line...
 #
 # Summaries without frontmatter are treated as body-only (backwards-compatible).
 # ---------------------------------------------------------------------------
@@ -22,6 +24,7 @@ function Read-SummaryFrontmatter {
         Reads a summary.md file and returns an object with:
         - Attention  [bool]   — whether this run needs user attention
         - Headline   [string] — short one-liner for table display (or $null)
+        - Brief      [string] — concise 1-5 sentence summary (first paragraph of body)
         - Body       [string] — the full summary text after the frontmatter
         - Raw        [string] — the original file content
         - ReadError  [string] — error message if file could not be read (or $null)
@@ -49,12 +52,13 @@ function Read-SummaryFrontmatter {
     $defaults = [PSCustomObject]@{
         Attention = $false
         Headline  = $null
+        Brief     = $null
         Body      = ''
         Raw       = ''
         ReadError = $null
     }
 
-    # Read content — when MetadataOnly, read just the first 20 lines (enough for frontmatter + first body line)
+    # Read content — when MetadataOnly, read the first 20 lines (enough for frontmatter + first paragraph brief)
     if ($PSCmdlet.ParameterSetName -eq 'ByPath') {
         if (-not (Test-Path -LiteralPath $Path)) {
             $defaults.ReadError = "File not found: $Path"
@@ -105,16 +109,43 @@ function Read-SummaryFrontmatter {
             }
         }
 
+        $trimmedBody = $body.TrimStart("`r", "`n").TrimEnd()
         return [PSCustomObject]@{
             Attention = $attention
             Headline  = $headline
-            Body      = $body.TrimStart("`r", "`n").TrimEnd()
+            Brief     = (script:Extract-Brief -Body $trimmedBody)
+            Body      = $trimmedBody
             Raw       = $Content
             ReadError = $null
         }
     }
 
     # No frontmatter — entire content is the body
-    $defaults.Body = $Content.TrimEnd()
+    $trimmed = $Content.TrimStart("`r", "`n").TrimEnd()
+    $defaults.Brief = script:Extract-Brief -Body $trimmed
+    $defaults.Body = $trimmed
     return $defaults
+}
+
+function script:Extract-Brief {
+    <#
+    .SYNOPSIS
+        Extracts the first paragraph of a summary body as the brief.
+    .DESCRIPTION
+        The brief is everything up to the first blank line (double newline).
+        Returns $null if the body is empty.
+    #>
+    [OutputType([string])]
+    param(
+        [AllowEmptyString()]
+        [string]$Body
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Body)) { return $null }
+
+    # Split on the first blank line (two consecutive newlines with optional \r)
+    $parts = $Body -split '(?:\r?\n){2,}', 2
+    $first = $parts[0].Trim()
+    if ($first.Length -eq 0) { return $null }
+    return $first
 }
