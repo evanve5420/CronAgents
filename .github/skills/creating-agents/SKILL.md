@@ -121,9 +121,26 @@ Create in `~/.cronagents/.github/skills/<agent-name>/SKILL.md` if the agent need
 
 CronAgents runs `.agent.md` profiles through **GitHub Copilot CLI**.
 
-If you specify `tools:`, use the official CLI tool aliases: `read`, `edit`, `search`, `execute`, and `agent`. Compatible aliases include `shell` / `Bash` / `powershell` for `execute`, and `Grep` / `Glob` for `search`. You can also reference MCP tools with `server-name/tool-name` or `server-name/*` for all tools from a server.
+### Built-in tools
+
+If you specify `tools:`, use the official tool aliases: `read`, `edit`, `search`, `execute`, `agent`, and `web`. Compatible aliases include `shell` / `Bash` / `powershell` for `execute`, and `Grep` / `Glob` for `search`.
 
 Do **not** use VS Code-only tool names such as `editFiles`, `runCommands`, `runTasks`, `codebase`, `findTestFiles`, `usages`, `terminalLastCommand`, `terminalSelection`, or `vscodeAPI`.
+
+### MCP tools
+
+You can reference MCP server tools in the `.agent.md` `tools:` frontmatter using `server-name/tool-name` or `server-name/*` for all tools from a server. **Only the slash format works in frontmatter** — the hyphen format (`server-tool`) is silently ignored and the tool will not be available.
+
+> **VS Code vs CLI tool naming.** VS Code and CLI present MCP tools under different runtime names. This matters because CronAgents agents run in CLI, not VS Code.
+>
+> | Context | Format | Example |
+> |---------|--------|---------|
+> | `.agent.md` `tools:` frontmatter | `server/tool` | `playwright/browser_click` |
+> | VS Code runtime (model sees) | `server/tool` | `playwright/browser_click` |
+> | CLI runtime (model sees) | `server-tool` | `playwright-browser_click` |
+> | CLI `--deny-tool` / `denyTools` | `server(tool)` | `playwright(browser_click)` |
+>
+> The `tools:` frontmatter always uses the **slash** format — CLI translates internally. But `denyTools` values in the registration JSON are passed directly to `--deny-tool`, so MCP entries there must use the **parenthesized** CLI permission-pattern format: `server-name(tool-name)` to deny a specific tool, or `server-name()` to deny all tools from a server.
 
 Keep the list minimal. If you are unsure, omit `tools:` rather than guessing.
 

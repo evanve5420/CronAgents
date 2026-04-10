@@ -177,6 +177,9 @@ For agent mode, Copilot CLI loads the custom agent profile by name from its supp
 - `edit` — modify files
 - `execute` — run shell commands (`shell` is an alias)
 - `agent` — delegate to sub-agents
+- `web` — fetch URLs and perform web searches
+
+MCP server tools can be referenced in the `tools:` frontmatter using the slash format: `server-name/tool-name` or `server-name/*`. At runtime, CLI exposes these as `server-tool` (hyphen). For full details on MCP tool naming conventions and the `denyTools` permission-pattern syntax, see the [Agent Profile reference](../.github/skills/creating-agents/references/AGENT-PROFILE.md#mcp-tool-references).
 
 ---
 
