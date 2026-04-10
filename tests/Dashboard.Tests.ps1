@@ -218,6 +218,18 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             $agent.schedule.type | Should -Be 'daily'
             $agent.schedule.time | Should -Be '10:00'
         }
+
+        It 'Agent includes pendingQuestions count' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/status" -ErrorAction Stop
+            $agent = $data.agents | Where-Object { $_.id -eq 'http-agent' }
+            $agent.pendingQuestions | Should -BeGreaterOrEqual 1
+        }
+
+        It 'Agent with no questions has pendingQuestions zero' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/status" -ErrorAction Stop
+            $agent = $data.agents | Where-Object { $_.id -eq 'http-working-dir' }
+            $agent.pendingQuestions | Should -Be 0
+        }
     }
 
     Context 'GET /api/agents' {
@@ -795,6 +807,12 @@ Describe 'Dashboard — File Integrity' {
         $content | Should -Match '/api/resume'
         $content | Should -Match '/api/feedback'
         $content | Should -Match '/api/freshness'
+    }
+
+    It 'dashboard.html renders pending-question badge in agent list' {
+        $content = Get-Content -LiteralPath $script:dashboardHtml -Raw
+        $content | Should -Match 'badge-question'
+        $content | Should -Match 'pendingQuestions'
     }
 
     It 'Start-DashboardServer.ps1 exists' {

@@ -57,7 +57,6 @@ Do **not** use VS Code-only tool names such as `editFiles`, `runCommands`, `runT
 - `search` — search for text or files (aliases: `Grep`, `Glob`)
 - `execute` — run shell commands (aliases: `shell`, `Bash`, `powershell`)
 - `agent` — delegate to sub-agents (aliases: `custom-agent`, `Task`)
-- `web` — fetch URLs and perform web searches (aliases: `WebSearch`, `WebFetch`)
 
 ### MCP tool references
 

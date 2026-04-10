@@ -131,13 +131,22 @@ function script:Get-AgentsList {
             }
         }
 
+        $pendingCount = 0
+        try {
+            $pq = Get-PendingQuestions -StateRoot $StateRoot -AgentId $a.Id
+            $pendingCount = $pq.Count
+        } catch {
+            Write-CronAgentsLog -Level 'debug' -Message "Failed to get pending questions for '$($a.Id)': $_"
+        }
+
         $result += [ordered]@{
-            id       = $a.Id
-            name     = $a.Config.name
-            schedule = $schedPayload
-            enabled  = $enabled
-            lastRun  = $lastRunStr
-            nextRun  = $nextRunStr
+            id               = $a.Id
+            name             = $a.Config.name
+            schedule         = $schedPayload
+            enabled          = $enabled
+            lastRun          = $lastRunStr
+            nextRun          = $nextRunStr
+            pendingQuestions = $pendingCount
         }
     }
     return $result
