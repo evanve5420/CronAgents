@@ -805,7 +805,7 @@ async function showRunDetail(runId) {
     }
 
     if (detail.summary) {
-      html += `<details><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Full Summarizer Output</summary><pre>${esc(detail.summary)}</pre></details>`;
+      html += `<details${!detail.brief ? ' open' : ''}><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Full Summarizer Output</summary><pre>${esc(detail.summary)}</pre></details>`;
     }
 
     if (detail.feedbackResult) {
