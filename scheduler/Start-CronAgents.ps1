@@ -111,6 +111,11 @@ if (Test-SchedulerRunning -PidFilePath $existingPidFile -ExcludePid $PID) {
     Write-CronAgentsLog -Level 'info' -Message 'Another scheduler instance is already running. Exiting.'
     exit 0
 }
+# Remove stale PID file from a previous crashed instance so atomic
+# CreateNew in step 7a can succeed.
+if (Test-Path -LiteralPath $existingPidFile) {
+    Remove-Item -LiteralPath $existingPidFile -Force -ErrorAction SilentlyContinue
+}
 
 # -----------------------------------------------------------------------
 # 7. Log startup
@@ -118,13 +123,34 @@ if (Test-SchedulerRunning -PidFilePath $existingPidFile -ExcludePid $PID) {
 Write-CronAgentsLog -Level 'info' -Message 'CronAgents scheduler starting'
 
 # -----------------------------------------------------------------------
-# 7a. Write scheduler PID file for freshness detection
+# 7a. Write scheduler PID file for freshness detection (atomic create)
 # -----------------------------------------------------------------------
 $script:schedulerPidFile = Join-Path $cronStateDir 'scheduler.pid'
-$pidPayload = @{ pid = $PID; startedAt = [datetime]::UtcNow.ToString('o') } | ConvertTo-Json
+# Use the process's actual start time so Test-SchedulerRunning's
+# startedAt comparison matches regardless of initialization delay.
+$processStart = (Get-Process -Id $PID).StartTime.ToUniversalTime()
+$pidPayload = @{ pid = $PID; startedAt = $processStart.ToString('o') } | ConvertTo-Json
 try {
-    [System.IO.File]::WriteAllText($script:schedulerPidFile, $pidPayload, [System.Text.Encoding]::UTF8)
+    # Use exclusive FileStream to avoid a race where two instances both
+    # pass the single-instance guard and then overwrite each other's PID.
+    $fs = [System.IO.File]::Open(
+        $script:schedulerPidFile,
+        [System.IO.FileMode]::CreateNew,
+        [System.IO.FileAccess]::Write,
+        [System.IO.FileShare]::None)
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($pidPayload)
+        $fs.Write($bytes, 0, $bytes.Length)
+    }
+    finally { $fs.Dispose() }
     Write-CronAgentsLog -Level 'debug' -Message "Wrote scheduler PID file: $($script:schedulerPidFile)"
+}
+catch [System.IO.IOException] {
+    # File already exists — another instance won the race. This is
+    # extremely unlikely given the IgnoreNew task setting and the
+    # single-instance guard above, but handle it defensively.
+    Write-CronAgentsLog -Level 'info' -Message "Scheduler PID file already exists (concurrent startup race). Exiting."
+    exit 0
 }
 catch {
     Write-CronAgentsLog -Level 'warn' -Message "Failed to write scheduler PID file '$($script:schedulerPidFile)': $_ — continuing without freshness PID file."
@@ -140,10 +166,10 @@ try {
 
     if ($missedAgents.Count -gt 0) {
         $list = $missedAgents -join ', '
-        Write-CronAgentsLog -Level 'warn' -Message "Recovery: $($missedAgents.Count) agent(s) are overdue and will run this tick: $list"
+        Write-CronAgentsLog -Level 'warn' -Message "Recovery: $($missedAgents.Count) agent(s) are overdue and will be evaluated on the next eligible tick: $list"
         try {
             Send-SchedulerErrorNotification -Operation 'Scheduler recovery' `
-                -ErrorMessage "Scheduler restarted. $($missedAgents.Count) overdue agent(s) will run shortly: $list" `
+                -ErrorMessage "Scheduler restarted. $($missedAgents.Count) overdue agent(s) will be evaluated on the next eligible tick: $list" `
                 -GlobalConfig $config
         } catch { <# best-effort #> }
     }

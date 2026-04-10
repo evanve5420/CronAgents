@@ -104,6 +104,19 @@ function Test-TaskCurrent {
     $wd = $act.WorkingDirectory.TrimEnd('\')
     if ($wd -ne $RepoRoot.TrimEnd('\'))     { return $false }
 
+    # Validate triggers: expect exactly 2 (logon + periodic repetition)
+    $triggers = @($Task.Triggers)
+    if ($triggers.Count -ne 2)              { return $false }
+
+    $hasLogon   = $triggers | Where-Object { $_ -is [CimInstance] -and $_.CimClass.CimClassName -eq 'MSFT_TaskLogonTrigger' }
+    $hasRepeat  = $triggers | Where-Object {
+        $_.Repetition -and $_.Repetition.Interval -eq 'PT15M'
+    }
+    if (-not $hasLogon -or -not $hasRepeat) { return $false }
+
+    # Validate MultipleInstances policy
+    if ($Task.Settings.MultipleInstances -ne 'IgnoreNew') { return $false }
+
     return $true
 }
 

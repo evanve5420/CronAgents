@@ -49,26 +49,43 @@ function Test-SchedulerRunning {
         $proc = Get-Process -Id $targetPid -ErrorAction SilentlyContinue
         if (-not $proc) { return $false }
 
-        # Validate the process command line actually matches the scheduler
-        $cmdLine = $null
-        if ($IsWindows -or -not (Test-Path variable:IsWindows)) {
+        # Cross-platform validation: confirm the PID file's startedAt
+        # matches the running process start time within a small tolerance.
+        # This ensures the PID hasn't been recycled to a different process.
+        if ($pidData.PSObject.Properties.Name -contains 'startedAt' -and $pidData.startedAt) {
             try {
-                $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $targetPid" -ErrorAction SilentlyContinue).CommandLine
-            }
-            catch { <# fallback below #> }
-        }
-        else {
-            # Linux/macOS: read /proc/<pid>/cmdline
-            $procCmdFile = "/proc/$targetPid/cmdline"
-            if (Test-Path -LiteralPath $procCmdFile) {
-                try {
-                    $cmdLine = (Get-Content -LiteralPath $procCmdFile -Raw -ErrorAction SilentlyContinue) -replace "`0", ' '
+                # ConvertFrom-Json may auto-parse the ISO datetime string to
+                # a [datetime] with Kind=Local, so normalise both to UTC.
+                $startedAt = if ($pidData.startedAt -is [datetime]) {
+                    $pidData.startedAt.ToUniversalTime()
+                } else {
+                    [datetime]::Parse($pidData.startedAt).ToUniversalTime()
                 }
-                catch { <# best-effort #> }
+                $procStartUtc = $proc.StartTime.ToUniversalTime()
+                $driftSeconds = [math]::Abs(($procStartUtc - $startedAt).TotalSeconds)
+                if ($driftSeconds -gt 5) { return $false }
+            }
+            catch {
+                Write-CronAgentsLog -Level 'debug' -Message "Could not compare scheduler start time for PID $targetPid from '$PidFilePath': $_"
             }
         }
 
-        return ($cmdLine -and $cmdLine -match 'Start-CronAgents\.ps1')
+        # Windows-only enhancement: verify command line matches the scheduler.
+        # Not required on non-Windows or when command line cannot be read.
+        $isWindowsPlatform = if (Test-Path variable:IsWindows) { $IsWindows } else { $true }
+        if ($isWindowsPlatform) {
+            $cmdLine = $null
+            try {
+                $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $targetPid" -ErrorAction SilentlyContinue).CommandLine
+            }
+            catch { <# best-effort only #> }
+
+            if ($cmdLine) {
+                return ($cmdLine -match 'Start-CronAgents\.ps1')
+            }
+        }
+
+        return $true
     }
     catch {
         Write-CronAgentsLog -Level 'debug' -Message "Could not validate PID file '$PidFilePath': $_"
