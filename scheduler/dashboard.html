@@ -155,6 +155,9 @@
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 16px; margin-top: 12px;
   }
+  .run-detail-row > td { padding: 0 !important; }
+  .run-detail-row > td > .panel { margin: 0; border-radius: 0; border-left: 3px solid var(--accent); }
+  .run-detail-row:hover { background: inherit !important; }
   .panel h3 { font-size: 0.95rem; margin-bottom: 8px; }
   .panel pre {
     background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
@@ -368,7 +371,6 @@
         <tbody id="runs-body"></tbody>
       </table>
     </section>
-    <div id="run-detail" class="panel" style="display:none;"></div>
   </div>
 
   <!-- ── Questions Tab ───────────────────────── -->
@@ -431,10 +433,13 @@ function showToast(message, type = 'success') {
 }
 
 // ── Tabs ─────────────────────────────────────────────────────────
-function switchTab(name) {
+function activateTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${name}`));
-  document.getElementById('run-detail').style.display = 'none';
+}
+function switchTab(name) {
+  activateTab(name);
+  closeRunDetail();
 }
 
 // ── Time formatting ─────────────────────────────────────────────
@@ -632,10 +637,16 @@ function renderRuns() {
     : `${runs.length} runs`;
 
   if (filtered.length === 0) {
+    closeRunDetail();
     const msg = isFiltered ? 'No runs match the current filters' : 'No run history yet';
     tbody.innerHTML = `<tr><td colspan="7" class="empty-state">${msg}</td></tr>`;
     return;
   }
+
+  // Detach the open detail row before replacing tbody contents
+  const openDetail = document.querySelector('tr.run-detail-row');
+  if (openDetail) openDetail.remove();
+
   tbody.innerHTML = filtered.map(r => {
     let summaryCell = '<span style="color:var(--muted)">—</span>';
     if (r.isIncomplete) {
@@ -651,7 +662,7 @@ function renderRuns() {
     }
     const attentionIndicator = r.attention ? '<span class="badge badge-attention" title="Needs attention">⚠️</span> ' : '';
     return `
-    <tr>
+    <tr data-run-id="${esc(r.id)}">
       <td>${esc(r.meta?.agentName || r.agentId)}</td>
       <td>${relativeTime(r.timestamp)}</td>
       <td>${statusBadge(r)}</td>
@@ -659,20 +670,78 @@ function renderRuns() {
       <td style="max-width:400px;white-space:normal;word-break:break-word">${attentionIndicator}${summaryCell}</td>
       <td>${feedbackBadge(r)}</td>
       <td>
-        <button class="btn" data-action="showRunDetail" data-run-id="${esc(r.id)}">Details</button>
+        <button class="btn" data-action="showRunDetail" data-run-id="${esc(r.id)}"
+                aria-expanded="false" aria-label="Details for ${esc(r.meta?.agentName || r.agentId)}">Details</button>
         ${r.meta && (r.meta.exitCode === null || r.meta.exitCode === undefined)
           ? `<span title="${r.isIncomplete ? 'Cannot delete — run may still be active' : 'Cannot delete a running run'}" tabindex="0" style="display:inline-block"><button class="btn btn-red" disabled aria-disabled="true" aria-label="Delete run ${esc(r.id)}">🗑</button></span>`
           : `<button class="btn btn-red" data-action="deleteRun" data-run-id="${esc(r.id)}" aria-label="Delete run ${esc(r.id)}" title="Delete this run">🗑</button>`}
       </td>
     </tr>`;
   }).join('');
+
+  // Re-insert the detail row if its parent run is still visible
+  if (openDetail) {
+    const parentRow = document.querySelector(
+      `tr[data-run-id="${CSS.escape(openDetail.dataset.runId)}"]`
+    );
+    if (parentRow) {
+      parentRow.after(openDetail);
+      updateDetailButtonState(openDetail.dataset.runId, true);
+    }
+  }
 }
 
-// ── Render: Run Detail ──────────────────────────────────────────
+// ── Render: Run Detail (inline below row) ───────────────────────
+function updateDetailButtonState(runId, expanded) {
+  const btn = document.querySelector(
+    `tr[data-run-id="${CSS.escape(runId)}"] [data-action="showRunDetail"]`
+  );
+  if (btn) btn.setAttribute('aria-expanded', String(expanded));
+}
+
+function closeRunDetail() {
+  const existing = document.querySelector('tr.run-detail-row');
+  if (existing) {
+    const runId = existing.dataset.runId;
+    existing.remove();
+    updateDetailButtonState(runId, false);
+    // Return focus to the triggering button
+    const btn = document.querySelector(
+      `tr[data-run-id="${CSS.escape(runId)}"] [data-action="showRunDetail"]`
+    );
+    if (btn) btn.focus();
+  }
+}
+
 async function showRunDetail(runId) {
-  const panel = document.getElementById('run-detail');
-  panel.style.display = 'block';
-  panel.innerHTML = '<p style="color:var(--muted)">Loading...</p>';
+  // Ensure runs tab is visible (e.g. when clicking from the attention banner)
+  const runsTab = document.getElementById('tab-runs');
+  if (!runsTab.classList.contains('active')) {
+    activateTab('runs');
+  }
+
+  const existing = document.querySelector('tr.run-detail-row');
+  if (existing && existing.dataset.runId === runId) {
+    closeRunDetail();
+    return;
+  }
+  closeRunDetail();
+
+  const parentRow = document.querySelector(`tr[data-run-id="${CSS.escape(runId)}"]`);
+  const detailRow = document.createElement('tr');
+  detailRow.className = 'run-detail-row';
+  detailRow.dataset.runId = runId;
+  const cell = document.createElement('td');
+  cell.colSpan = 7;
+  cell.innerHTML = '<div class="panel"><p style="color:var(--muted)">Loading...</p></div>';
+  detailRow.appendChild(cell);
+
+  if (parentRow) {
+    parentRow.after(detailRow);
+  } else {
+    document.getElementById('runs-body').appendChild(detailRow);
+  }
+  updateDetailButtonState(runId, true);
 
   try {
     const detail = await api('GET', `/api/runs/${encodeURIComponent(runId)}`);
@@ -723,9 +792,9 @@ async function showRunDetail(runId) {
         </div>
       </div>`;
 
-    panel.innerHTML = html;
+    cell.innerHTML = `<div class="panel">${html}</div>`;
   } catch (err) {
-    panel.innerHTML = `<p style="color:var(--red)">Error: ${esc(err.message)}</p>`;
+    cell.innerHTML = `<div class="panel"><p style="color:var(--red)">Error: ${esc(err.message)}</p></div>`;
   }
 }
 
@@ -894,7 +963,7 @@ async function deleteRun(runId) {
   try {
     const res = await api('DELETE', `/api/runs/${encodeURIComponent(runId)}`);
     showToast(res.message || 'Run deleted');
-    document.getElementById('run-detail').style.display = 'none';
+    closeRunDetail();
     await refreshRuns();
   } catch (err) { showToast(err.message, 'error'); }
 }
@@ -905,7 +974,7 @@ async function clearAllRuns() {
   try {
     const res = await api('DELETE', '/api/runs');
     showToast(res.message || 'All runs cleared');
-    document.getElementById('run-detail').style.display = 'none';
+    closeRunDetail();
     await refreshRuns();
   } catch (err) { showToast(err.message, 'error'); }
 }
