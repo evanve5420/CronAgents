@@ -335,12 +335,14 @@ Describe 'Scheduler — Recovery Detection' {
             -Schedule @{ type = 'daily'; time = '09:00' } `
             -Prompt 'Daily task'
 
-        # Set lastRun to 2 days ago
-        $twoDaysAgo = [datetime]::UtcNow.AddDays(-2)
+        # Set lastRun to 2 days ago and use a -Now after the schedule slot
+        # so the test doesn't depend on what time CI runs (e.g. 01:51 UTC).
+        $now = [datetime]::UtcNow.Date.AddHours(10)
+        $twoDaysAgo = $now.AddDays(-2)
         Set-AgentState -StateFile $script:stateFile -AgentId 'daily-check' -LastRun $twoDaysAgo
 
         $missed = Get-OverdueAgents -RepoRoot $testEnv.Root `
-            -StateFile $script:stateFile -Now ([datetime]::UtcNow)
+            -StateFile $script:stateFile -Now $now
 
         $missed | Should -Contain 'daily-check'
     }
