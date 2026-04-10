@@ -54,7 +54,7 @@ Override Copilot CLI model. `null` uses the CLI default.
 
 ### `denyTools` (array of string, default `[]`)
 
-Tools to deny. Most useful in prompt-only mode (which gets `--allow-all-tools`). Values are passed directly to `--deny-tool`, so they use **CLI permission-pattern** syntax — not the slash format from `.agent.md` frontmatter.
+Tools to deny. Values are always passed to `--deny-tool`, so they use **CLI permission-pattern** syntax — not the slash format from `.agent.md` frontmatter. Most useful in prompt-only mode, but applies anywhere CronAgents grants broad tool access, including unattended agent-mode runs.
 
 Pattern kinds:
 
