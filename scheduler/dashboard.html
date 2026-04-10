@@ -805,12 +805,7 @@ async function showRunDetail(runId) {
     }
 
     if (detail.summary) {
-      const hasExtra = detail.brief ? detail.summary.replace(/\s+/g, '') !== detail.brief.replace(/\s+/g, '') : false;
-      if (hasExtra) {
-        html += `<details><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Full Summarizer Output</summary><pre>${esc(detail.summary)}</pre></details>`;
-      } else if (!detail.brief) {
-        html += `<details open><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Summary</summary><pre>${esc(detail.summary)}</pre></details>`;
-      }
+      html += `<details${!detail.brief ? ' open' : ''}><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Full Summarizer Output</summary><pre>${esc(detail.summary)}</pre></details>`;
     }
 
     if (detail.feedbackResult) {
