@@ -798,29 +798,26 @@ async function showRunDetail(runId) {
       if (detail.isIncomplete) {
         html += `<p style="color:var(--yellow)"><strong>Note:</strong> This run produced output but never wrote final metadata. It likely ended or was interrupted during post-processing.</p>`;
       }
-      if (detail.meta.prompt) {
-        html += `<details><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Prompt</summary><pre>${esc(detail.meta.prompt)}</pre></details>`;
-      }
     }
 
     if (detail.brief) {
       html += `<div class="brief-summary"><h4>Summary</h4><p>${esc(detail.brief)}</p></div>`;
     }
 
-    if (detail.summary) {
-      html += `<details${!detail.brief ? ' open' : ''}><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Full Summarizer Output</summary><pre>${esc(detail.summary)}</pre></details>`;
-    }
+    // 4 collapsible sections — always present
+    const noData = '<span style="color:var(--muted);font-style:italic">No data available</span>';
+    const detailStyle = 'cursor:pointer;color:var(--accent);margin:8px 0';
+
+    html += `<details${!detail.brief && detail.summary ? ' open' : ''}><summary style="${detailStyle}">Summarized Output</summary><pre>${detail.summary ? esc(detail.summary) : noData}</pre></details>`;
+
+    html += `<details${detail.meta && detail.meta.exitCode !== 0 ? ' open' : ''}><summary style="${detailStyle}">Full Output</summary><pre>${detail.output ? esc(detail.output) : noData}</pre></details>`;
+
+    html += `<details><summary style="${detailStyle}">Prompt</summary><pre>${detail.meta && detail.meta.prompt ? esc(detail.meta.prompt) : noData}</pre></details>`;
+
+    html += `<details><summary style="${detailStyle}">Scheduler Log</summary><pre>${detail.schedulerLog ? esc(detail.schedulerLog) : noData}</pre></details>`;
 
     if (detail.feedbackResult) {
-      html += `<details><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Feedback Result</summary><pre>${esc(detail.feedbackResult)}</pre></details>`;
-    }
-
-    if (detail.output) {
-      html += `<details ${detail.meta && detail.meta.exitCode !== 0 ? 'open' : ''}><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Output</summary><pre>${esc(detail.output)}</pre></details>`;
-    }
-
-    if (detail.schedulerLog) {
-      html += `<details><summary style="cursor:pointer;color:var(--accent);margin:8px 0">Scheduler Log</summary><pre>${esc(detail.schedulerLog)}</pre></details>`;
+      html += `<details><summary style="${detailStyle}">Feedback Result</summary><pre>${esc(detail.feedbackResult)}</pre></details>`;
     }
 
     // Feedback form
