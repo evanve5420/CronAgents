@@ -123,7 +123,7 @@ CronAgents runs `.agent.md` profiles through **GitHub Copilot CLI**.
 
 ### Built-in tools
 
-If you specify `tools:`, use the official tool aliases: `read`, `edit`, `search`, `execute`, and `agent`. Compatible aliases include `shell` / `Bash` / `powershell` for `execute`, and `Grep` / `Glob` for `search`.
+If you specify `tools:`, use the official tool aliases: `read`, `edit`, `search`, `execute`, `agent`, and `web`. Compatible aliases include `shell` / `Bash` / `powershell` for `execute`, and `Grep` / `Glob` for `search`.
 
 Do **not** use VS Code-only tool names such as `editFiles`, `runCommands`, `runTasks`, `codebase`, `findTestFiles`, `usages`, `terminalLastCommand`, `terminalSelection`, or `vscodeAPI`.
 
