@@ -379,7 +379,9 @@ CronAgents invokes the script with named parameters `-RepoRoot`, `-AgentId`, and
 |---|---|
 | **Type** | `array` of `string` |
 | **Default** | `[]` |
-| **Description** | Tools to deny. In prompt-only mode (which gets `--allow-all-tools`), use this to restrict specific tools. |
+| **Description** | Tools to deny. Unattended runs use `--allow-all-tools`, so use this to restrict specific tools when needed. This is especially useful in prompt-only mode; in agent mode, you can also limit tools by omitting them from `.agent.md`. Values are passed directly to `--deny-tool` and use CLI permission-pattern syntax. |
+
+Supports built-in names (`edit`, `execute`), shell commands (`shell(rm)`), MCP tools (`server-name(tool-name)`), and `write` (all file-modifying tools except shell). For full details, see the [Registration Fields reference](../.github/skills/creating-agents/references/REGISTRATION-FIELDS.md#denytools-array-of-string-default-).
 
 ```json
 "denyTools": ["edit", "shell(rm)", "shell(git push)"]
