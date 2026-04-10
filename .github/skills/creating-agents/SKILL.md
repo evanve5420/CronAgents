@@ -129,7 +129,7 @@ Do **not** use VS Code-only tool names such as `editFiles`, `runCommands`, `runT
 
 ### MCP tools
 
-You can reference MCP server tools in the `.agent.md` `tools:` frontmatter using `server-name/tool-name` or `server-name/*` for all tools from a server. This slash-separated format is the cross-platform syntax for the `tools:` frontmatter.
+You can reference MCP server tools in the `.agent.md` `tools:` frontmatter using `server-name/tool-name` or `server-name/*` for all tools from a server. **Only the slash format works in frontmatter** — the hyphen format (`server-tool`) is silently ignored and the tool will not be available.
 
 > **VS Code vs CLI tool naming.** VS Code and CLI present MCP tools under different runtime names. This matters because CronAgents agents run in CLI, not VS Code.
 >

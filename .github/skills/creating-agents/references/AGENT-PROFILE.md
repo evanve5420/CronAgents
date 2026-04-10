@@ -61,14 +61,15 @@ Do **not** use VS Code-only tool names such as `editFiles`, `runCommands`, `runT
 
 ### MCP tool references
 
-Reference MCP server tools in the `tools:` frontmatter using `server-name/tool-name` or `server-name/*` for all tools from a server.
+Reference MCP server tools in the `tools:` frontmatter using `server-name/tool-name` or `server-name/*` for all tools from a server. **Only the slash format works** — using the hyphen format (`server-tool`) is silently ignored by the CLI and the tools will not be available to the agent.
 
 ```yaml
 tools:
   - read
   - search
-  - playwright/browser_snapshot   # specific MCP tool
-  - github/*                      # all tools from the github MCP server
+  - playwright/browser_snapshot   # ✅ correct — slash format
+  - github/*                      # ✅ correct — slash wildcard
+  # - playwright-browser_snapshot # ❌ WRONG — silently ignored
 ```
 
 > **VS Code vs CLI MCP tool naming.** VS Code and CLI expose MCP tools under different runtime names. The `.agent.md` `tools:` frontmatter uses the cross-platform **slash** format (`server/tool`) in both environments — CLI translates internally. However, the actual tool names the model sees at runtime differ:
