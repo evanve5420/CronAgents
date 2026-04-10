@@ -645,7 +645,14 @@ function renderRuns() {
 
   // Detach the open detail row before replacing tbody contents
   const openDetail = document.querySelector('tr.run-detail-row');
-  if (openDetail) openDetail.remove();
+  let savedFocus = null;
+  if (openDetail) {
+    const active = document.activeElement;
+    if (active && openDetail.contains(active)) {
+      savedFocus = { el: active, start: active.selectionStart, end: active.selectionEnd };
+    }
+    openDetail.remove();
+  }
 
   tbody.innerHTML = filtered.map(r => {
     let summaryCell = '<span style="color:var(--muted)">—</span>';
@@ -687,6 +694,12 @@ function renderRuns() {
     if (parentRow) {
       parentRow.after(openDetail);
       updateDetailButtonState(openDetail.dataset.runId, true);
+      if (savedFocus && openDetail.contains(savedFocus.el)) {
+        savedFocus.el.focus();
+        if (savedFocus.start != null && typeof savedFocus.el.setSelectionRange === 'function') {
+          savedFocus.el.setSelectionRange(savedFocus.start, savedFocus.end);
+        }
+      }
     }
   }
 }
@@ -699,17 +712,18 @@ function updateDetailButtonState(runId, expanded) {
   if (btn) btn.setAttribute('aria-expanded', String(expanded));
 }
 
-function closeRunDetail() {
+function closeRunDetail(restoreFocus = false) {
   const existing = document.querySelector('tr.run-detail-row');
   if (existing) {
     const runId = existing.dataset.runId;
     existing.remove();
     updateDetailButtonState(runId, false);
-    // Return focus to the triggering button
-    const btn = document.querySelector(
-      `tr[data-run-id="${CSS.escape(runId)}"] [data-action="showRunDetail"]`
-    );
-    if (btn) btn.focus();
+    if (restoreFocus) {
+      const btn = document.querySelector(
+        `tr[data-run-id="${CSS.escape(runId)}"] [data-action="showRunDetail"]`
+      );
+      if (btn) btn.focus();
+    }
   }
 }
 
@@ -722,7 +736,7 @@ async function showRunDetail(runId) {
 
   const existing = document.querySelector('tr.run-detail-row');
   if (existing && existing.dataset.runId === runId) {
-    closeRunDetail();
+    closeRunDetail(true);
     return;
   }
   closeRunDetail();
