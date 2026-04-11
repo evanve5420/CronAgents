@@ -665,12 +665,23 @@ function renderRuns() {
 
   // Detach the open detail row before replacing tbody contents
   const openDetail = document.querySelector('tr.run-detail-row');
+
+  // If the user is selecting text or typing feedback, skip the re-render
+  // entirely so we don't disrupt their interaction (fixes #73).
+  if (isUserInteractingWithDetail(openDetail)) return;
+
   let savedFocus = null;
+  let savedScrolls = [];
   if (openDetail) {
     const active = document.activeElement;
     if (active && openDetail.contains(active)) {
       savedFocus = { el: active, start: active.selectionStart, end: active.selectionEnd };
     }
+    // Preserve scroll positions of <pre> elements so the user doesn't
+    // lose their place after the detail row is re-inserted.
+    openDetail.querySelectorAll('pre').forEach((pre, i) => {
+      savedScrolls.push({ index: i, top: pre.scrollTop, left: pre.scrollLeft });
+    });
     openDetail.remove();
   }
 
@@ -717,6 +728,11 @@ function renderRuns() {
     if (parentRow) {
       parentRow.after(openDetail);
       updateDetailButtonState(openDetail.dataset.runId, true);
+      // Restore scroll positions of <pre> elements (fixes #73)
+      const pres = openDetail.querySelectorAll('pre');
+      savedScrolls.forEach(({ index, top, left }) => {
+        if (pres[index]) { pres[index].scrollTop = top; pres[index].scrollLeft = left; }
+      });
       if (savedFocus && openDetail.contains(savedFocus.el)) {
         savedFocus.el.focus();
         if (savedFocus.start != null && typeof savedFocus.el.setSelectionRange === 'function') {
@@ -725,6 +741,30 @@ function renderRuns() {
       }
     }
   }
+}
+
+// ── Detail interaction detection (fixes #73) ────────────────────
+// When the user is selecting text, scrolling output, or typing feedback
+// in the detail panel, skip re-rendering to avoid clearing their selection
+// or resetting scroll position.
+function isUserInteractingWithDetail(detailRow) {
+  if (!detailRow) return false;
+  // Text selection within the detail row
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+    try {
+      const range = sel.getRangeAt(0);
+      if (detailRow.contains(range.startContainer) || detailRow.contains(range.endContainer)) {
+        return true;
+      }
+    } catch (e) { /* range may be detached */ }
+  }
+  // Focus on an input element (e.g. feedback textarea) — buttons are fine
+  const active = document.activeElement;
+  if (active && detailRow.contains(active) && active.tagName !== 'BUTTON') {
+    return true;
+  }
+  return false;
 }
 
 // ── Render: Run Detail (inline below row) ───────────────────────
