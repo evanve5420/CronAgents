@@ -18,6 +18,8 @@ description: "<one-line description>"
 tools:
   - <tool-name>
   - <tool-name>
+model: claude-sonnet-4     # optional — preferred AI model
+agents: ['Researcher']     # optional — restrict available subagents
 ---
 
 <System prompt — everything after the frontmatter>
@@ -25,11 +27,39 @@ tools:
 
 ### Frontmatter fields
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `name` | Yes | Agent name, passed to Copilot CLI via `--agent`. Must match the registration's `agent` field. |
-| `description` | No | One-line description for documentation and discovery. |
-| `tools` | Yes | Array of tool names the agent can use. |
+| Field | Required | Type | Description |
+|-------|----------|------|-------------|
+| `name` | Yes | string | Agent name, passed to Copilot CLI via `--agent`. Must match the registration's `agent` field. |
+| `description` | No | string | One-line description for documentation and discovery. |
+| `tools` | Yes | string[] | Array of tool names the agent can use. See [Tool format](#tool-format-for-cronagents) below. |
+| `model` | No | string or string[] | Preferred AI model. Single name (e.g. `claude-sonnet-4`) or prioritized list — the first available model is used. If omitted, the runtime default applies. See [Model selection](#model-selection) below. |
+| `agents` | No | string[] | Restrict which agents can be invoked as subagents. Use `['*']` to allow all, or `[]` to prevent any. Requires the `agent` tool in `tools`. Useful for orchestrator patterns — see [ORCHESTRATOR-PATTERN.md](../../../../docs/ORCHESTRATOR-PATTERN.md). |
+| `argument-hint` | No | string | Hint text shown in the VS Code chat input field. No effect in CLI. |
+| `user-invocable` | No | boolean | Whether the agent appears in the VS Code agents dropdown (default `true`). Set to `false` for agents that should only be used as subagents. No effect in CLI. |
+| `disable-model-invocation` | No | boolean | Prevent other agents from invoking this agent as a subagent (default `false`). |
+| `handoffs` | No | object[] | Suggested next-step transitions to other agents. Each entry has `label`, `agent`, `prompt`, optional `send` (boolean), and optional `model` (string). VS Code UI feature — no effect in CLI. |
+| `hooks` | No | object | Hook commands scoped to this agent (Preview). No effect in CLI. Uses the same format as VS Code hook configuration. |
+| `target` | No | string | Target environment: `vscode` or `github-copilot` ([cloud agents](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/create-custom-agents)). Omit for standard CLI/VS Code agents. |
+| `mcp-servers` | No | object[] | MCP server configurations for agents targeting `github-copilot`. |
+
+> **Deprecated:** The `infer` field has been replaced by `user-invocable` and `disable-model-invocation`. If you encounter it in existing profiles, replace `infer: true` with `user-invocable: true` (the default) and set `disable-model-invocation` as needed.
+
+### Model selection
+
+The `model` field in `.agent.md` sets the preferred model at the agent-definition level. This is distinct from the `model` field in the registration JSON:
+
+| Where | What it does | Precedence |
+|-------|-------------|------------|
+| `.agent.md` `model:` | Declares the agent's preferred model. VS Code respects this directly. In CLI, it acts as a model hint. | Lower — overridden by registration or CLI flags |
+| Registration `model:` | Passed to Copilot CLI as `--model`. Overrides the agent profile preference. | Higher — explicit CLI flag |
+
+If both are set, the registration's `model` wins (it becomes an explicit `--model` CLI flag). Use the `.agent.md` `model` when you want a default preference that can be overridden per-invocation, and the registration `model` when you want a hard override.
+
+**Prioritized model lists:** You can specify an array of model names. The runtime tries each in order until it finds one that's available:
+
+```yaml
+model: ['claude-opus-4', 'claude-sonnet-4', 'gpt-4.1']
+```
 
 ### Common tool sets
 
