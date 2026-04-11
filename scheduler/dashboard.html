@@ -702,8 +702,8 @@ function renderRuns() {
       <td>
         <button class="btn" data-action="showRunDetail" data-run-id="${esc(r.id)}"
                 aria-expanded="false" aria-label="Details for ${esc(r.meta?.agentName || r.agentId)}">Details</button>
-        ${r.meta && (r.meta.exitCode === null || r.meta.exitCode === undefined)
-          ? `<span title="${r.isIncomplete ? 'Cannot delete — run may still be active' : 'Cannot delete a running run'}" tabindex="0" style="display:inline-block"><button class="btn btn-red" disabled aria-disabled="true" aria-label="Delete run ${esc(r.id)}">🗑</button></span>`
+        ${r.meta && (r.meta.exitCode === null || r.meta.exitCode === undefined) && !r.isIncomplete
+          ? `<span title="Cannot delete a running run" tabindex="0" style="display:inline-block"><button class="btn btn-red" disabled aria-disabled="true" aria-label="Delete run ${esc(r.id)}">🗑</button></span>`
           : `<button class="btn btn-red" data-action="deleteRun" data-run-id="${esc(r.id)}" aria-label="Delete run ${esc(r.id)}" title="Delete this run">🗑</button>`}
       </td>
     </tr>`;
