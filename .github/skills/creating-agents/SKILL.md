@@ -37,7 +37,7 @@ Skip anything already clear from context:
 3. **Agent or prompt-only?** — Prompt-only is simpler when no custom system instructions or tool scoping is needed. Agent mode when the task needs custom behavior, tool restrictions, or a system prompt.
 4. **What tools does it need?** — Scope to the **minimum required**. Use CLI tool names, not VS Code-style labels. See [AGENT-PROFILE.md](references/AGENT-PROFILE.md).
 5. **Parallel decomposition?** — If the task is broad (many files, modules, or independent subtasks), the agent can orchestrate parallel subagents via the `agent` tool. This requires `agent` in the tools list and an orchestrator-style system prompt. Only ask this when the described task sounds parallelizable. See [ORCHESTRATOR-PATTERN.md](../../../docs/ORCHESTRATOR-PATTERN.md) for the full pattern.
-6. **Model preference?**
+6. **Model preference?** — Can be set in the `.agent.md` profile (`model` frontmatter) or in the registration JSON (`model` field). Registration `model` takes precedence as a hard CLI override. Profile `model` is a softer preference. See [AGENT-PROFILE.md](references/AGENT-PROFILE.md#model-selection).
 7. **Execution policies?** — timeout, skip on battery, retry on failure, `runIf` (see [RUNIF.md](references/RUNIF.md)), notify on failure (`notifyOnFailure`), notify on success (`notifyOnSuccess`)
 8. **Agent profile placement (agent mode only)** — personal repo `.github/agents/` (default) or user-global `~/.copilot/agents/`
 9. **Working directory?** — which project directory the agent should run in. If omitted, the scheduler runs from the personal repo root when available (otherwise the infra repo root), grants directory access with `--allow-all`, and auto-approves tools with `--allow-all-tools`.
@@ -57,10 +57,14 @@ name: <agent-name>
 description: "<one-line description>"
 tools:
   - <minimum CLI tools needed>
+model: <model-name>          # optional — preferred AI model
+agents: ['<subagent-name>']  # optional — restrict subagent access
 ---
 
 <System prompt>
 ```
+
+For the full list of supported `.agent.md` frontmatter fields (including `model`, `agents`, `handoffs`, `user-invocable`, etc.), see [AGENT-PROFILE.md](references/AGENT-PROFILE.md).
 
 CronAgents registration file — **filename stem = stable agent ID**:
 
