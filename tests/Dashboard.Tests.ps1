@@ -717,6 +717,113 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
         }
     }
 
+    Context 'POST /api/runs/batch-delete' {
+        It 'Deletes multiple runs by ID' {
+            $d1 = New-RunDirectory -RunsRoot $script:testEnv.RunsRoot -AgentId 'http-agent'
+            Write-RunMetadata -RunDirectory $d1 -AgentId 'http-agent' -AgentName 'HTTP Agent' `
+                -Prompt 'test' -StartTime ([datetime]::UtcNow.AddMinutes(-3)) `
+                -EndTime ([datetime]::UtcNow.AddMinutes(-2)) -ExitCode 0
+            $d2 = New-RunDirectory -RunsRoot $script:testEnv.RunsRoot -AgentId 'http-agent'
+            Write-RunMetadata -RunDirectory $d2 -AgentId 'http-agent' -AgentName 'HTTP Agent' `
+                -Prompt 'test' -StartTime ([datetime]::UtcNow.AddMinutes(-2)) `
+                -EndTime ([datetime]::UtcNow.AddMinutes(-1)) -ExitCode 1
+
+            $ids = @((Split-Path $d1 -Leaf), (Split-Path $d2 -Leaf))
+            $body = @{ ids = $ids } | ConvertTo-Json
+            $result = Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/batch-delete" `
+                -Method Post -Body $body -ContentType 'application/json' -ErrorAction Stop
+
+            $result.ok | Should -Be $true
+            $result.deleted | Should -Be 2
+            Test-Path $d1 | Should -Be $false
+            Test-Path $d2 | Should -Be $false
+        }
+
+        It 'Skips active runs and deletes the rest' {
+            $dCompleted = New-RunDirectory -RunsRoot $script:testEnv.RunsRoot -AgentId 'http-agent'
+            Write-RunMetadata -RunDirectory $dCompleted -AgentId 'http-agent' -AgentName 'HTTP Agent' `
+                -Prompt 'test' -StartTime ([datetime]::UtcNow.AddMinutes(-2)) `
+                -EndTime ([datetime]::UtcNow.AddMinutes(-1)) -ExitCode 0
+            $dActive = New-RunDirectory -RunsRoot $script:testEnv.RunsRoot -AgentId 'http-agent'
+            Initialize-RunMetadata -RunDirectory $dActive -AgentId 'http-agent' `
+                -AgentName 'HTTP Agent' -Prompt 'running'
+
+            $ids = @((Split-Path $dCompleted -Leaf), (Split-Path $dActive -Leaf))
+            $body = @{ ids = $ids } | ConvertTo-Json
+            $result = Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/batch-delete" `
+                -Method Post -Body $body -ContentType 'application/json' -ErrorAction Stop
+
+            $result.ok | Should -Be $true
+            $result.deleted | Should -Be 1
+            $result.skipped | Should -BeGreaterOrEqual 1
+            Test-Path $dCompleted | Should -Be $false
+            Test-Path $dActive | Should -Be $true
+
+            # Clean up active run
+            Remove-Item -LiteralPath $dActive -Recurse -Force
+        }
+
+        It 'Returns 400 when ids array is empty' {
+            $err = $null
+            try {
+                $body = @{ ids = @() } | ConvertTo-Json
+                Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/batch-delete" `
+                    -Method Post -Body $body -ContentType 'application/json' -ErrorAction Stop
+            } catch { $err = $_ }
+            $err | Should -Not -BeNullOrEmpty
+            $err.Exception.Response.StatusCode.value__ | Should -Be 400
+        }
+
+        It 'Returns 400 when body is missing' {
+            $err = $null
+            try {
+                Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/batch-delete" `
+                    -Method Post -ErrorAction Stop
+            } catch { $err = $_ }
+            $err | Should -Not -BeNullOrEmpty
+            $err.Exception.Response.StatusCode.value__ | Should -Be 400
+        }
+
+        It 'Skips non-existent run IDs gracefully' {
+            $d1 = New-RunDirectory -RunsRoot $script:testEnv.RunsRoot -AgentId 'http-agent'
+            Write-RunMetadata -RunDirectory $d1 -AgentId 'http-agent' -AgentName 'HTTP Agent' `
+                -Prompt 'test' -StartTime ([datetime]::UtcNow.AddMinutes(-2)) `
+                -EndTime ([datetime]::UtcNow.AddMinutes(-1)) -ExitCode 0
+
+            $ids = @((Split-Path $d1 -Leaf), '20260101T120000_noagent_abcd')
+            $body = @{ ids = $ids } | ConvertTo-Json
+            $result = Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/batch-delete" `
+                -Method Post -Body $body -ContentType 'application/json' -ErrorAction Stop
+
+            $result.ok | Should -Be $true
+            $result.deleted | Should -Be 1
+            $result.skipped | Should -BeGreaterOrEqual 1
+            Test-Path $d1 | Should -Be $false
+        }
+
+        It 'Returns 400 when more than 200 IDs are provided' {
+            $ids = 1..201 | ForEach-Object { "20260101T000000_fake_$($_.ToString('x4'))" }
+            $body = @{ ids = $ids } | ConvertTo-Json
+            $err = $null
+            try {
+                Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/batch-delete" `
+                    -Method Post -Body $body -ContentType 'application/json' -ErrorAction Stop
+            } catch { $err = $_ }
+            $err | Should -Not -BeNullOrEmpty
+            $err.Exception.Response.StatusCode.value__ | Should -Be 400
+        }
+
+        It 'Returns 400 for malformed JSON body' {
+            $err = $null
+            try {
+                Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs/batch-delete" `
+                    -Method Post -Body 'not-json' -ContentType 'application/json' -ErrorAction Stop
+            } catch { $err = $_ }
+            $err | Should -Not -BeNullOrEmpty
+            $err.Exception.Response.StatusCode.value__ | Should -Be 400
+        }
+    }
+
     # ── Error Handling ───────────────────────────────────────────
 
     # ── GET /api/freshness ──────────────────────────────────────
@@ -890,6 +997,16 @@ Describe 'Dashboard — File Integrity' {
         $content = Get-Content -LiteralPath $script:dashboardHtml -Raw
         $content | Should -Match 'badge-question'
         $content | Should -Match 'pendingQuestions'
+    }
+
+    It 'dashboard.html contains multi-select and batch-delete elements' {
+        $content = Get-Content -LiteralPath $script:dashboardHtml -Raw
+        $content | Should -Match 'select-all-runs'
+        $content | Should -Match 'selection-toolbar'
+        $content | Should -Match 'deleteSelectedRuns'
+        $content | Should -Match 'clearFilteredRuns'
+        $content | Should -Match 'clear-filtered-btn'
+        $content | Should -Match '/api/runs/batch-delete'
     }
 
     It 'Start-DashboardServer.ps1 exists' {

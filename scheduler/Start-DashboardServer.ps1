@@ -809,6 +809,73 @@ function script:Invoke-Route {
             return
         }
 
+        # ── POST /api/runs/batch-delete ──────────────────────────
+        if ($method -eq 'POST' -and $path -eq '/api/runs/batch-delete') {
+            $body = script:Read-RequestBody -Request $request
+            if (-not $body) {
+                script:Send-ErrorResponse -Response $response -Message 'Request body required' -StatusCode 400
+                return
+            }
+
+            try {
+                $bodyObj = $body | ConvertFrom-Json
+            } catch {
+                script:Send-ErrorResponse -Response $response -Message 'Invalid JSON body' -StatusCode 400
+                return
+            }
+
+            $ids = $bodyObj.ids
+            if (-not $ids -or $ids.Count -eq 0) {
+                script:Send-ErrorResponse -Response $response -Message 'ids array is required and must not be empty' -StatusCode 400
+                return
+            }
+
+            if ($ids.Count -gt 200) {
+                script:Send-ErrorResponse -Response $response -Message 'Too many IDs (max 200)' -StatusCode 400
+                return
+            }
+
+            $totalDeleted = 0
+            $totalSkipped = 0
+            $allErrors = [System.Collections.Generic.List[string]]::new()
+
+            foreach ($id in $ids) {
+                $resolvedRun = Resolve-CronAgentsRunPath -RunId $id -RunsRoot $RunsRoot
+                if (-not $resolvedRun.IsValid) {
+                    $allErrors.Add("Invalid run ID: $id")
+                    $totalSkipped++
+                    continue
+                }
+                if (-not $resolvedRun.Exists) {
+                    $totalSkipped++
+                    continue
+                }
+                $result = Clear-RunHistory -RunsRoot $RunsRoot -RunId $id
+                $totalDeleted += $result.DeletedCount
+                $totalSkipped += $result.SkippedCount
+                if ($result.Errors.Count -gt 0) {
+                    foreach ($e in $result.Errors) { $allErrors.Add($e) }
+                }
+            }
+
+            $ok = $totalDeleted -gt 0 -or $allErrors.Count -eq 0
+            $msg = "Deleted $totalDeleted run(s)"
+            if ($totalSkipped -gt 0) { $msg += ", skipped $totalSkipped" }
+            if ($allErrors.Count -gt 0 -and $totalDeleted -eq 0) { $msg = 'Failed to delete any runs' }
+
+            $responseBody = [ordered]@{
+                ok      = $ok
+                message = $msg
+                deleted = $totalDeleted
+                skipped = $totalSkipped
+            }
+            if ($allErrors.Count -gt 0) { $responseBody.errors = [string[]]$allErrors.ToArray() }
+
+            $statusCode = if ($ok) { 200 } else { 500 }
+            script:Send-JsonResponse -Response $response -Body $responseBody -StatusCode $statusCode
+            return
+        }
+
         # ── DELETE /api/runs/:id ─────────────────────────────────
         if ($method -eq 'DELETE' -and $path -match '^/api/runs/(.+)$') {
             $runId = $Matches[1]
