@@ -84,6 +84,12 @@ Describe 'ConvertTo-NativeAudioUri' {
             ConvertTo-NativeAudioUri -SoundName 'mail' | Should -Be 'ms-winsoundevent:Notification.Mail'
         }
     }
+
+    It 'Passes through unknown sound names without throwing' {
+        InModuleScope CronAgents {
+            ConvertTo-NativeAudioUri -SoundName 'FutureBell' | Should -Be 'ms-winsoundevent:Notification.FutureBell'
+        }
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -106,6 +112,13 @@ Describe 'Resolve-SoundFileUri' -Tag 'WindowsOnly' {
         InModuleScope CronAgents {
             $result = Resolve-SoundFileUri -Path '\\server\share\sound.wav'
             $result | Should -BeNullOrEmpty
+        }
+    }
+
+    It 'Allows extended-length local paths (\\?\C:\...)' {
+        InModuleScope CronAgents {
+            $result = Resolve-SoundFileUri -Path '\\?\C:\Sounds\alert.wav'
+            $result | Should -BeLike 'file:///*'
         }
     }
 }

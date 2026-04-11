@@ -107,11 +107,26 @@ function Resolve-SoundFileUri {
     param([Parameter(Mandatory)][string]$Path)
 
     $resolvedPath = [System.IO.Path]::GetFullPath($Path)
-    if ($resolvedPath.StartsWith('\\')) {
+
+    # Strip extended-length prefix (\\?\) before UNC detection so local
+    # extended-length paths like \\?\C:\Sounds\alert.wav are allowed.
+    if ($resolvedPath.StartsWith('\\?\UNC\', [System.StringComparison]::OrdinalIgnoreCase)) {
         Write-CronAgentsLog -Level 'warn' -Message "Notification sound path rejected (UNC/network path): $Path"
         return $null
     }
-    return ([System.Uri]::new($resolvedPath)).AbsoluteUri
+
+    $uriPath = $resolvedPath
+    if ($resolvedPath.StartsWith('\\?\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $uriPath = $resolvedPath.Substring(4)
+    }
+
+    $uri = [System.Uri]::new($uriPath)
+    if ($uri.IsUnc) {
+        Write-CronAgentsLog -Level 'warn' -Message "Notification sound path rejected (UNC/network path): $Path"
+        return $null
+    }
+
+    return $uri.AbsoluteUri
 }
 
 function Send-BurntToastNotification {
@@ -164,8 +179,10 @@ function ConvertTo-NativeAudioUri {
     [OutputType([string])]
     param([Parameter(Mandatory)][string]$SoundName)
 
-    $canonical = $script:SoundPresets[$SoundName]
-    if (-not $canonical) { $canonical = $SoundName }
+    $canonical = $SoundName
+    if ($script:SoundPresets.ContainsKey($SoundName)) {
+        $canonical = $script:SoundPresets[$SoundName]
+    }
 
     if (Test-LoopingSound -SoundName $canonical) {
         return "ms-winsoundevent:Notification.Looping.$canonical"
