@@ -394,7 +394,7 @@
           <button class="btn btn-red" data-action="clearAllRuns" title="Clear all run history">🗑 Clear All</button>
         </div>
       </div>
-      <div id="selection-toolbar" class="selection-toolbar" style="display:none" role="status" aria-live="polite">
+      <div id="selection-toolbar" class="selection-toolbar" style="display:none">
         <span class="selection-count"><span id="selection-count-num">0</span> selected</span>
         <button class="btn btn-red" data-action="deleteSelectedRuns" aria-label="Delete selected runs">🗑 Delete Selected</button>
       </div>
@@ -756,7 +756,7 @@ function renderRuns() {
         <button class="btn" data-action="showRunDetail" data-run-id="${esc(r.id)}"
                 aria-expanded="false" aria-label="Details for ${esc(r.meta?.agentName || r.agentId)}">Details</button>
         ${isActive
-          ? `<span title="${r.isIncomplete ? 'Cannot delete — run may still be active' : 'Cannot delete a running run'}" tabindex="0" style="display:inline-block"><button class="btn btn-red" disabled aria-disabled="true" aria-label="Delete run ${esc(r.id)}">🗑</button></span>`
+          ? `<span title="Cannot delete a running run" tabindex="0" style="display:inline-block"><button class="btn btn-red" disabled aria-disabled="true" aria-label="Delete run ${esc(r.id)}">🗑</button></span>`
           : `<button class="btn btn-red" data-action="deleteRun" data-run-id="${esc(r.id)}" aria-label="Delete run ${esc(r.id)}" title="Delete this run">🗑</button>`}
       </td>
     </tr>`;
@@ -1171,9 +1171,10 @@ async function clearFilteredRuns() {
   const deletable = filtered.filter(r => isRunDeletable(r));
   if (deletable.length === 0) return;
 
-  const label = filterAgent ? `for '${filterAgent}' ` : '';
-  const statusLabel = filterStatus ? `matching '${filterStatus}'` : '';
-  const desc = label + statusLabel || 'matching current filters';
+  const descParts = [];
+  if (filterAgent) descParts.push(`for '${filterAgent}'`);
+  if (filterStatus) descParts.push(`matching '${filterStatus}'`);
+  const desc = descParts.join(' ').trim() || 'matching current filters';
   const ok = await showConfirm(`Delete ${deletable.length} filtered run(s) ${desc}? This cannot be undone.`);
   if (!ok) return;
   try {
