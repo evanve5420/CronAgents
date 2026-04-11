@@ -571,16 +571,41 @@ try {
         if (-not $sumProc.WaitForExit(120000)) {
             Write-CronAgentsLog -Level 'warn' -Message "Run-summarizer timed out for '$AgentId' — killing."
             try { $sumProc.Kill($true) } catch { <# best-effort #> }
+            try { [void]$sumProc.WaitForExit(5000) } catch { <# best-effort #> }
         }
 
-        [void]$sumStdout.Wait(5000)
-        [void]$sumStderr.Wait(5000)
+        # Ensure async reads complete — wait longer (15s) since the process has
+        # already exited; slow IO or large output shouldn't cause us to discard
+        # a valid summary.
+        [void]$sumStdout.Wait(15000)
+        [void]$sumStderr.Wait(15000)
         $sumText = if ($sumStdout.IsCompleted) { $sumStdout.Result } else { '' }
         $sumErrText = if ($sumStderr.IsCompleted) { $sumStderr.Result } else { '' }
-        if ($sumErrText) {
-            Write-CronAgentsLog -Level 'debug' -Message "Run-summarizer stderr for '$AgentId': $sumErrText"
+        $readIncomplete = -not $sumStdout.IsCompleted
+
+        if (-not [string]::IsNullOrWhiteSpace($sumText)) {
+            [System.IO.File]::WriteAllText($summaryFile, $sumText, [System.Text.Encoding]::UTF8)
+            if ($sumErrText) {
+                Write-CronAgentsLog -Level 'debug' -Message "Run-summarizer stderr for '$AgentId': $sumErrText"
+            }
+        } else {
+            # Summarizer produced no stdout — elevate stderr to warn so we can diagnose why.
+            $sumExitCode = if ($sumProc.HasExited) { $sumProc.ExitCode } else { 'unknown' }
+            if ($readIncomplete) {
+                Write-CronAgentsLog -Level 'warn' -Message "Run-summarizer stdout read did not complete for '$AgentId' (exit code $sumExitCode) — skipping summary.md."
+            } else {
+                Write-CronAgentsLog -Level 'warn' -Message "Run-summarizer produced no output for '$AgentId' (exit code $sumExitCode) — skipping summary.md."
+            }
+            if ($sumErrText) {
+                Write-CronAgentsLog -Level 'warn' -Message "Run-summarizer stderr for '$AgentId': $sumErrText"
+            }
+            # Check if the session share file has content — the copilot response
+            # may have been captured there instead of stdout.
+            if (Test-Path -LiteralPath $summaryShare) {
+                $shareSize = (Get-Item -LiteralPath $summaryShare).Length
+                Write-CronAgentsLog -Level 'warn' -Message "Run-summarizer session share exists for '$AgentId' ($shareSize bytes) — copilot may have written output to '$summaryShare' instead of stdout."
+            }
         }
-        [System.IO.File]::WriteAllText($summaryFile, $sumText, [System.Text.Encoding]::UTF8)
         $sumProc.Dispose()
 
         Write-CronAgentsLog -Level 'debug' -Message "Run-summarizer completed for '$AgentId'."
