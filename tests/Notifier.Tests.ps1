@@ -87,7 +87,7 @@ Describe 'ConvertTo-NativeAudioUri' {
 }
 
 # ---------------------------------------------------------------------------
-Describe 'Resolve-SoundFileUri' {
+Describe 'Resolve-SoundFileUri' -Tag 'WindowsOnly' {
     It 'Converts a local path to a file:// URI' {
         InModuleScope CronAgents {
             $result = Resolve-SoundFileUri -Path 'C:\Sounds\alert.wav'
