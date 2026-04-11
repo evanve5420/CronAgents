@@ -809,6 +809,116 @@ function script:Invoke-Route {
             return
         }
 
+        # ── POST /api/runs/batch-delete ──────────────────────────
+        if ($method -eq 'POST' -and $path -eq '/api/runs/batch-delete') {
+            # Require application/json to prevent cross-origin simple POST attacks
+            $contentType = $request.ContentType
+            if (-not $contentType -or -not $contentType.StartsWith('application/json', [System.StringComparison]::OrdinalIgnoreCase)) {
+                script:Send-ErrorResponse -Response $response -Message 'Content-Type must be application/json' -StatusCode 400
+                return
+            }
+
+            $body = script:Read-RequestBody -Request $request
+            if (-not $body) {
+                script:Send-ErrorResponse -Response $response -Message 'Request body required' -StatusCode 400
+                return
+            }
+
+            try {
+                $bodyObj = $body | ConvertFrom-Json
+            } catch {
+                script:Send-ErrorResponse -Response $response -Message 'Invalid JSON body' -StatusCode 400
+                return
+            }
+
+            $ids = $bodyObj.ids
+            if ($null -eq $ids) {
+                script:Send-ErrorResponse -Response $response -Message 'ids array is required and must not be empty' -StatusCode 400
+                return
+            }
+
+            # Normalise to array — a single JSON string becomes a 1-element array
+            if ($ids -is [string]) {
+                $ids = @($ids)
+            } elseif ($ids -isnot [System.Collections.IEnumerable]) {
+                script:Send-ErrorResponse -Response $response -Message 'ids must be a string or an array of strings' -StatusCode 400
+                return
+            } else {
+                $ids = @($ids)
+            }
+
+            if ($ids.Count -eq 0) {
+                script:Send-ErrorResponse -Response $response -Message 'ids array is required and must not be empty' -StatusCode 400
+                return
+            }
+
+            # Validate all elements are strings
+            foreach ($id in $ids) {
+                if ($id -isnot [string]) {
+                    script:Send-ErrorResponse -Response $response -Message 'ids must contain only strings' -StatusCode 400
+                    return
+                }
+            }
+
+            if ($ids.Count -gt 200) {
+                script:Send-ErrorResponse -Response $response -Message 'Too many IDs (max 200)' -StatusCode 400
+                return
+            }
+
+            $totalDeleted = 0
+            $totalSkipped = 0
+            $invalidIds   = [System.Collections.Generic.List[string]]::new()
+            $allErrors    = [System.Collections.Generic.List[string]]::new()
+
+            foreach ($id in $ids) {
+                $resolvedRun = Resolve-CronAgentsRunPath -RunId $id -RunsRoot $RunsRoot
+                if (-not $resolvedRun.IsValid) {
+                    $invalidIds.Add($id)
+                    $totalSkipped++
+                    continue
+                }
+                if (-not $resolvedRun.Exists) {
+                    $totalSkipped++
+                    continue
+                }
+                $result = Clear-RunHistory -RunsRoot $RunsRoot -RunId $id
+                $totalDeleted += $result.DeletedCount
+                $totalSkipped += $result.SkippedCount
+                if ($result.Errors.Count -gt 0) {
+                    foreach ($e in $result.Errors) { $allErrors.Add($e) }
+                }
+            }
+
+            # Invalid IDs are a client error
+            if ($invalidIds.Count -gt 0) {
+                script:Send-JsonResponse -Response $response -Body ([ordered]@{
+                    ok      = $false
+                    message = "Invalid run ID format: $($invalidIds -join ', ')"
+                    deleted = $totalDeleted
+                    skipped = $totalSkipped
+                    errors  = [string[]]$invalidIds.ToArray()
+                }) -StatusCode 400
+                return
+            }
+
+            $ok = $totalDeleted -gt 0 -or $allErrors.Count -eq 0
+            $msg = "Deleted $totalDeleted run(s)"
+            if ($totalSkipped -gt 0) { $msg += ", skipped $totalSkipped" }
+            if ($allErrors.Count -gt 0 -and $totalDeleted -eq 0) { $msg = 'Failed to delete any runs' }
+
+            $responseBody = [ordered]@{
+                ok      = $ok
+                message = $msg
+                deleted = $totalDeleted
+                skipped = $totalSkipped
+            }
+            if ($allErrors.Count -gt 0) { $responseBody.errors = [string[]]$allErrors.ToArray() }
+
+            $statusCode = if ($ok) { 200 } else { 500 }
+            script:Send-JsonResponse -Response $response -Body $responseBody -StatusCode $statusCode
+            return
+        }
+
         # ── DELETE /api/runs/:id ─────────────────────────────────
         if ($method -eq 'DELETE' -and $path -match '^/api/runs/(.+)$') {
             $runId = $Matches[1]

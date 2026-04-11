@@ -294,6 +294,25 @@
     font-size: 0.75rem; color: var(--muted); white-space: nowrap;
   }
 
+  /* ── Selection toolbar ────────────────────────── */
+  .selection-toolbar {
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(88,166,255,0.08); border: 1px solid var(--accent);
+    border-radius: 8px; padding: 8px 16px; margin-bottom: 12px;
+    font-size: 0.85rem;
+  }
+  .selection-toolbar .selection-count { font-weight: 600; color: var(--accent); }
+  .selection-toolbar .btn { margin-left: auto; }
+  .run-checkbox {
+    width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer;
+    vertical-align: middle;
+  }
+  th .run-checkbox { margin: 0; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+
   /* ── Responsive ─────────────────────────────── */
   @media (max-width: 768px) {
     main { padding: 12px; }
@@ -371,12 +390,18 @@
         </div>
         <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
           <span id="filter-count" class="filter-count"></span>
+          <button class="btn btn-red" id="clear-filtered-btn" data-action="clearFilteredRuns" title="Delete all runs matching current filters" style="display:none">🗑 Clear Filtered</button>
           <button class="btn btn-red" data-action="clearAllRuns" title="Clear all run history">🗑 Clear All</button>
         </div>
+      </div>
+      <div id="selection-toolbar" class="selection-toolbar" style="display:none">
+        <span class="selection-count"><span id="selection-count-num">0</span> selected</span>
+        <button class="btn btn-red" data-action="deleteSelectedRuns" aria-label="Delete selected runs">🗑 Delete Selected</button>
       </div>
       <table>
         <thead>
           <tr>
+            <th><input type="checkbox" class="run-checkbox" id="select-all-runs" aria-label="Select all runs" title="Select all visible runs"></th>
             <th>Agent</th>
             <th>Time</th>
             <th>Status</th>
@@ -398,6 +423,7 @@
 </main>
 
 <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+<span id="selection-live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span>
 <div id="confirm-dialog"></div>
 
 <script>
@@ -410,6 +436,7 @@ let hasLoadedQuestions = false;
 let pollTimer = null;
 let filterAgent = '';
 let filterStatus = '';
+let selectedRuns = new Set();
 let freshness = null;
 let freshnessIssues = [];
 const pageLoadedAt = new Date().toISOString();
@@ -625,6 +652,13 @@ function getRunStatus(run) {
   return 'failed';
 }
 
+function isRunDeletable(run) {
+  if (run?.isIncomplete) return true;
+  const meta = run?.meta;
+  if (!meta) return true;
+  return meta.exitCode !== null && meta.exitCode !== undefined;
+}
+
 function getFilteredRuns() {
   return runs.filter(r => {
     if (filterAgent && r.agentId !== filterAgent) return false;
@@ -658,8 +692,11 @@ function renderRuns() {
 
   if (filtered.length === 0) {
     closeRunDetail();
+    selectedRuns.clear();
+    updateSelectionUI();
+    document.getElementById('clear-filtered-btn').style.display = 'none';
     const msg = isFiltered ? 'No runs match the current filters' : 'No run history yet';
-    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state">${msg}</td></tr>`;
     return;
   }
 
@@ -702,8 +739,13 @@ function renderRuns() {
       summaryCell = '<span style="color:var(--muted);font-style:italic">see details</span>';
     }
     const attentionIndicator = r.attention ? '<span class="badge badge-attention" title="Needs attention">⚠️</span> ' : '';
+    const isActive = !isRunDeletable(r);
+    const checkboxHtml = isActive
+      ? '<td><input type="checkbox" class="run-checkbox" disabled aria-label="Cannot select a running run" title="Cannot select a running run"></td>'
+      : `<td><input type="checkbox" class="run-checkbox" data-run-id="${esc(r.id)}" aria-label="Select ${esc(r.meta?.agentName || r.agentId)} run from ${relativeTime(r.timestamp)}" ${selectedRuns.has(r.id) ? 'checked' : ''}></td>`;
     return `
     <tr data-run-id="${esc(r.id)}">
+      ${checkboxHtml}
       <td>${esc(r.meta?.agentName || r.agentId)}</td>
       <td>${relativeTime(r.timestamp)}</td>
       <td>${statusBadge(r)}</td>
@@ -713,7 +755,7 @@ function renderRuns() {
       <td>
         <button class="btn" data-action="showRunDetail" data-run-id="${esc(r.id)}"
                 aria-expanded="false" aria-label="Details for ${esc(r.meta?.agentName || r.agentId)}">Details</button>
-        ${r.meta && (r.meta.exitCode === null || r.meta.exitCode === undefined) && !r.isIncomplete
+        ${isActive
           ? `<span title="Cannot delete a running run" tabindex="0" style="display:inline-block"><button class="btn btn-red" disabled aria-disabled="true" aria-label="Delete run ${esc(r.id)}">🗑</button></span>`
           : `<button class="btn btn-red" data-action="deleteRun" data-run-id="${esc(r.id)}" aria-label="Delete run ${esc(r.id)}" title="Delete this run">🗑</button>`}
       </td>
@@ -740,6 +782,52 @@ function renderRuns() {
         }
       }
     }
+  }
+
+  // Prune selectedRuns to only visible, deletable run IDs
+  const visibleIds = new Set(filtered.filter(r => isRunDeletable(r)).map(r => r.id));
+  for (const id of selectedRuns) {
+    if (!visibleIds.has(id)) selectedRuns.delete(id);
+  }
+  updateSelectionUI();
+
+  // Show/hide "Clear Filtered" button
+  const clearFilteredBtn = document.getElementById('clear-filtered-btn');
+  if (isFiltered && filtered.length > 0) {
+    const deletableCount = filtered.filter(r => isRunDeletable(r)).length;
+    clearFilteredBtn.style.display = deletableCount > 0 ? '' : 'none';
+    clearFilteredBtn.textContent = `🗑 Clear Filtered (${deletableCount})`;
+  } else {
+    clearFilteredBtn.style.display = 'none';
+  }
+}
+
+// ── Selection Management ────────────────────────────────────────
+function updateSelectionUI() {
+  const toolbar = document.getElementById('selection-toolbar');
+  const countEl = document.getElementById('selection-count-num');
+  const selectAll = document.getElementById('select-all-runs');
+  const liveRegion = document.getElementById('selection-live');
+
+  if (selectedRuns.size > 0) {
+    toolbar.style.display = 'flex';
+    countEl.textContent = selectedRuns.size;
+  } else {
+    toolbar.style.display = 'none';
+  }
+  liveRegion.textContent = selectedRuns.size > 0
+    ? `${selectedRuns.size} run(s) selected`
+    : '';
+
+  // Update select-all checkbox state
+  const checkboxes = document.querySelectorAll('#runs-body .run-checkbox:not(:disabled)');
+  if (checkboxes.length === 0) {
+    selectAll.checked = false;
+    selectAll.indeterminate = false;
+  } else {
+    const checkedCount = [...checkboxes].filter(cb => cb.checked).length;
+    selectAll.checked = checkedCount === checkboxes.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
   }
 }
 
@@ -812,7 +900,7 @@ async function showRunDetail(runId) {
   detailRow.className = 'run-detail-row';
   detailRow.dataset.runId = runId;
   const cell = document.createElement('td');
-  cell.colSpan = 7;
+  cell.colSpan = 8;
   cell.innerHTML = '<div class="panel"><p style="color:var(--muted)">Loading...</p></div>';
   detailRow.appendChild(cell);
 
@@ -1046,6 +1134,7 @@ async function deleteRun(runId) {
     const res = await api('DELETE', `/api/runs/${encodeURIComponent(runId)}`);
     showToast(res.message || 'Run deleted');
     closeRunDetail();
+    selectedRuns.delete(runId);
     await refreshRuns();
   } catch (err) { showToast(err.message, 'error'); }
 }
@@ -1057,7 +1146,45 @@ async function clearAllRuns() {
     const res = await api('DELETE', '/api/runs');
     showToast(res.message || 'All runs cleared');
     closeRunDetail();
+    selectedRuns.clear();
     await refreshRuns();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function deleteSelectedRuns() {
+  const ids = [...selectedRuns];
+  if (ids.length === 0) return;
+  const ok = await showConfirm(`Delete ${ids.length} selected run(s)? This cannot be undone.`);
+  if (!ok) return;
+  try {
+    const res = await api('POST', '/api/runs/batch-delete', { ids });
+    showToast(res.message || `Deleted ${ids.length} run(s)`);
+    closeRunDetail();
+    selectedRuns.clear();
+    await refreshRuns();
+    document.getElementById('select-all-runs').focus();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function clearFilteredRuns() {
+  const filtered = getFilteredRuns();
+  const deletable = filtered.filter(r => isRunDeletable(r));
+  if (deletable.length === 0) return;
+
+  const descParts = [];
+  if (filterAgent) descParts.push(`for '${filterAgent}'`);
+  if (filterStatus) descParts.push(`matching '${filterStatus}'`);
+  const desc = descParts.join(' ').trim() || 'matching current filters';
+  const ok = await showConfirm(`Delete ${deletable.length} filtered run(s) ${desc}? This cannot be undone.`);
+  if (!ok) return;
+  try {
+    const ids = deletable.map(r => r.id);
+    const res = await api('POST', '/api/runs/batch-delete', { ids });
+    showToast(res.message || `Deleted ${ids.length} run(s)`);
+    closeRunDetail();
+    selectedRuns.clear();
+    await refreshRuns();
+    document.getElementById('select-all-runs').focus();
   } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -1273,6 +1400,28 @@ async function handleStalenessAction(actionType) {
 }
 
 // ── Event Delegation ─────────────────────────────────────────────
+document.addEventListener('change', (e) => {
+  // Select-all checkbox
+  if (e.target.id === 'select-all-runs') {
+    const checked = e.target.checked;
+    document.querySelectorAll('#runs-body .run-checkbox:not(:disabled)').forEach(cb => {
+      cb.checked = checked;
+      const id = cb.dataset.runId;
+      if (id) { checked ? selectedRuns.add(id) : selectedRuns.delete(id); }
+    });
+    updateSelectionUI();
+    return;
+  }
+
+  // Individual run checkbox
+  if (e.target.classList.contains('run-checkbox') && e.target.dataset.runId) {
+    const id = e.target.dataset.runId;
+    e.target.checked ? selectedRuns.add(id) : selectedRuns.delete(id);
+    updateSelectionUI();
+    return;
+  }
+});
+
 document.addEventListener('click', (e) => {
   // Status filter pills
   const pill = e.target.closest('.filter-pill[data-status]');
@@ -1308,6 +1457,8 @@ document.addEventListener('click', (e) => {
     case 'answerQuestion':    answerQuestion(agentId, questionId, answer); break;
     case 'answerQuestionCustom': answerQuestionCustom(agentId, questionId); break;
     case 'deleteRun':         deleteRun(runId); break;
+    case 'deleteSelectedRuns':  deleteSelectedRuns(); break;
+    case 'clearFilteredRuns':   clearFilteredRuns(); break;
     case 'clearAllRuns':      clearAllRuns(); break;
     case 'fullRefresh':       fullRefresh(); break;
     case 'stalenessAction':   handleStalenessAction(btn.dataset.staleType); break;
