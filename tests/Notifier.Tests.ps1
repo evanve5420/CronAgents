@@ -19,12 +19,62 @@ BeforeAll {
     function New-MockAgentConfig {
         param(
             [bool]$NotifyOnFailure = $false,
-            [bool]$NotifyOnSuccess = $false
+            [bool]$NotifyOnSuccess = $false,
+            [string]$NotificationSound
         )
-        [PSCustomObject]@{
+        $config = [PSCustomObject]@{
             name            = 'Test Agent'
             notifyOnFailure = $NotifyOnFailure
             notifyOnSuccess = $NotifyOnSuccess
+        }
+        if ($NotificationSound) {
+            $config | Add-Member -NotePropertyName 'notificationSound' -NotePropertyValue $NotificationSound
+        }
+        $config
+    }
+}
+
+# ---------------------------------------------------------------------------
+Describe 'ConvertTo-NativeAudioUri' {
+    It 'Maps Default to Notification.Default' {
+        InModuleScope CronAgents {
+            ConvertTo-NativeAudioUri -SoundName 'Default' | Should -Be 'ms-winsoundevent:Notification.Default'
+        }
+    }
+
+    It 'Maps IM to Notification.IM' {
+        InModuleScope CronAgents {
+            ConvertTo-NativeAudioUri -SoundName 'IM' | Should -Be 'ms-winsoundevent:Notification.IM'
+        }
+    }
+
+    It 'Maps Alarm to Notification.Looping.Alarm' {
+        InModuleScope CronAgents {
+            ConvertTo-NativeAudioUri -SoundName 'Alarm' | Should -Be 'ms-winsoundevent:Notification.Looping.Alarm'
+        }
+    }
+
+    It 'Maps Alarm3 to Notification.Looping.Alarm3' {
+        InModuleScope CronAgents {
+            ConvertTo-NativeAudioUri -SoundName 'Alarm3' | Should -Be 'ms-winsoundevent:Notification.Looping.Alarm3'
+        }
+    }
+
+    It 'Maps Call to Notification.Looping.Call' {
+        InModuleScope CronAgents {
+            ConvertTo-NativeAudioUri -SoundName 'Call' | Should -Be 'ms-winsoundevent:Notification.Looping.Call'
+        }
+    }
+
+    It 'Maps Call7 to Notification.Looping.Call7' {
+        InModuleScope CronAgents {
+            ConvertTo-NativeAudioUri -SoundName 'Call7' | Should -Be 'ms-winsoundevent:Notification.Looping.Call7'
+        }
+    }
+
+    It 'Maps Mail to Notification.Mail (not Looping)' {
+        InModuleScope CronAgents {
+            ConvertTo-NativeAudioUri -SoundName 'Mail' | Should -Be 'ms-winsoundevent:Notification.Mail'
         }
     }
 }
@@ -244,6 +294,64 @@ Describe 'Send-AgentFailureNotification — timeout message' {
 }
 
 # ---------------------------------------------------------------------------
+Describe 'Send-AgentFailureNotification — notificationSound' {
+    BeforeEach {
+        InModuleScope CronAgents { $script:NotificationBackend = 'BurntToast' }
+    }
+    AfterEach {
+        InModuleScope CronAgents { $script:NotificationBackend = $null }
+    }
+
+    It 'Passes Sound to Send-BurntToastNotification when notificationSound is set' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnFailure $true -NotificationSound 'Alarm3'
+
+        $capturedSound = $null
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body, $Sound)
+            Set-Variable -Name capturedSound -Value $Sound -Scope 2
+        }
+
+        Send-AgentFailureNotification -AgentId 'sound-test' -AgentName 'Sound Test' `
+            -ExitCode 1 -TimedOut $false -GlobalConfig $global -AgentConfig $agent
+
+        $capturedSound | Should -Be 'Alarm3'
+    }
+
+    It 'Does not pass Sound when notificationSound is absent' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnFailure $true
+
+        $capturedSound = 'sentinel'
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body, $Sound)
+            Set-Variable -Name capturedSound -Value $Sound -Scope 2
+        }
+
+        Send-AgentFailureNotification -AgentId 'no-sound-test' -AgentName 'No Sound' `
+            -ExitCode 1 -TimedOut $false -GlobalConfig $global -AgentConfig $agent
+
+        $capturedSound | Should -BeNullOrEmpty
+    }
+
+    It 'Passes custom file path as Sound to Send-BurntToastNotification' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnFailure $true -NotificationSound 'C:\Sounds\alert.wav'
+
+        $capturedSound = $null
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body, $Sound)
+            Set-Variable -Name capturedSound -Value $Sound -Scope 2
+        }
+
+        Send-AgentFailureNotification -AgentId 'custom-sound' -AgentName 'Custom Sound' `
+            -ExitCode 1 -TimedOut $false -GlobalConfig $global -AgentConfig $agent
+
+        $capturedSound | Should -Be 'C:\Sounds\alert.wav'
+    }
+}
+
+# ---------------------------------------------------------------------------
 Describe 'Send-AgentSuccessNotification — gating logic' {
     BeforeEach {
         InModuleScope CronAgents { $script:NotificationBackend = 'None' }
@@ -417,6 +525,64 @@ Describe 'Send-AgentSuccessNotification — message content' {
 }
 
 # ---------------------------------------------------------------------------
+Describe 'Send-AgentSuccessNotification — notificationSound' {
+    BeforeEach {
+        InModuleScope CronAgents { $script:NotificationBackend = 'BurntToast' }
+    }
+    AfterEach {
+        InModuleScope CronAgents { $script:NotificationBackend = $null }
+    }
+
+    It 'Passes Sound to Send-BurntToastNotification when notificationSound is set' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnSuccess $true -NotificationSound 'Mail'
+
+        $capturedSound = $null
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body, $Sound)
+            Set-Variable -Name capturedSound -Value $Sound -Scope 2
+        }
+
+        Send-AgentSuccessNotification -AgentId 'sound-test' -AgentName 'Sound Test' `
+            -GlobalConfig $global -AgentConfig $agent
+
+        $capturedSound | Should -Be 'Mail'
+    }
+
+    It 'Does not pass Sound when notificationSound is absent' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnSuccess $true
+
+        $capturedSound = 'sentinel'
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body, $Sound)
+            Set-Variable -Name capturedSound -Value $Sound -Scope 2
+        }
+
+        Send-AgentSuccessNotification -AgentId 'no-sound-test' -AgentName 'No Sound' `
+            -GlobalConfig $global -AgentConfig $agent
+
+        $capturedSound | Should -BeNullOrEmpty
+    }
+
+    It 'Passes custom file path as Sound to Send-BurntToastNotification' {
+        $global = New-MockGlobalConfig -Notifications $true
+        $agent  = New-MockAgentConfig  -NotifyOnSuccess $true -NotificationSound 'D:\Music\chime.wav'
+
+        $capturedSound = $null
+        Mock -ModuleName CronAgents Send-BurntToastNotification {
+            param($Title, $Body, $Sound)
+            Set-Variable -Name capturedSound -Value $Sound -Scope 2
+        }
+
+        Send-AgentSuccessNotification -AgentId 'custom-sound' -AgentName 'Custom Sound' `
+            -GlobalConfig $global -AgentConfig $agent
+
+        $capturedSound | Should -Be 'D:\Music\chime.wav'
+    }
+}
+
+# ---------------------------------------------------------------------------
 Describe 'Send-SchedulerErrorNotification — gating logic' {
     BeforeEach {
         InModuleScope CronAgents {
@@ -578,6 +744,85 @@ Describe 'ConfigLoader — notifyOnSuccess parsing' {
         $agents = Get-AgentConfigs -RepoRoot $testEnv.Root
         $agent = $agents | Where-Object { $_.Id -eq 'yes-success-notify' }
         $agent.Config.notifyOnSuccess | Should -Be $true
+    }
+}
+
+# ---------------------------------------------------------------------------
+Describe 'ConfigLoader — notificationSound parsing' {
+    BeforeEach {
+        $testEnv = New-TestEnvironment -Name 'NotifSoundConfig'
+    }
+    AfterEach {
+        Remove-TestEnvironment -TestEnv $testEnv
+    }
+
+    It 'Has no notificationSound property when absent from config' {
+        $configContent = [ordered]@{
+            prompt   = 'Do something'
+            schedule = @{ type = 'daily'; time = '09:00' }
+        }
+        $filePath = Join-Path $testEnv.AgentsDir 'no-sound.agent-registration.json'
+        $configContent | ConvertTo-Json -Depth 5 | Out-File -FilePath $filePath -Encoding utf8
+
+        $agents = Get-AgentConfigs -RepoRoot $testEnv.Root
+        $agent = $agents | Where-Object { $_.Id -eq 'no-sound' }
+        $agent.Config.PSObject.Properties['notificationSound'] | Should -BeNullOrEmpty
+    }
+
+    It 'Parses notificationSound = "Alarm3"' {
+        $configContent = [ordered]@{
+            prompt            = 'Do something'
+            schedule          = @{ type = 'daily'; time = '09:00' }
+            notificationSound = 'Alarm3'
+        }
+        $filePath = Join-Path $testEnv.AgentsDir 'with-sound.agent-registration.json'
+        $configContent | ConvertTo-Json -Depth 5 | Out-File -FilePath $filePath -Encoding utf8
+
+        $agents = Get-AgentConfigs -RepoRoot $testEnv.Root
+        $agent = $agents | Where-Object { $_.Id -eq 'with-sound' }
+        $agent.Config.notificationSound | Should -Be 'Alarm3'
+    }
+
+    It 'Parses notificationSound with a custom file path' {
+        $configContent = [ordered]@{
+            prompt            = 'Do something'
+            schedule          = @{ type = 'daily'; time = '09:00' }
+            notificationSound = 'C:\Sounds\alert.wav'
+        }
+        $filePath = Join-Path $testEnv.AgentsDir 'custom-sound.agent-registration.json'
+        $configContent | ConvertTo-Json -Depth 5 | Out-File -FilePath $filePath -Encoding utf8
+
+        $agents = Get-AgentConfigs -RepoRoot $testEnv.Root
+        $agent = $agents | Where-Object { $_.Id -eq 'custom-sound' }
+        $agent.Config.notificationSound | Should -Be 'C:\Sounds\alert.wav'
+    }
+}
+
+# ---------------------------------------------------------------------------
+Describe 'SoundPresets set' {
+    It 'Contains all 26 known preset names' {
+        InModuleScope CronAgents {
+            $script:SoundPresets.Count | Should -Be 26
+            $script:SoundPresets.Contains('Default') | Should -BeTrue
+            $script:SoundPresets.Contains('None') | Should -BeTrue
+            $script:SoundPresets.Contains('Alarm') | Should -BeTrue
+            $script:SoundPresets.Contains('Alarm10') | Should -BeTrue
+            $script:SoundPresets.Contains('Call10') | Should -BeTrue
+        }
+    }
+
+    It 'Does not contain arbitrary strings' {
+        InModuleScope CronAgents {
+            $script:SoundPresets.Contains('C:\Sounds\alert.wav') | Should -BeFalse
+            $script:SoundPresets.Contains('custom') | Should -BeFalse
+        }
+    }
+
+    It 'Is case-insensitive' {
+        InModuleScope CronAgents {
+            $script:SoundPresets.Contains('alarm') | Should -BeTrue
+            $script:SoundPresets.Contains('MAIL') | Should -BeTrue
+        }
     }
 }
 

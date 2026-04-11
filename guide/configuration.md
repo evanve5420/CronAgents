@@ -208,7 +208,8 @@ Each agent has a JSON config file. The filename stem (for example, `daily-review
   "extraCliFlags": [],
   "envVars": {},
   "notifyOnFailure": true,
-  "notifyOnSuccess": false
+  "notifyOnSuccess": false,
+  "notificationSound": "Alarm3"
 }
 ```
 
@@ -429,6 +430,28 @@ Supports built-in names (`edit`, `execute`), shell commands (`shell(rm)`), MCP t
 | **Type** | `boolean` |
 | **Default** | `false` |
 | **Description** | Show a Windows toast notification when the agent completes successfully. Requires global `notifications` to be `true`. |
+
+#### `notificationSound`
+
+| | |
+|---|---|
+| **Type** | `string` |
+| **Default** | *(system default)* |
+| **Description** | Override the Windows toast notification sound for this agent. Applies to both success and failure toasts. Only takes effect when `notifyOnFailure` or `notifyOnSuccess` is enabled and global `notifications` is `true`. |
+
+Use a **preset name** or a **file path** to a custom `.wav` file.
+
+**Presets:** `Default`, `IM`, `Mail`, `Reminder`, `SMS`, `Alarm`, `Call`, `None`. Alarm/Call variants (`Alarm2`–`Alarm10`, `Call2`–`Call10`) are also accepted. `None` silences the toast. Preset names are case-insensitive.
+
+> **Note:** `Alarm` and `Call` presets (including numbered variants) produce looping audio and keep the toast visible until dismissed. Use `Reminder` or `SMS` for a non-looping alert sound.
+
+```json
+"notificationSound": "Alarm3"
+```
+
+```json
+"notificationSound": "C:\\Sounds\\my-alert.wav"
+```
 
 #### `workingDirectory`
 
