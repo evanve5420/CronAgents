@@ -77,6 +77,37 @@ Describe 'ConvertTo-NativeAudioUri' {
             ConvertTo-NativeAudioUri -SoundName 'Mail' | Should -Be 'ms-winsoundevent:Notification.Mail'
         }
     }
+
+    It 'Normalizes lowercase input to canonical PascalCase in URI' {
+        InModuleScope CronAgents {
+            ConvertTo-NativeAudioUri -SoundName 'alarm3' | Should -Be 'ms-winsoundevent:Notification.Looping.Alarm3'
+            ConvertTo-NativeAudioUri -SoundName 'mail' | Should -Be 'ms-winsoundevent:Notification.Mail'
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+Describe 'Resolve-SoundFileUri' {
+    It 'Converts a local path to a file:// URI' {
+        InModuleScope CronAgents {
+            $result = Resolve-SoundFileUri -Path 'C:\Sounds\alert.wav'
+            $result | Should -Be 'file:///C:/Sounds/alert.wav'
+        }
+    }
+
+    It 'URL-encodes spaces in file paths' {
+        InModuleScope CronAgents {
+            $result = Resolve-SoundFileUri -Path 'C:\My Sounds\alert.wav'
+            $result | Should -Match 'My%20Sounds'
+        }
+    }
+
+    It 'Returns $null for UNC paths' {
+        InModuleScope CronAgents {
+            $result = Resolve-SoundFileUri -Path '\\server\share\sound.wav'
+            $result | Should -BeNullOrEmpty
+        }
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -799,29 +830,37 @@ Describe 'ConfigLoader — notificationSound parsing' {
 }
 
 # ---------------------------------------------------------------------------
-Describe 'SoundPresets set' {
+Describe 'SoundPresets dictionary' {
     It 'Contains all 26 known preset names' {
         InModuleScope CronAgents {
             $script:SoundPresets.Count | Should -Be 26
-            $script:SoundPresets.Contains('Default') | Should -BeTrue
-            $script:SoundPresets.Contains('None') | Should -BeTrue
-            $script:SoundPresets.Contains('Alarm') | Should -BeTrue
-            $script:SoundPresets.Contains('Alarm10') | Should -BeTrue
-            $script:SoundPresets.Contains('Call10') | Should -BeTrue
+            $script:SoundPresets.ContainsKey('Default') | Should -BeTrue
+            $script:SoundPresets.ContainsKey('None') | Should -BeTrue
+            $script:SoundPresets.ContainsKey('Alarm') | Should -BeTrue
+            $script:SoundPresets.ContainsKey('Alarm10') | Should -BeTrue
+            $script:SoundPresets.ContainsKey('Call10') | Should -BeTrue
         }
     }
 
     It 'Does not contain arbitrary strings' {
         InModuleScope CronAgents {
-            $script:SoundPresets.Contains('C:\Sounds\alert.wav') | Should -BeFalse
-            $script:SoundPresets.Contains('custom') | Should -BeFalse
+            $script:SoundPresets.ContainsKey('C:\Sounds\alert.wav') | Should -BeFalse
+            $script:SoundPresets.ContainsKey('custom') | Should -BeFalse
         }
     }
 
     It 'Is case-insensitive' {
         InModuleScope CronAgents {
-            $script:SoundPresets.Contains('alarm') | Should -BeTrue
-            $script:SoundPresets.Contains('MAIL') | Should -BeTrue
+            $script:SoundPresets.ContainsKey('alarm') | Should -BeTrue
+            $script:SoundPresets.ContainsKey('MAIL') | Should -BeTrue
+        }
+    }
+
+    It 'Returns canonical PascalCase for case-insensitive lookups' {
+        InModuleScope CronAgents {
+            $script:SoundPresets['alarm3'] | Should -Be 'Alarm3'
+            $script:SoundPresets['mail'] | Should -Be 'Mail'
+            $script:SoundPresets['IM'] | Should -Be 'IM'
         }
     }
 }

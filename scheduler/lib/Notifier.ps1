@@ -34,17 +34,18 @@ $script:LastSchedulerToastTime = [datetime]::MinValue
 $script:DefaultCooldownSeconds = 300   # 5 minutes
 
 # Known Windows system sound presets (BurntToast -Sound values / WinRT URIs).
-$script:SoundPresets = [System.Collections.Generic.HashSet[string]]::new(
-    [string[]]@(
-        'Default', 'IM', 'Mail', 'Reminder', 'SMS',
-        'Alarm', 'Alarm2', 'Alarm3', 'Alarm4', 'Alarm5',
-        'Alarm6', 'Alarm7', 'Alarm8', 'Alarm9', 'Alarm10',
-        'Call', 'Call2', 'Call3', 'Call4', 'Call5',
-        'Call6', 'Call7', 'Call8', 'Call9', 'Call10',
-        'None'
-    ),
+# Dictionary maps case-insensitive lookup → canonical PascalCase name.
+$script:SoundPresets = [System.Collections.Generic.Dictionary[string, string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase
 )
+@(
+    'Default', 'IM', 'Mail', 'Reminder', 'SMS',
+    'Alarm', 'Alarm2', 'Alarm3', 'Alarm4', 'Alarm5',
+    'Alarm6', 'Alarm7', 'Alarm8', 'Alarm9', 'Alarm10',
+    'Call', 'Call2', 'Call3', 'Call4', 'Call5',
+    'Call6', 'Call7', 'Call8', 'Call9', 'Call10',
+    'None'
+) | ForEach-Object { $script:SoundPresets[$_] = $_ }
 
 function Resolve-NotificationBackend {
     <#
@@ -95,6 +96,24 @@ function Test-NotificationAvailable {
     return ($backend -ne 'None')
 }
 
+function Resolve-SoundFileUri {
+    <#
+    .SYNOPSIS
+        Resolves a custom sound file path to a file:// URI. Returns $null
+        and logs a warning if the path is a UNC/network path.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$Path)
+
+    $resolvedPath = [System.IO.Path]::GetFullPath($Path)
+    if ($resolvedPath.StartsWith('\\')) {
+        Write-CronAgentsLog -Level 'warn' -Message "Notification sound path rejected (UNC/network path): $Path"
+        return $null
+    }
+    return ([System.Uri]::new($resolvedPath)).AbsoluteUri
+}
+
 function Send-BurntToastNotification {
     <#
     .SYNOPSIS
@@ -112,14 +131,11 @@ function Send-BurntToastNotification {
     if ($Sound) {
         if ($Sound -eq 'None') {
             $params['Silent'] = $true
-        } elseif ($script:SoundPresets.Contains($Sound)) {
-            $params['Sound'] = $Sound
+        } elseif ($script:SoundPresets.ContainsKey($Sound)) {
+            $params['Sound'] = $script:SoundPresets[$Sound]
         } else {
-            $resolvedPath = [System.IO.Path]::GetFullPath($Sound)
-            if ($resolvedPath.StartsWith('\\')) {
-                Write-CronAgentsLog -Level 'warn' -Message "Notification sound path rejected (UNC/network path): $Sound"
-            } else {
-                $fileUri = "file:///$($resolvedPath -replace '\\', '/')"
+            $fileUri = Resolve-SoundFileUri -Path $Sound
+            if ($fileUri) {
                 $params['Audio'] = New-BTAudio -Source $fileUri
             }
         }
@@ -142,15 +158,19 @@ function ConvertTo-NativeAudioUri {
     <#
     .SYNOPSIS
         Maps a preset sound name to the ms-winsoundevent URI for native toasts.
+        Normalizes casing to the canonical PascalCase form.
     #>
     [CmdletBinding()]
     [OutputType([string])]
     param([Parameter(Mandatory)][string]$SoundName)
 
-    if (Test-LoopingSound -SoundName $SoundName) {
-        return "ms-winsoundevent:Notification.Looping.$SoundName"
+    $canonical = $script:SoundPresets[$SoundName]
+    if (-not $canonical) { $canonical = $SoundName }
+
+    if (Test-LoopingSound -SoundName $canonical) {
+        return "ms-winsoundevent:Notification.Looping.$canonical"
     }
-    return "ms-winsoundevent:Notification.$SoundName"
+    return "ms-winsoundevent:Notification.$canonical"
 }
 
 function Send-NativeToastNotification {
@@ -173,20 +193,18 @@ function Send-NativeToastNotification {
     if ($Sound) {
         if ($Sound -eq 'None') {
             $audioXml = "`n  <audio silent=`"true`" />"
-        } elseif ($script:SoundPresets.Contains($Sound)) {
-            $uri = [System.Security.SecurityElement]::Escape((ConvertTo-NativeAudioUri -SoundName $Sound))
-            if (Test-LoopingSound -SoundName $Sound) {
+        } elseif ($script:SoundPresets.ContainsKey($Sound)) {
+            $canonical = $script:SoundPresets[$Sound]
+            $uri = [System.Security.SecurityElement]::Escape((ConvertTo-NativeAudioUri -SoundName $canonical))
+            if (Test-LoopingSound -SoundName $canonical) {
                 $audioXml = "`n  <audio src=`"$uri`" loop=`"true`" />"
                 $scenarioAttr = ' scenario="alarm"'
             } else {
                 $audioXml = "`n  <audio src=`"$uri`" />"
             }
         } else {
-            $resolvedPath = [System.IO.Path]::GetFullPath($Sound)
-            if ($resolvedPath.StartsWith('\\')) {
-                Write-CronAgentsLog -Level 'warn' -Message "Notification sound path rejected (UNC/network path): $Sound"
-            } else {
-                $fileUri = "file:///$($resolvedPath -replace '\\', '/')"
+            $fileUri = Resolve-SoundFileUri -Path $Sound
+            if ($fileUri) {
                 $audioXml = "`n  <audio src=`"$([System.Security.SecurityElement]::Escape($fileUri))`" />"
             }
         }
