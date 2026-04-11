@@ -33,6 +33,20 @@ $script:SchedulerErrorBatch  = $null   # $null = no active batch; [List] = activ
 $script:LastSchedulerToastTime = [datetime]::MinValue
 $script:DefaultCooldownSeconds = 300   # 5 minutes
 
+# Known Windows system sound presets (BurntToast -Sound values / WinRT URIs).
+# Dictionary maps case-insensitive lookup → canonical PascalCase name.
+$script:SoundPresets = [System.Collections.Generic.Dictionary[string, string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase
+)
+@(
+    'Default', 'IM', 'Mail', 'Reminder', 'SMS',
+    'Alarm', 'Alarm2', 'Alarm3', 'Alarm4', 'Alarm5',
+    'Alarm6', 'Alarm7', 'Alarm8', 'Alarm9', 'Alarm10',
+    'Call', 'Call2', 'Call3', 'Call4', 'Call5',
+    'Call6', 'Call7', 'Call8', 'Call9', 'Call10',
+    'None'
+) | ForEach-Object { $script:SoundPresets[$_] = $_ }
+
 function Resolve-NotificationBackend {
     <#
     .SYNOPSIS
@@ -82,6 +96,39 @@ function Test-NotificationAvailable {
     return ($backend -ne 'None')
 }
 
+function Resolve-SoundFileUri {
+    <#
+    .SYNOPSIS
+        Resolves a custom sound file path to a file:// URI. Returns $null
+        and logs a warning if the path is a UNC/network path.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$Path)
+
+    $resolvedPath = [System.IO.Path]::GetFullPath($Path)
+
+    # Strip extended-length prefix (\\?\) before UNC detection so local
+    # extended-length paths like \\?\C:\Sounds\alert.wav are allowed.
+    if ($resolvedPath.StartsWith('\\?\UNC\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-CronAgentsLog -Level 'warn' -Message "Notification sound path rejected (UNC/network path): $Path"
+        return $null
+    }
+
+    $uriPath = $resolvedPath
+    if ($resolvedPath.StartsWith('\\?\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $uriPath = $resolvedPath.Substring(4)
+    }
+
+    $uri = [System.Uri]::new($uriPath)
+    if ($uri.IsUnc) {
+        Write-CronAgentsLog -Level 'warn' -Message "Notification sound path rejected (UNC/network path): $Path"
+        return $null
+    }
+
+    return $uri.AbsoluteUri
+}
+
 function Send-BurntToastNotification {
     <#
     .SYNOPSIS
@@ -90,11 +137,57 @@ function Send-BurntToastNotification {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Title,
-        [Parameter(Mandatory)][string]$Body
+        [Parameter(Mandatory)][string]$Body,
+        [string]$Sound
     )
 
     Import-Module BurntToast -ErrorAction Stop
-    New-BurntToastNotification -Text $Title, $Body -ErrorAction Stop
+    $params = @{ Text = @($Title, $Body); ErrorAction = 'Stop' }
+    if ($Sound) {
+        if ($Sound -eq 'None') {
+            $params['Silent'] = $true
+        } elseif ($script:SoundPresets.ContainsKey($Sound)) {
+            $params['Sound'] = $script:SoundPresets[$Sound]
+        } else {
+            $fileUri = Resolve-SoundFileUri -Path $Sound
+            if ($fileUri) {
+                $params['Audio'] = New-BTAudio -Source $fileUri
+            }
+        }
+    }
+    New-BurntToastNotification @params
+}
+
+function Test-LoopingSound {
+    <#
+    .SYNOPSIS
+        Returns $true if the sound name is a looping Alarm or Call preset.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][string]$SoundName)
+    return ($SoundName -match '^(Alarm|Call)\d*$')
+}
+
+function ConvertTo-NativeAudioUri {
+    <#
+    .SYNOPSIS
+        Maps a preset sound name to the ms-winsoundevent URI for native toasts.
+        Normalizes casing to the canonical PascalCase form.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$SoundName)
+
+    $canonical = $SoundName
+    if ($script:SoundPresets.ContainsKey($SoundName)) {
+        $canonical = $script:SoundPresets[$SoundName]
+    }
+
+    if (Test-LoopingSound -SoundName $canonical) {
+        return "ms-winsoundevent:Notification.Looping.$canonical"
+    }
+    return "ms-winsoundevent:Notification.$canonical"
 }
 
 function Send-NativeToastNotification {
@@ -105,21 +198,44 @@ function Send-NativeToastNotification {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Title,
-        [Parameter(Mandatory)][string]$Body
+        [Parameter(Mandatory)][string]$Body,
+        [string]$Sound
     )
 
     $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
     $null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
 
+    $audioXml = ''
+    $scenarioAttr = ''
+    if ($Sound) {
+        if ($Sound -eq 'None') {
+            $audioXml = "`n  <audio silent=`"true`" />"
+        } elseif ($script:SoundPresets.ContainsKey($Sound)) {
+            $canonical = $script:SoundPresets[$Sound]
+            $uri = [System.Security.SecurityElement]::Escape((ConvertTo-NativeAudioUri -SoundName $canonical))
+            if (Test-LoopingSound -SoundName $canonical) {
+                $audioXml = "`n  <audio src=`"$uri`" loop=`"true`" />"
+                $scenarioAttr = ' scenario="alarm"'
+            } else {
+                $audioXml = "`n  <audio src=`"$uri`" />"
+            }
+        } else {
+            $fileUri = Resolve-SoundFileUri -Path $Sound
+            if ($fileUri) {
+                $audioXml = "`n  <audio src=`"$([System.Security.SecurityElement]::Escape($fileUri))`" />"
+            }
+        }
+    }
+
     $xml = [Windows.Data.Xml.Dom.XmlDocument]::new()
     $template = @"
-<toast>
+<toast$scenarioAttr>
   <visual>
     <binding template="ToastGeneric">
       <text>$([System.Security.SecurityElement]::Escape($Title))</text>
       <text>$([System.Security.SecurityElement]::Escape($Body))</text>
     </binding>
-  </visual>
+  </visual>$audioXml
 </toast>
 "@
     $xml.LoadXml($template)
@@ -139,21 +255,24 @@ function Send-ToastWithFallback {
     param(
         [Parameter(Mandatory)][string]$Title,
         [Parameter(Mandatory)][string]$Body,
-        [string]$LogContext = 'notification'
+        [string]$LogContext = 'notification',
+        [string]$Sound
     )
 
     $backend = Resolve-NotificationBackend
+    $soundArgs = @{}
+    if ($Sound) { $soundArgs['Sound'] = $Sound }
 
     switch ($backend) {
         'BurntToast' {
             try {
-                Send-BurntToastNotification -Title $Title -Body $Body
+                Send-BurntToastNotification -Title $Title -Body $Body @soundArgs
                 Write-CronAgentsLog -Level 'info' -Message "Toast sent for $LogContext via BurntToast."
             }
             catch {
                 Write-CronAgentsLog -Level 'warn' -Message "BurntToast failed for $LogContext`: $_ — trying native fallback."
                 try {
-                    Send-NativeToastNotification -Title $Title -Body $Body
+                    Send-NativeToastNotification -Title $Title -Body $Body @soundArgs
                     Write-CronAgentsLog -Level 'info' -Message "Toast sent for $LogContext via native API."
                 }
                 catch {
@@ -163,7 +282,7 @@ function Send-ToastWithFallback {
         }
         'Native' {
             try {
-                Send-NativeToastNotification -Title $Title -Body $Body
+                Send-NativeToastNotification -Title $Title -Body $Body @soundArgs
                 Write-CronAgentsLog -Level 'info' -Message "Toast sent for $LogContext via native API."
             }
             catch {
@@ -230,7 +349,12 @@ function Send-AgentFailureNotification {
     $title  = "CronAgents: $AgentName $reason"
     $body   = "Agent '$AgentId' $reason. Check the dashboard or run directory for details."
 
-    Send-ToastWithFallback -Title $title -Body $body -LogContext "agent '$AgentId'"
+    $soundArgs = @{}
+    if ($AgentConfig.PSObject.Properties['notificationSound'] -and $AgentConfig.notificationSound) {
+        $soundArgs['Sound'] = $AgentConfig.notificationSound
+    }
+
+    Send-ToastWithFallback -Title $title -Body $body -LogContext "agent '$AgentId'" @soundArgs
 }
 
 function Send-AgentSuccessNotification {
@@ -278,7 +402,12 @@ function Send-AgentSuccessNotification {
     $title = "CronAgents: $AgentName completed successfully"
     $body  = "Agent '$AgentId' finished without errors."
 
-    Send-ToastWithFallback -Title $title -Body $body -LogContext "agent '$AgentId' success"
+    $soundArgs = @{}
+    if ($AgentConfig.PSObject.Properties['notificationSound'] -and $AgentConfig.notificationSound) {
+        $soundArgs['Sound'] = $AgentConfig.notificationSound
+    }
+
+    Send-ToastWithFallback -Title $title -Body $body -LogContext "agent '$AgentId' success" @soundArgs
 }
 
 function Start-SchedulerErrorBatch {

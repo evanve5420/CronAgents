@@ -84,6 +84,24 @@ Show a Windows toast notification when the agent fails or times out. Requires th
 
 Show a Windows toast notification when the agent completes successfully. Requires the global `notifications` setting to be `true` in `cronagents.json`.
 
+### `notificationSound` (string, optional)
+
+Override the Windows toast notification sound for this agent. Applies to both success and failure toasts. Only takes effect when `notifyOnFailure` or `notifyOnSuccess` is enabled and global `notifications` is `true`.
+
+Use a **preset name** or a **file path** to a custom `.wav` file.
+
+**Presets:** `Default`, `IM`, `Mail`, `Reminder`, `SMS`, `Alarm`, `Call`, `None`. Alarm/Call variants (`Alarm2`–`Alarm10`, `Call2`–`Call10`) are also accepted. `None` silences the toast. Preset names are case-insensitive.
+
+> **Note:** `Alarm` and `Call` presets (including numbered variants) produce looping audio and keep the toast visible until dismissed. Use `Reminder` or `SMS` for a non-looping alert sound.
+
+```json
+"notificationSound": "Alarm3"
+```
+
+```json
+"notificationSound": "C:\\Sounds\\my-alert.wav"
+```
+
 ## Mode summary
 
 | | Agent mode | Prompt-only mode |

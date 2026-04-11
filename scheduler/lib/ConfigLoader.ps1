@@ -368,6 +368,11 @@ function Import-SingleAgentConfig {
                           { [bool]$parsed.notifyOnSuccess } else { $false }
     }
 
+    if ($parsed.PSObject.Properties['notificationSound'] -and
+        -not [string]::IsNullOrWhiteSpace($parsed.notificationSound)) {
+        $agentConfig | Add-Member -NotePropertyName 'notificationSound' -NotePropertyValue $parsed.notificationSound
+    }
+
     # Copy agent reference if present
     if ($parsed.PSObject.Properties['agent'] -and -not [string]::IsNullOrWhiteSpace($parsed.agent)) {
         $agentConfig | Add-Member -NotePropertyName 'agent' -NotePropertyValue $parsed.agent

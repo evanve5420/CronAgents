@@ -167,6 +167,19 @@
       "type": "boolean",
       "default": false,
       "description": "Show a Windows toast notification when the agent completes successfully."
+    },
+    "notificationSound": {
+      "type": "string",
+      "anyOf": [
+        {
+          "enum": ["Default", "IM", "Mail", "Reminder", "SMS", "Alarm", "Call", "None"]
+        },
+        {
+          "type": "string",
+          "minLength": 1
+        }
+      ],
+      "description": "Notification sound for this agent. Use a preset name (Default, IM, Mail, Reminder, SMS, Alarm, Call, None) or a file path to a custom .wav file. Alarm/Call variants (Alarm2–Alarm10, Call2–Call10) are also accepted. Only applies when notifyOnFailure or notifyOnSuccess is enabled and global notifications is true."
     }
   },
   "additionalProperties": false,
