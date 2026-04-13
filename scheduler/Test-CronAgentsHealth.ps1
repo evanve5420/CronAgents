@@ -95,8 +95,29 @@ function Test-TaskScheduler {
                 -Message 'Task has no triggers defined'
         }
 
+        # Validate both logon and periodic triggers are present
+        $hasLogon = $triggers | Where-Object {
+            $_ -is [CimInstance] -and $_.CimClass.CimClassName -eq 'MSFT_TaskLogonTrigger'
+        }
+        # Require a time trigger so a repeating logon trigger does not satisfy the watchdog check.
+        # PT15M must match the interval in Install-CronAgents.ps1 ($periodicTrigger).
+        $hasPeriodic = $triggers | Where-Object {
+            $_ -is [CimInstance] -and
+            $_.CimClass.CimClassName -eq 'MSFT_TaskTimeTrigger' -and
+            $_.Repetition -and
+            $_.Repetition.Interval -eq 'PT15M'
+        }
+
+        if (-not $hasLogon -or -not $hasPeriodic) {
+            $missing = @()
+            if (-not $hasLogon)    { $missing += 'logon' }
+            if (-not $hasPeriodic) { $missing += 'periodic (15-min watchdog)' }
+            return New-CheckResult -Name 'Task Scheduler' -Status 'Fail' `
+                -Message "Missing trigger(s): $($missing -join ', '). Re-run Install-CronAgents.ps1 to fix."
+        }
+
         return New-CheckResult -Name 'Task Scheduler' -Status 'Pass' `
-            -Message '1 task registered, definition matches'
+            -Message '1 task registered, definition and triggers match'
     }
     catch {
         return New-CheckResult -Name 'Task Scheduler' -Status 'Warn' `

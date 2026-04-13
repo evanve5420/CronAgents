@@ -373,11 +373,22 @@ if ($startupDelaySec -gt 0) {
 $script:lastCleanupDate = $null
 
 # -----------------------------------------------------------------------
+# Tick-level resilience — track consecutive tick failures so a transient
+# error (e.g. corrupted state file, temporary disk I/O error) doesn't
+# kill the scheduler permanently.  After $maxConsecutiveTickFailures the
+# process exits so the periodic watchdog trigger can restart it cleanly.
+# -----------------------------------------------------------------------
+$script:consecutiveTickFailures = 0
+$maxConsecutiveTickFailures     = 5
+
+# -----------------------------------------------------------------------
 # Main loop
 # -----------------------------------------------------------------------
 try {
     while ($script:running) {
         $tickStart = Get-Date
+
+        try {   # ── tick-level try/catch ──────────────────────────────
 
         # Begin collecting scheduler-error notifications for this tick.
         # Errors are queued and fired as a single summary toast at tick end.
@@ -389,6 +400,7 @@ try {
         $state = Get-AgentState -StateFile $stateFile
         if ($state.schedulerPaused) {
             Write-CronAgentsLog -Level 'info' -Message 'Scheduler paused — skipping tick'
+            $script:consecutiveTickFailures = 0
             Start-InterruptibleSleep -Seconds 60
             continue
         }
@@ -649,46 +661,74 @@ try {
             Complete-SchedulerErrorBatch -GlobalConfig $config
         } catch { <# best-effort #> }
 
-        # -----------------------------------------------------------
-        # Step 9: Sleep until next tick
-        # -----------------------------------------------------------
-        $agents = Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath
-        $state  = Get-AgentState -StateFile $stateFile
-        $now    = (Get-Date).ToUniversalTime()
-        $maxSleepSec = 3600  # Clamp to 1 hour max
+        # Tick completed successfully — reset consecutive failure counter.
+        $script:consecutiveTickFailures = 0
 
-        $nextDue = $null
-        foreach ($agent in $agents) {
-            $agentState = if ($state.agents.ContainsKey($agent.Id)) { $state.agents[$agent.Id] } else { $null }
-            if ($agentState -and $agentState.enabled -eq $false) { continue }
-            # Skip manual-only agents (no schedule) in next-due calculation
-            if ($null -eq $agent.Config.schedule) { continue }
+        }   # ── end tick-level try ────────────────────────────────
+        catch {
+            $script:consecutiveTickFailures++
+            Write-CronAgentsLog -Level 'error' -Message "Tick failed ($($script:consecutiveTickFailures)/$maxConsecutiveTickFailures): $_"
+            # Flush/clear the batch so the notification fires immediately
+            # instead of being silently dropped on the next tick.
+            try { Complete-SchedulerErrorBatch -GlobalConfig $config } catch { <# best-effort #> }
+            try {
+                Send-SchedulerErrorNotification -Operation 'Scheduler tick' `
+                    -ErrorMessage "Tick failure $($script:consecutiveTickFailures)/$($maxConsecutiveTickFailures): $_" `
+                    -GlobalConfig $config
+            } catch { <# best-effort #> }
 
-            $lastRun = $null
-            if ($agentState -and $agentState.lastRun) {
-                try { $lastRun = [datetime]::Parse($agentState.lastRun) } catch { }
-            }
-
-            $schedule = @{ type = $agent.Config.schedule.type }
-            if ($agent.Config.schedule.PSObject.Properties['every']) { $schedule['every'] = $agent.Config.schedule.every }
-            if ($agent.Config.schedule.PSObject.Properties['time'])  { $schedule['time']  = $agent.Config.schedule.time }
-            if ($agent.Config.schedule.PSObject.Properties['day'])   { $schedule['day']   = $agent.Config.schedule.day }
-
-            $agentNext = Get-NextRunTime -Schedule $schedule -LastRun $lastRun -Now $now
-            if ($null -eq $nextDue -or $agentNext -lt $nextDue) {
-                $nextDue = $agentNext
+            if ($script:consecutiveTickFailures -ge $maxConsecutiveTickFailures) {
+                Write-CronAgentsLog -Level 'error' -Message "Scheduler exceeded $maxConsecutiveTickFailures consecutive tick failures — exiting for watchdog restart."
+                break
             }
         }
 
-        $sleepSec = $maxSleepSec
-        if ($null -ne $nextDue) {
-            $delta = ($nextDue - $now).TotalSeconds
-            if ($delta -gt 0) {
-                $sleepSec = [Math]::Min([int][Math]::Ceiling($delta), $maxSleepSec)
+        # -----------------------------------------------------------
+        # Step 9: Sleep until next tick
+        # -----------------------------------------------------------
+        $sleepSec = 60  # Default fallback
+        try {
+            $agents = Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath
+            $state  = Get-AgentState -StateFile $stateFile
+            $now    = (Get-Date).ToUniversalTime()
+            $maxSleepSec = 3600  # Clamp to 1 hour max
+
+            $nextDue = $null
+            foreach ($agent in $agents) {
+                $agentState = if ($state.agents.ContainsKey($agent.Id)) { $state.agents[$agent.Id] } else { $null }
+                if ($agentState -and $agentState.enabled -eq $false) { continue }
+                # Skip manual-only agents (no schedule) in next-due calculation
+                if ($null -eq $agent.Config.schedule) { continue }
+
+                $lastRun = $null
+                if ($agentState -and $agentState.lastRun) {
+                    try { $lastRun = [datetime]::Parse($agentState.lastRun) } catch { }
+                }
+
+                $schedule = @{ type = $agent.Config.schedule.type }
+                if ($agent.Config.schedule.PSObject.Properties['every']) { $schedule['every'] = $agent.Config.schedule.every }
+                if ($agent.Config.schedule.PSObject.Properties['time'])  { $schedule['time']  = $agent.Config.schedule.time }
+                if ($agent.Config.schedule.PSObject.Properties['day'])   { $schedule['day']   = $agent.Config.schedule.day }
+
+                $agentNext = Get-NextRunTime -Schedule $schedule -LastRun $lastRun -Now $now
+                if ($null -eq $nextDue -or $agentNext -lt $nextDue) {
+                    $nextDue = $agentNext
+                }
+            }
+
+            if ($null -ne $nextDue) {
+                $delta = ($nextDue - $now).TotalSeconds
+                if ($delta -gt 0) {
+                    $sleepSec = [Math]::Min([int][Math]::Ceiling($delta), $maxSleepSec)
+                }
+                # else: already past due — keeps $sleepSec at 60s default for quick re-check
             }
             else {
-                $sleepSec = 60  # Already due — short sleep to re-check
+                $sleepSec = $maxSleepSec
             }
+        }
+        catch {
+            Write-CronAgentsLog -Level 'warn' -Message "Sleep calculation failed: $_ — using ${sleepSec}s fallback"
         }
 
         Write-CronAgentsLog -Level 'debug' -Message "Sleeping $sleepSec seconds until next tick"
