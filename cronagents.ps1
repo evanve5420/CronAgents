@@ -406,10 +406,30 @@ function Invoke-EvaluateCommand {
     foreach ($run in $pending) {
         $feedbackPath = Join-Path $run.RunDirectory 'feedback.md'
         Write-Host "  Evaluating: $($run.AgentId) ($($run.Timestamp.ToString('yyyy-MM-dd HH:mm')))" -ForegroundColor DarkCyan
+
+        # Parse feedback target and subagent manifest
+        $target = Get-FeedbackTarget -FeedbackPath $feedbackPath
+        $manifest = Read-SubagentManifest -RunDirectory $run.RunDirectory
+
+        # Build evaluator prompt with target context
+        $evalPrompt = "Process feedback for agent $($run.AgentId). " +
+                      "Feedback file: $feedbackPath. Run directory: $($run.RunDirectory)."
+        $contextParts = Build-FeedbackEvaluatorContext -FeedbackTarget $target -SubagentManifest $manifest
+        if ($contextParts.Count -gt 0) {
+            $evalPrompt += ' ' + ($contextParts -join '. ')
+        }
+
+        $agentsDir = Join-Path $PSScriptRoot 'scheduler' 'agents'
+
         try {
-            $prompt = "Evaluate the following agent feedback and update the agent configuration or prompt accordingly. " +
-                      "Agent: $($run.AgentId). Feedback file: $feedbackPath. Run directory: $($run.RunDirectory)."
-            $copilotArgs = @('--non-interactive', '-m', $prompt)
+            $copilotArgs = @(
+                "--agent=feedback-evaluator"
+                "-p"
+                $evalPrompt
+                "--add-dir=$agentsDir"
+                "--allow-all-tools"
+                "--no-ask-user"
+            )
             & $copilotPath @copilotArgs 2>&1 | Out-Null
 
             # Mark as processed
