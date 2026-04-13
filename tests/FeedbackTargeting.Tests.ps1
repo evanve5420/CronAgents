@@ -230,6 +230,20 @@ Invalid agent name.
         $result.HasTarget | Should -Be $false
         $result.Agent | Should -BeNullOrEmpty
     }
+
+    It 'Handles empty ## Target block (immediately followed by next heading)' {
+        $fbPath = Join-Path $script:tempDir 'feedback.md'
+        $content = @"
+## Target
+## Feedback
+Just feedback, target section is empty.
+"@
+        Set-Content -LiteralPath $fbPath -Value $content -Encoding UTF8
+
+        $result = Get-FeedbackTarget -FeedbackPath $fbPath
+        $result.HasTarget | Should -Be $false
+        $result.FeedbackText | Should -BeLike '*Just feedback*'
+    }
 }
 
 Describe 'Read-SubagentManifest' {
@@ -323,6 +337,43 @@ Describe 'Read-SubagentManifest' {
         $result | Should -HaveCount 1
         $result[0].Profile | Should -BeNullOrEmpty
         $result[0].Skills | Should -HaveCount 0
+    }
+
+    It 'Skips null entries in manifest array' {
+        $json = '[{"name":"good","agent":"good-agent"},null,{"name":"also-good","agent":"ok"}]'
+        Set-Content -LiteralPath (Join-Path $script:tempDir 'subagents.json') -Value $json -Encoding UTF8
+
+        $result = @(Read-SubagentManifest -RunDirectory $script:tempDir)
+        $result | Should -HaveCount 2
+        $result[0].Name | Should -Be 'good'
+        $result[1].Name | Should -Be 'also-good'
+    }
+
+    It 'Rejects unsafe profile paths with traversal' {
+        $manifest = @(
+            @{ name = 'safe'; agent = 'safe-agent'; profile = '.github/agents/safe.agent.md' }
+            @{ name = 'unsafe'; agent = 'unsafe-agent'; profile = '../../etc/passwd' }
+        )
+        $manifest | ConvertTo-Json -Depth 5 |
+            Set-Content -LiteralPath (Join-Path $script:tempDir 'subagents.json') -Encoding UTF8
+
+        $result = @(Read-SubagentManifest -RunDirectory $script:tempDir)
+        $result | Should -HaveCount 2
+        $result[0].Profile | Should -Be '.github/agents/safe.agent.md'
+        $result[1].Profile | Should -BeNullOrEmpty
+    }
+
+    It 'Rejects unsafe skill paths' {
+        $manifest = @(
+            @{ name = 'mixed'; agent = 'mixed-agent'; skills = @('.github/skills/ok/SKILL.md', '/etc/passwd', '../traversal/SKILL.md') }
+        )
+        $manifest | ConvertTo-Json -Depth 5 |
+            Set-Content -LiteralPath (Join-Path $script:tempDir 'subagents.json') -Encoding UTF8
+
+        $result = @(Read-SubagentManifest -RunDirectory $script:tempDir)
+        $result | Should -HaveCount 1
+        $result[0].Skills | Should -HaveCount 1
+        $result[0].Skills[0] | Should -Be '.github/skills/ok/SKILL.md'
     }
 }
 

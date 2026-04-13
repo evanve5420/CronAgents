@@ -568,8 +568,15 @@ function Get-FeedbackTarget {
         }
     }
 
-    # Extract target block lines
-    $targetBlock = @($contentLines[($targetIdx + 1)..($targetEnd - 1)])
+    # Extract target block lines (guard against empty/descending range)
+    $targetStart = $targetIdx + 1
+    $targetLast = $targetEnd - 1
+    if ($targetStart -le $targetLast) {
+        $targetBlock = @($contentLines[$targetStart..$targetLast])
+    }
+    else {
+        $targetBlock = @()
+    }
 
     $agent = $null
     $files = [System.Collections.Generic.List[string]]::new()
@@ -684,6 +691,8 @@ function Read-SubagentManifest {
 
     $results = [System.Collections.Generic.List[PSCustomObject]]::new()
     foreach ($entry in $raw) {
+        if ($null -eq $entry) { continue }
+
         # Require at least name and agent
         if (-not $entry.PSObject.Properties['name'] -or -not $entry.PSObject.Properties['agent']) {
             Write-CronAgentsLog -Level 'warn' -Message "Skipping subagent manifest entry missing name or agent in: $RunDirectory"
@@ -699,11 +708,34 @@ function Read-SubagentManifest {
             continue
         }
 
+        # Validate profile and skills paths (reject traversal and absolute paths)
+        $profileStr = $null
+        if ($entry.PSObject.Properties['profile']) {
+            $p = [string]$entry.profile
+            if ($p -notmatch '(^|[\\/])\.\.($|[\\/])' -and -not [System.IO.Path]::IsPathRooted($p)) {
+                $profileStr = $p
+            }
+            else {
+                Write-CronAgentsLog -Level 'warn' -Message "Ignoring suspicious profile path in subagent manifest: '$p'"
+            }
+        }
+
+        $skillsList = @()
+        if ($entry.PSObject.Properties['skills']) {
+            $skillsList = @($entry.skills | Where-Object { $_ -is [string] } | Where-Object {
+                $safe = $_ -notmatch '(^|[\\/])\.\.($|[\\/])' -and -not [System.IO.Path]::IsPathRooted($_)
+                if (-not $safe) {
+                    Write-CronAgentsLog -Level 'warn' -Message "Ignoring suspicious skill path in subagent manifest: '$_'"
+                }
+                $safe
+            })
+        }
+
         $results.Add([PSCustomObject]@{
             Name    = $nameStr
             Agent   = $agentStr
-            Profile = if ($entry.PSObject.Properties['profile']) { [string]$entry.profile } else { $null }
-            Skills  = if ($entry.PSObject.Properties['skills']) { @($entry.skills | Where-Object { $_ -is [string] }) } else { @() }
+            Profile = $profileStr
+            Skills  = $skillsList
         })
     }
 
