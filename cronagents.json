@@ -2,7 +2,7 @@
   "$schema": "./cronagents.schema.json",
   "autoFeedback": false,
   "maxRunHistory": 50,
-  "copilotPath": "copilot",
+  "copilotPath": "copilot.cmd",
   "retentionDays": 14,
   "startupDelay": "5m",
   "logLevel": "info",
