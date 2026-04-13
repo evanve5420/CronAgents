@@ -521,7 +521,6 @@ try {
         $copilotPath   = if ($GlobalConfig.copilotPath) { $GlobalConfig.copilotPath } else { 'copilot' }
         $summaryFile   = Join-Path $runDir 'summary.md'
         $summaryShare  = Join-Path $runDir 'summarizer-session.md'
-        $agentsDir     = Join-Path $RepoRoot 'scheduler' 'agents'
         $summaryPrompt = "Summarize the agent run in directory: $runDir. Read output.md and meta.json."
 
         $summaryArgs = @(
@@ -529,7 +528,7 @@ try {
             '-p'
             $summaryPrompt
             '--silent'
-            "--add-dir=$agentsDir"
+            "--add-dir=$runDir"
             '--allow-all-tools'
             "--share=$summaryShare"
             '--no-ask-user'
@@ -555,8 +554,10 @@ try {
             Write-CronAgentsLog -Level 'warn' -Message "Failed to create summarizer copilot home: $_ — using default."
         }
 
+        # Summarizer runs from $RepoRoot (infra repo) so the CLI discovers
+        # run-summarizer from .github/agents/ — not from the personal repo.
         $sumPsi = New-CommandProcessStartInfo -CommandLine $copilotPath `
-            -WorkingDirectory $(if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }) `
+            -WorkingDirectory $RepoRoot `
             -Arguments $summaryArgs `
             -EnvironmentOverrides $(if ($sumEnv.Count -gt 0) { $sumEnv } else { $null })
 
