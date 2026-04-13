@@ -705,7 +705,7 @@ function renderRuns() {
 
   // If the user is selecting text or typing feedback, skip the re-render
   // entirely so we don't disrupt their interaction (fixes #73).
-  if (isUserInteractingWithDetail(openDetail)) return;
+  if (isUserInteracting(openDetail, true)) return;
 
   let savedFocus = null;
   let savedScrolls = [];
@@ -832,24 +832,25 @@ function updateSelectionUI() {
 }
 
 // ── Detail interaction detection (fixes #73) ────────────────────
-// When the user is selecting text, scrolling output, or typing feedback
-// in the detail panel, skip re-rendering to avoid clearing their selection
-// or resetting scroll position.
-function isUserInteractingWithDetail(detailRow) {
-  if (!detailRow) return false;
-  // Text selection within or intersecting the detail row
+// When the user is selecting text or focused on a control inside a
+// container, skip re-rendering to avoid clearing their selection,
+// resetting scroll position, or wiping in-progress input.
+// When editableOnly is true only editable controls (INPUT, TEXTAREA,
+// SELECT, contentEditable) count — use this for panels that contain
+// <summary> toggles which retain focus and would block refresh
+// indefinitely.  When false, *any* focused element counts (e.g. a
+// button the user just clicked to submit a form).
+function isUserInteracting(container, editableOnly = false) {
+  if (!container) return false;
   const sel = window.getSelection();
   if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
     try {
-      const range = sel.getRangeAt(0);
-      if (range.intersectsNode(detailRow)) {
-        return true;
-      }
+      if (sel.getRangeAt(0).intersectsNode(container)) return true;
     } catch (e) { /* range may be detached */ }
   }
-  // Focus on an editable control (e.g. feedback textarea)
   const active = document.activeElement;
-  if (active && detailRow.contains(active)) {
+  if (active && container.contains(active)) {
+    if (!editableOnly) return true;
     const tag = active.tagName;
     if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT' || active.isContentEditable) {
       return true;
@@ -975,6 +976,10 @@ function renderQuestions() {
   badge.textContent = questions.length > 0 ? questions.length : '';
   const questionsTab = document.querySelector('[data-tab="questions"]');
   questionsTab.classList.toggle('has-questions', questions.length > 0);
+
+  // Skip DOM re-render while the user is typing a custom answer or
+  // selecting text — the cached data renders on the next cycle (fixes #84).
+  if (isUserInteracting(container)) return;
 
   if (questions.length === 0) {
     container.innerHTML = '<div class="empty-state">No pending questions</div>';
