@@ -968,6 +968,24 @@ async function showRunDetail(runId) {
 }
 
 // ── Render: Questions ───────────────────────────────────────────
+function isUserInteractingWithQuestions(container) {
+  if (!container) return false;
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+    try {
+      if (sel.getRangeAt(0).intersectsNode(container)) return true;
+    } catch (e) { /* range may be detached */ }
+  }
+  const active = document.activeElement;
+  if (active && container.contains(active)) {
+    const tag = active.tagName;
+    if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT' || active.isContentEditable) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function renderQuestions() {
   const container = document.getElementById('questions-list');
   const badge = document.getElementById('question-badge');
@@ -975,6 +993,10 @@ function renderQuestions() {
   badge.textContent = questions.length > 0 ? questions.length : '';
   const questionsTab = document.querySelector('[data-tab="questions"]');
   questionsTab.classList.toggle('has-questions', questions.length > 0);
+
+  // Skip DOM re-render while the user is typing a custom answer or
+  // selecting text — the cached data renders on the next cycle (fixes #84).
+  if (isUserInteractingWithQuestions(container)) return;
 
   if (questions.length === 0) {
     container.innerHTML = '<div class="empty-state">No pending questions</div>';
