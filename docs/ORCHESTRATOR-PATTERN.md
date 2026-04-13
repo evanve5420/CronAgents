@@ -126,3 +126,63 @@ event stream confirms:
 
 No scheduler or schema changes are required — the existing `--allow-all-tools` flag
 and `agent` tool work out of the box.
+
+## Subagent manifest for feedback targeting
+
+When an orchestrator spawns subagents, it can write a `subagents.json` file into the
+run directory to declare which subagents it used. This enables the feedback evaluator
+to resolve targeted feedback to the correct agent definition files.
+
+### Manifest format
+
+```json
+[
+  {
+    "name": "worker",
+    "agent": "worker",
+    "profile": ".github/agents/worker.agent.md",
+    "skills": [".github/skills/worker/SKILL.md"]
+  },
+  {
+    "name": "reviewer",
+    "agent": "code-reviewer",
+    "profile": ".github/agents/code-reviewer.agent.md",
+    "skills": []
+  }
+]
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Short name used in feedback targeting (`agent: worker`) |
+| `agent` | Yes | Agent identifier (matches the `--agent` flag or `.agent.md` stem) |
+| `profile` | No | Path to the agent's `.agent.md` definition file |
+| `skills` | No | Array of paths to the agent's `SKILL.md` files |
+
+### How to emit the manifest
+
+Add instructions to your orchestrator's system prompt to write `subagents.json` after
+all subagents complete. The orchestrator knows which subagents it spawned, so it can
+build the manifest from its own task definitions.
+
+Example instruction to add to the orchestrator's `.agent.md`:
+
+```markdown
+After all subagents complete, write a `subagents.json` file to the current
+working directory listing each subagent you spawned. Format:
+
+\`\`\`json
+[
+  { "name": "<short-name>", "agent": "<agent-id>", "profile": "<path-to-agent.md>", "skills": ["<path-to-SKILL.md>"] }
+]
+\`\`\`
+```
+
+### How feedback targeting uses the manifest
+
+When a human writes feedback with `## Target` and `agent: worker`, the feedback
+evaluator resolves `worker` against the manifest to find the agent's profile and
+skill files. This eliminates guesswork and ensures feedback edits the correct files.
+
+See [Feedback System — Targeting](../guide/feedback-system.md#targeting-feedback-for-orchestrator-subagents) for the
+full targeting workflow.

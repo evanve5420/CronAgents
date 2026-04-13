@@ -247,3 +247,97 @@ The interactive menu option **5) Submit feedback** also opens pending feedback f
 - **Iterate.** If the first round of feedback didn't fully fix the issue, write more feedback on the next run. Agents improve incrementally.
 - **Use auto-feedback for fast iteration.** Enable `autoFeedback`, run the agent, write feedback, wait ~60 seconds, then run again to see the improvement.
 - **Retention protects feedback.** Run directories with unprocessed feedback are never deleted by retention cleanup, so you won't lose pending feedback.
+
+---
+
+## Targeting feedback for orchestrator subagents
+
+When an orchestrator agent spawns subagents, you may want feedback to apply to a specific subagent rather than the orchestrator itself. Use the `## Target` section in `feedback.md` to make this explicit.
+
+### Feedback format with targeting
+
+```markdown
+## Target
+agent: worker
+files:
+- .github/agents/worker.agent.md
+- .github/skills/worker/SKILL.md
+
+## Feedback
+The worker should validate inputs before editing files.
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `agent:` | Yes (in target) | Name of the subagent to target |
+| `files:` | No | Explicit list of files the evaluator should edit. Overrides manifest lookup. |
+
+The `## Feedback` heading is optional but recommended when using targeting — it clearly separates the target metadata from the actual feedback text.
+
+### How targeting is resolved
+
+1. **Explicit target with `files:`** — The evaluator edits only those files. No guessing.
+2. **Explicit target with `agent:` only** — The evaluator looks up the agent name in `subagents.json` (if present in the run directory) to find the agent's profile and skill files.
+3. **No target, single-agent run** — Feedback applies to the agent that ran (current default behavior).
+4. **No target, orchestrator run** — The evaluator attempts to infer the target from the feedback text. If inference is ambiguous, no edits are made and a note is written to `feedback-result.md`.
+
+### Subagent manifest
+
+Orchestrator agents can write a `subagents.json` file into the run directory to declare which subagents they spawned. This enables the evaluator to resolve `agent: <name>` to concrete file paths.
+
+```json
+[
+  {
+    "name": "worker",
+    "agent": "worker",
+    "profile": ".github/agents/worker.agent.md",
+    "skills": [".github/skills/worker/SKILL.md"]
+  }
+]
+```
+
+See [Orchestrator Pattern](../docs/ORCHESTRATOR-PATTERN.md) for how to configure your orchestrator to emit this manifest.
+
+### Examples
+
+**Feedback for the orchestrator itself (no targeting needed):**
+
+```markdown
+The orchestrator should process modules in alphabetical order.
+```
+
+**Feedback for a specific subagent:**
+
+```markdown
+## Target
+agent: security-scanner
+
+## Feedback
+Stop flagging test fixtures as security issues. Only scan src/ files.
+```
+
+**Feedback for a subagent with explicit files:**
+
+```markdown
+## Target
+agent: docs-generator
+files:
+- .github/agents/docs-generator.agent.md
+
+## Feedback
+Include API response examples in the generated documentation.
+```
+
+### What happens with ambiguous feedback
+
+If feedback for an orchestrator run does not include a `## Target` section and the evaluator cannot determine which subagent it applies to, the evaluator writes a no-op result:
+
+```markdown
+## No Changes Made
+
+**Reason**: Feedback target is ambiguous. The orchestrator spawned multiple
+subagents (worker, reviewer, scanner) and the feedback does not clearly
+identify which one it applies to.
+
+Please re-submit with an explicit ## Target section naming the agent.
+```

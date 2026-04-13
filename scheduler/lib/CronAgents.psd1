@@ -54,6 +54,9 @@
         'Test-FeedbackPresent',
         'Resolve-CronAgentsRunPath',
         'Test-SafeRunId',
+        'Get-FeedbackTarget',
+        'Read-SubagentManifest',
+        'Build-FeedbackEvaluatorContext',
         # PersonalRepo
         'ConvertTo-Slug',
         'Resolve-GitHubHandle',

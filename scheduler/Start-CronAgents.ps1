@@ -275,12 +275,24 @@ function Invoke-FeedbackSweep {
         $runDir = $run.RunDirectory
         Write-CronAgentsLog -Level 'info' -Message "Processing feedback for run: $runDir"
 
+        # Parse feedback target and subagent manifest
+        $feedbackPath = Join-Path $runDir 'feedback.md'
+        $target = Get-FeedbackTarget -FeedbackPath $feedbackPath
+        $manifest = Read-SubagentManifest -RunDirectory $runDir
+
+        # Build evaluator prompt with target context
+        $evalPrompt = "Process feedback for run in: $runDir"
+        $contextParts = Build-FeedbackEvaluatorContext -FeedbackTarget $target -SubagentManifest $manifest
+        if ($contextParts.Count -gt 0) {
+            $evalPrompt += '. ' + ($contextParts -join '. ')
+        }
+
         try {
             $evalSharePath = Join-Path $runDir 'evaluator-session.md'
             $copilotArgs = @(
                 "--agent=feedback-evaluator"
                 "-p"
-                "Process feedback for run in: $runDir"
+                $evalPrompt
                 "--silent"
                 "--add-dir=$agentsDir"
                 "--allow-all-tools"

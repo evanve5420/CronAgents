@@ -504,3 +504,249 @@ function Clear-RunHistory {
         Errors       = [string[]]$errors.ToArray()
     }
 }
+
+# -------------------------------------------------------------------
+# Get-FeedbackTarget — parse explicit target from feedback.md
+# -------------------------------------------------------------------
+function Get-FeedbackTarget {
+    <#
+    .SYNOPSIS
+        Parses the ## Target section from a feedback.md file.
+    .DESCRIPTION
+        Returns a structured object with the target agent name, file list,
+        and the remaining feedback text. When no ## Target section is
+        present, HasTarget is $false and FeedbackText contains the full
+        non-comment content.
+    .PARAMETER FeedbackPath
+        Path to the feedback.md file.
+    .OUTPUTS
+        PSCustomObject with HasTarget, Agent, Files, FeedbackText.
+    #>
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$FeedbackPath
+    )
+
+    if (-not (Test-Path -LiteralPath $FeedbackPath)) {
+        return [PSCustomObject]@{ HasTarget = $false; Agent = $null; Files = @(); FeedbackText = '' }
+    }
+
+    $lines = @(Get-Content -LiteralPath $FeedbackPath -Encoding UTF8 -ErrorAction SilentlyContinue)
+    if (-not $lines) {
+        return [PSCustomObject]@{ HasTarget = $false; Agent = $null; Files = @(); FeedbackText = '' }
+    }
+
+    # Strip HTML comment lines for content extraction
+    $contentLines = @($lines | Where-Object { $_ -notmatch '^\s*<!--.*-->\s*$' })
+
+    # Locate ## Target heading
+    $targetIdx = -1
+    for ($i = 0; $i -lt $contentLines.Count; $i++) {
+        if ($contentLines[$i] -match '^\s*##\s+Target\s*$') {
+            $targetIdx = $i
+            break
+        }
+    }
+
+    if ($targetIdx -lt 0) {
+        return [PSCustomObject]@{
+            HasTarget    = $false
+            Agent        = $null
+            Files        = @()
+            FeedbackText = ($contentLines -join "`n").Trim()
+        }
+    }
+
+    # Find end of target section (next ## heading or end of content)
+    $targetEnd = $contentLines.Count
+    for ($j = $targetIdx + 1; $j -lt $contentLines.Count; $j++) {
+        if ($contentLines[$j] -match '^\s*##\s+') {
+            $targetEnd = $j
+            break
+        }
+    }
+
+    # Extract target block lines
+    $targetBlock = @($contentLines[($targetIdx + 1)..($targetEnd - 1)])
+
+    $agent = $null
+    $files = [System.Collections.Generic.List[string]]::new()
+    $inFilesList = $false
+
+    foreach ($line in $targetBlock) {
+        if ($line -match '^\s*agent\s*:\s*(.+)$') {
+            $agent = $Matches[1].Trim()
+            $inFilesList = $false
+            continue
+        }
+        # files: with inline value on the same line
+        if ($line -match '^\s*files\s*:\s+(.+)$') {
+            $filePath = $Matches[1].Trim()
+            if ($filePath -notmatch '(^|[\\/])\.\.($|[\\/])' -and -not [System.IO.Path]::IsPathRooted($filePath)) {
+                $files.Add($filePath)
+            }
+            else {
+                Write-CronAgentsLog -Level 'warn' -Message "Ignoring suspicious file path in feedback target: '$filePath'"
+            }
+            $inFilesList = $false
+            continue
+        }
+        if ($line -match '^\s*files\s*:\s*$') {
+            $inFilesList = $true
+            continue
+        }
+        if ($inFilesList -and $line -match '^\s*-\s+(.+)$') {
+            $filePath = $Matches[1].Trim()
+            if ($filePath -notmatch '(^|[\\/])\.\.($|[\\/])' -and -not [System.IO.Path]::IsPathRooted($filePath)) {
+                $files.Add($filePath)
+            }
+            else {
+                Write-CronAgentsLog -Level 'warn' -Message "Ignoring suspicious file path in feedback target: '$filePath'"
+            }
+            continue
+        }
+        # Non-matching line ends the files list
+        if ($inFilesList -and $line.Trim() -ne '') {
+            $inFilesList = $false
+        }
+    }
+
+    # Validate agent name using the shared safe-identifier check
+    if ($agent -and -not (Test-CronAgentsSafeIdentifier -Value $agent)) {
+        Write-CronAgentsLog -Level 'warn' -Message "Feedback target has invalid agent name '$agent' — ignoring target"
+        $agent = $null
+    }
+
+    # Collect feedback text (everything outside the target section)
+    $feedbackParts = @()
+    if ($targetIdx -gt 0) {
+        $feedbackParts += $contentLines[0..($targetIdx - 1)]
+    }
+    if ($targetEnd -lt $contentLines.Count) {
+        $feedbackParts += $contentLines[$targetEnd..($contentLines.Count - 1)]
+    }
+
+    # If there's a ## Feedback heading, strip it from the text
+    $feedbackText = ($feedbackParts -join "`n") -replace '(?m)^\s*##\s+Feedback\s*$', ''
+    $feedbackText = $feedbackText.Trim()
+
+    return [PSCustomObject]@{
+        HasTarget    = ($null -ne $agent)
+        Agent        = $agent
+        Files        = [string[]]$files.ToArray()
+        FeedbackText = $feedbackText
+    }
+}
+
+# -------------------------------------------------------------------
+# Read-SubagentManifest — read subagents.json from a run directory
+# -------------------------------------------------------------------
+function Read-SubagentManifest {
+    <#
+    .SYNOPSIS
+        Reads the subagents.json manifest from a run directory.
+    .DESCRIPTION
+        Orchestrator agents can write a subagents.json file into the run
+        directory declaring the subagents they spawned. This function
+        reads and validates that manifest.
+    .PARAMETER RunDirectory
+        Path to the run directory containing subagents.json.
+    .OUTPUTS
+        Array of PSCustomObjects with Name, Agent, Profile, Skills.
+        Returns empty array when no manifest exists or on parse failure.
+    #>
+    [CmdletBinding()]
+    [OutputType([System.Object[]])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RunDirectory
+    )
+
+    $manifestPath = Join-Path $RunDirectory 'subagents.json'
+    if (-not (Test-Path -LiteralPath $manifestPath)) {
+        return @()
+    }
+
+    try {
+        $raw = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    catch {
+        Write-CronAgentsLog -Level 'warn' -Message "Failed to parse subagents.json in: $RunDirectory"
+        return @()
+    }
+
+    # Normalise to array (single object or array input)
+    if ($raw -isnot [System.Array]) {
+        $raw = @($raw)
+    }
+
+    $results = [System.Collections.Generic.List[PSCustomObject]]::new()
+    foreach ($entry in $raw) {
+        # Require at least name and agent
+        if (-not $entry.PSObject.Properties['name'] -or -not $entry.PSObject.Properties['agent']) {
+            Write-CronAgentsLog -Level 'warn' -Message "Skipping subagent manifest entry missing name or agent in: $RunDirectory"
+            continue
+        }
+
+        $nameStr  = [string]$entry.name
+        $agentStr = [string]$entry.agent
+
+        # Validate name/agent as safe identifiers
+        if (-not (Test-CronAgentsSafeIdentifier -Value $nameStr) -or -not (Test-CronAgentsSafeIdentifier -Value $agentStr)) {
+            Write-CronAgentsLog -Level 'warn' -Message "Subagent entry has invalid name/agent value — skipping"
+            continue
+        }
+
+        $results.Add([PSCustomObject]@{
+            Name    = $nameStr
+            Agent   = $agentStr
+            Profile = if ($entry.PSObject.Properties['profile']) { [string]$entry.profile } else { $null }
+            Skills  = if ($entry.PSObject.Properties['skills']) { @($entry.skills | Where-Object { $_ -is [string] }) } else { @() }
+        })
+    }
+
+    return @($results.ToArray())
+}
+
+# -------------------------------------------------------------------
+# Build-FeedbackEvaluatorContext — shared prompt context for targeting
+# -------------------------------------------------------------------
+function Build-FeedbackEvaluatorContext {
+    <#
+    .SYNOPSIS
+        Builds prompt context strings for the feedback evaluator from
+        parsed target and manifest data.
+    .PARAMETER FeedbackTarget
+        PSCustomObject from Get-FeedbackTarget.
+    .PARAMETER SubagentManifest
+        Array from Read-SubagentManifest.
+    .OUTPUTS
+        String array of context fragments to append to the evaluator prompt.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)]
+        [PSCustomObject]$FeedbackTarget,
+
+        [System.Object[]]$SubagentManifest = @()
+    )
+
+    $parts = [System.Collections.Generic.List[string]]::new()
+
+    if ($FeedbackTarget.HasTarget) {
+        $parts.Add("Feedback target: agent=$($FeedbackTarget.Agent)")
+        if ($FeedbackTarget.Files.Count -gt 0) {
+            $parts.Add("Target files: $($FeedbackTarget.Files -join ', ')")
+        }
+    }
+
+    if ($SubagentManifest.Count -gt 0) {
+        $manifestJson = $SubagentManifest | ConvertTo-Json -Depth 5 -Compress
+        $parts.Add("Subagent manifest: $manifestJson")
+    }
+
+    return [string[]]$parts.ToArray()
+}
