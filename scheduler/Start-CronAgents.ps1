@@ -261,12 +261,12 @@ function Invoke-FeedbackSweep {
     param(
         [string]$RunsRoot,
         [string]$CopilotPath,
+        [string]$PersonalRepoPath,
         [string]$RepoRoot,
         [bool]$AutoCommitFeedback
     )
 
     $history = Get-RunHistory -RunsRoot $RunsRoot
-    $agentsDir = Join-Path $RepoRoot 'scheduler' 'agents'
     foreach ($run in $history) {
         if (-not $script:running) { break }
         if (-not $run.HasFeedback) { continue }
@@ -294,13 +294,18 @@ function Invoke-FeedbackSweep {
                 "-p"
                 $evalPrompt
                 "--silent"
-                "--add-dir=$agentsDir"
+                "--add-dir=$runDir"
+                "--add-dir=$PersonalRepoPath"
                 "--allow-all-tools"
                 "--no-ask-user"
                 "--share=$evalSharePath"
             )
+            if (-not $RepoRoot) { throw "RepoRoot is required for feedback evaluator CWD" }
+            # Run from infra repo so the CLI discovers feedback-evaluator from .github/agents/
             Invoke-WithSchedulerCopilotEnv -ScriptBlock {
-                & $CopilotPath @copilotArgs 2>&1 | Out-Null
+                Push-Location $RepoRoot
+                try { & $CopilotPath @copilotArgs 2>&1 | Out-Null }
+                finally { Pop-Location }
             }
             Write-CronAgentsLog -Level 'info' -Message "Feedback evaluator completed for: $runDir"
         }
@@ -332,7 +337,7 @@ function Invoke-FeedbackSweep {
 
         if ($AutoCommitFeedback) {
             try {
-                New-FeedbackCommit -RepoRoot $RepoRoot `
+                New-FeedbackCommit -RepoRoot $PersonalRepoPath `
                     -AgentId $run.AgentId `
                     -Summary "Processed feedback" `
                     -ChangedFiles @($runDir)
@@ -395,7 +400,8 @@ try {
             try {
                 Invoke-FeedbackSweep -RunsRoot $runsRoot `
                     -CopilotPath $config.copilotPath `
-                    -RepoRoot $personalRepoPath `
+                    -PersonalRepoPath $personalRepoPath `
+                    -RepoRoot $RepoRoot `
                     -AutoCommitFeedback $config.personalRepo.autoCommitFeedback
             }
             catch {
@@ -545,20 +551,22 @@ try {
                         if ($latestRun -and $latestRun.Count -gt 0 -and $latestRun[0].HasFeedback -and -not $latestRun[0].FeedbackProcessed) {
                             $runDir = $latestRun[0].RunDirectory
                             Write-CronAgentsLog -Level 'info' -Message "Running feedback evaluator for agent '$agentId' run: $runDir"
-                            $evalAgentsDir  = Join-Path $RepoRoot 'scheduler' 'agents'
                             $evalSharePath  = Join-Path $runDir 'evaluator-session.md'
                             $copilotArgs = @(
                                 "--agent=feedback-evaluator"
                                 "-p"
                                 "Process feedback for run in: $runDir"
                                 "--silent"
-                                "--add-dir=$evalAgentsDir"
+                                "--add-dir=$runDir"
+                                "--add-dir=$personalRepoPath"
                                 "--allow-all-tools"
                                 "--no-ask-user"
                                 "--share=$evalSharePath"
                             )
                             Invoke-WithSchedulerCopilotEnv -ScriptBlock {
-                                & $config.copilotPath @copilotArgs 2>&1 | Out-Null
+                                Push-Location $RepoRoot
+                                try { & $config.copilotPath @copilotArgs 2>&1 | Out-Null }
+                                finally { Pop-Location }
                             }
 
                             # Mark processed

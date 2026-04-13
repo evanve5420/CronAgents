@@ -17,7 +17,7 @@ Personal repo (~/.cronagents/)  ← Your agents, registrations, runtime state
 | Scheduler runtime (`scheduler/`, `cronagents.ps1`) | Infra repo | Yes |
 | Global config (`cronagents.json`) | Infra repo (base) + personal repo (overrides) | Yes |
 | Schemas (`cronagents.schema.json`, etc.) | Infra repo | Yes |
-| Scaffold agents (feedback-evaluator, run-summarizer) | Infra repo (`scheduler/agents/`) | Yes |
+| Scaffold agents (feedback-evaluator, run-summarizer) | Infra repo (`.github/agents/`) | Yes |
 | Your workload agents (`.github/agents/`, `.cronagents/agents/`) | Personal repo (`~/.cronagents/`) | Yes |
 | Skills for your agents (`.github/skills/`) | Personal repo (`~/.cronagents/`) | Yes |
 | Runtime data (`.cronstate/`) | Personal repo | Gitignored |

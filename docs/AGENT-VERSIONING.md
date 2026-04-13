@@ -33,7 +33,7 @@ Infra repo (shared)                 ← Scheduler code, templates, schemas, docs
   └── cronagents.json               ← Personal config overrides
 ```
 
-- The **infra repo** contains all shared runtime code (`scheduler/`, `cronagents.ps1`, configs, templates, tests, docs) plus scaffold-internal agents (`scheduler/agents/`). No user-specific agent definitions.
+- The **infra repo** contains all shared runtime code (`scheduler/`, `cronagents.ps1`, configs, templates, tests, docs) plus scaffold-internal agents (`.github/agents/`). No user-specific agent definitions.
 - The **personal repo** (`~/.cronagents/`) is a standalone git repository containing the user's agent profiles, registrations, skills, and runtime state. It is completely independent of the infra repo.
 - No branches, no sync, no merge conflicts between shared code and personal agents.
 
@@ -43,7 +43,7 @@ Infra repo (shared)                 ← Scheduler code, templates, schemas, docs
 |---------|----------|----------|
 | Scaffold runtime (`scheduler/`, `cronagents.ps1`, etc.) | Infra repo | Yes |
 | Global config (`cronagents.json`) | Infra repo (base) + personal repo (overrides) | Yes |
-| Scaffold agents (feedback-evaluator, run-summarizer) | Infra repo (`scheduler/agents/`) | Yes |
+| Scaffold agents (feedback-evaluator, run-summarizer) | Infra repo (`.github/agents/`) | Yes |
 | Templates/examples | Infra repo (`templates/`) | Yes |
 | Tests, docs, config schemas | Infra repo | Yes |
 | User workload agents (`.github/agents/`, `.cronagents/agents/`) | Personal repo | Yes |
