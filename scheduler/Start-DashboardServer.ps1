@@ -374,7 +374,8 @@ function script:Send-JsonResponse {
     if ($Body -is [System.Array] -and $Body.Count -eq 0) {
         $json = '[]'
     } else {
-        $json = $Body | ConvertTo-Json -Depth 10 -Compress
+        # Use -InputObject to avoid pipeline unwrapping single-element arrays
+        $json = ConvertTo-Json -InputObject $Body -Depth 10 -Compress
         if ([string]::IsNullOrEmpty($json)) { $json = 'null' }
     }
     $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
