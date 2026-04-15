@@ -6,6 +6,7 @@
 BeforeAll {
     $repoRoot = Split-Path $PSScriptRoot -Parent
     Import-Module (Join-Path $repoRoot 'scheduler/lib/CronAgents.psd1') -Force
+    Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
 
     $script:DashboardScript = Join-Path $repoRoot 'scheduler\Update-Dashboard.ps1'
 
@@ -59,18 +60,6 @@ BeforeAll {
         }
 
         return $runDir
-    }
-
-    function New-TestAgentRegistration {
-        param(
-            [string]$RepoRoot,
-            [string]$AgentId,
-            [string]$Name
-        )
-        $agentsDir = Join-Path $RepoRoot '.cronagents' 'agents'
-        New-Item -Path $agentsDir -ItemType Directory -Force | Out-Null
-        $config = [ordered]@{ name = if ($Name) { $Name } else { $AgentId }; prompt = 'test' }
-        $config | ConvertTo-Json | Set-Content -Path (Join-Path $agentsDir "$AgentId.agent-registration.json") -Encoding UTF8
     }
 }
 

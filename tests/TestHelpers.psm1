@@ -337,6 +337,32 @@ function New-TestRunDirectory {
     }
 }
 
+function New-TestAgentRegistration {
+    <#
+    .SYNOPSIS
+        Creates a minimal agent registration file under a given repo root.
+        Lighter-weight than New-TestAgentConfig — does not require a TestEnv
+        object, only a repo root path. Useful for tests that create ad-hoc
+        directory structures instead of using New-TestEnvironment.
+    .PARAMETER RepoRoot
+        Path to the test repository root.
+    .PARAMETER AgentId
+        Identifier used as the registration filename stem.
+    .PARAMETER Name
+        Optional display name. Defaults to AgentId.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$RepoRoot,
+        [Parameter(Mandatory)][string]$AgentId,
+        [string]$Name
+    )
+    $agentsDir = Join-Path $RepoRoot '.cronagents' 'agents'
+    New-Item -Path $agentsDir -ItemType Directory -Force | Out-Null
+    $config = [ordered]@{ name = if ($Name) { $Name } else { $AgentId }; prompt = 'test' }
+    $config | ConvertTo-Json | Set-Content -Path (Join-Path $agentsDir "$AgentId.agent-registration.json") -Encoding UTF8
+}
+
 Export-ModuleMember -Function @(
     'New-TestEnvironment'
     'Remove-TestEnvironment'
@@ -344,5 +370,6 @@ Export-ModuleMember -Function @(
     'Initialize-TestGitRepo'
     'New-TestGitCommit'
     'New-TestAgentConfig'
+    'New-TestAgentRegistration'
     'New-TestRunDirectory'
 )
