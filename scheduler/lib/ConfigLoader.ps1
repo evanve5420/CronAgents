@@ -369,7 +369,7 @@ function Import-SingleAgentConfig {
         raiseAttention  = if ($parsed.PSObject.Properties['raiseAttention'] -and
                              -not [string]::IsNullOrWhiteSpace($parsed.raiseAttention) -and
                              $parsed.raiseAttention -in @('all','failures-only','significant-changes','never'))
-                          { $parsed.raiseAttention } else { 'all' }
+                          { ($parsed.raiseAttention).ToLowerInvariant() } else { 'all' }
     }
 
     if ($parsed.PSObject.Properties['notificationSound'] -and

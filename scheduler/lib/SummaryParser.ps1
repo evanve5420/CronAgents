@@ -150,7 +150,11 @@ function Write-SummaryAttention {
         throw "Summary file not found: $Path"
     }
 
-    $content = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    try {
+        $content = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 -ErrorAction Stop
+    } catch {
+        throw "Failed to read summary file '$Path': $($_.Exception.Message)"
+    }
     $attentionStr = if ($Attention) { 'true' } else { 'false' }
     $fmPattern = '(?s)\A\s*---\r?\n(.*?)\r?\n---\r?\n?(.*)'
 
@@ -180,7 +184,7 @@ function Write-SummaryAttention {
         $newContent = "---`nattention: $attentionStr`n---`n$content"
     }
 
-    Set-Content -LiteralPath $Path -Value $newContent -Encoding UTF8 -NoNewline
+    Set-Content -LiteralPath $Path -Value $newContent -Encoding UTF8 -NoNewline -ErrorAction Stop
 }
 
 function script:Extract-Brief {
