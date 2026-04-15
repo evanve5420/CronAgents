@@ -6,6 +6,7 @@
 BeforeAll {
     $repoRoot = Split-Path $PSScriptRoot -Parent
     Import-Module (Join-Path $repoRoot 'scheduler/lib/CronAgents.psd1') -Force
+    Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
 
     $script:DashboardScript = Join-Path $repoRoot 'scheduler\Update-Dashboard.ps1'
 
@@ -112,6 +113,7 @@ Describe 'Update-Dashboard' {
             $successOut  = Join-Path $successRepo 'dashboard.md'
             New-Item -Path $successRuns -ItemType Directory -Force | Out-Null
 
+            New-TestAgentRegistration -RepoRoot $successRepo -AgentId 'code-review' -Name 'Code Review'
             New-TestRun -RunsRoot $successRuns `
                         -AgentId 'code-review' `
                         -AgentName 'Code Review' `
@@ -157,6 +159,7 @@ Describe 'Update-Dashboard' {
             $failOut  = Join-Path $failRepo 'dashboard.md'
             New-Item -Path $failRuns -ItemType Directory -Force | Out-Null
 
+            New-TestAgentRegistration -RepoRoot $failRepo -AgentId 'lint-check' -Name 'Lint Check'
             New-TestRun -RunsRoot $failRuns `
                         -AgentId 'lint-check' `
                         -AgentName 'Lint Check' `
@@ -187,6 +190,7 @@ Describe 'Update-Dashboard' {
             $toOut  = Join-Path $toRepo 'dashboard.md'
             New-Item -Path $toRuns -ItemType Directory -Force | Out-Null
 
+            New-TestAgentRegistration -RepoRoot $toRepo -AgentId 'slow-agent' -Name 'Slow Agent'
             New-TestRun -RunsRoot $toRuns `
                         -AgentId 'slow-agent' `
                         -AgentName 'Slow Agent' `
@@ -210,6 +214,7 @@ Describe 'Update-Dashboard' {
             $fbOut  = Join-Path $fbRepo 'dashboard.md'
             New-Item -Path $fbRuns -ItemType Directory -Force | Out-Null
 
+            New-TestAgentRegistration -RepoRoot $fbRepo -AgentId 'fb-agent' -Name 'Feedback Agent'
             New-TestRun -RunsRoot $fbRuns `
                         -AgentId 'fb-agent' `
                         -AgentName 'Feedback Agent' `
@@ -233,6 +238,7 @@ Describe 'Update-Dashboard' {
             $pfOut  = Join-Path $pfRepo 'dashboard.md'
             New-Item -Path $pfRuns -ItemType Directory -Force | Out-Null
 
+            New-TestAgentRegistration -RepoRoot $pfRepo -AgentId 'pf-agent' -Name 'Processed Agent'
             New-TestRun -RunsRoot $pfRuns `
                         -AgentId 'pf-agent' `
                         -AgentName 'Processed Agent' `
@@ -261,6 +267,8 @@ Describe 'Update-Dashboard' {
             $multiOut  = Join-Path $multiRepo 'dashboard.md'
             New-Item -Path $multiRuns -ItemType Directory -Force | Out-Null
 
+            New-TestAgentRegistration -RepoRoot $multiRepo -AgentId 'agent-a' -Name 'Agent Alpha'
+            New-TestAgentRegistration -RepoRoot $multiRepo -AgentId 'agent-b' -Name 'Agent Beta'
             New-TestRun -RunsRoot $multiRuns `
                         -AgentId 'agent-a' `
                         -AgentName 'Agent Alpha' `
@@ -313,6 +321,7 @@ Describe 'Update-Dashboard' {
 
             $longPrompt = 'A' * 200
 
+            New-TestAgentRegistration -RepoRoot $truncRepo -AgentId 'trunc-agent' -Name 'Truncation Agent'
             New-TestRun -RunsRoot $truncRuns `
                         -AgentId 'trunc-agent' `
                         -AgentName 'Truncation Agent' `
@@ -339,6 +348,7 @@ Describe 'Update-Dashboard' {
 
             $longSummary = 'B' * 200
 
+            New-TestAgentRegistration -RepoRoot $sumTrRepo -AgentId 'sumtr-agent' -Name 'SumTr Agent'
             New-TestRun -RunsRoot $sumTrRuns `
                         -AgentId 'sumtr-agent' `
                         -AgentName 'SumTr Agent' `
@@ -362,6 +372,7 @@ Describe 'Update-Dashboard' {
             $noMetaOut  = Join-Path $noMetaRepo 'dashboard.md'
             New-Item -Path $noMetaRuns -ItemType Directory -Force | Out-Null
 
+            New-TestAgentRegistration -RepoRoot $noMetaRepo -AgentId 'orphan-agent'
             $ts = [datetime]::UtcNow.AddHours(-1).ToUniversalTime().ToString('yyyyMMddTHHmmss')
             $dirName = "${ts}_orphan-agent_ab12"
             $runDir = Join-Path $noMetaRuns $dirName
@@ -387,6 +398,7 @@ Describe 'Update-Dashboard' {
             $runningOut  = Join-Path $runningRepo 'dashboard.md'
             New-Item -Path $runningRuns -ItemType Directory -Force | Out-Null
 
+            New-TestAgentRegistration -RepoRoot $runningRepo -AgentId 'running-agent' -Name 'Running Agent'
             $ts = [datetime]::UtcNow.AddMinutes(-2).ToUniversalTime().ToString('yyyyMMddTHHmmss')
             $nonce = '{0:x4}' -f (Get-Random -Maximum 65535)
             $dirName = "${ts}_running-agent_${nonce}"
@@ -441,6 +453,8 @@ Describe 'Update-Dashboard' {
             New-Item -Path $personalRuns -ItemType Directory -Force | Out-Null
             New-Item -Path $repoRoot -ItemType Directory -Force | Out-Null
 
+            New-TestAgentRegistration -RepoRoot $repoRoot -AgentId 'personal-run-agent' -Name 'Personal Run Agent'
+            New-TestAgentRegistration -RepoRoot $personalRepoRoot -AgentId 'personal-run-agent' -Name 'Personal Run Agent'
             New-TestRun -RunsRoot $personalRuns `
                         -AgentId 'personal-run-agent' `
                         -AgentName 'Personal Run Agent' `
@@ -472,6 +486,8 @@ Describe 'Update-Dashboard' {
             $attRuns = Join-Path $attRepo '.cronstate\runs'
             $attOut  = Join-Path $attRepo 'dashboard.md'
             New-Item -Path $attRuns -ItemType Directory -Force | Out-Null
+
+            New-TestAgentRegistration -RepoRoot $attRepo -AgentId 'music-monitor' -Name 'Music Monitor'
 
             $attSummary = "---`nattention: true`nheadline: `"New Taylor Swift album released!`"`n---`nDetected new album release from monitored artist."
 
@@ -519,6 +535,8 @@ Describe 'Update-Dashboard' {
             $noAttOut  = Join-Path $noAttRepo 'dashboard.md'
             New-Item -Path $noAttRuns -ItemType Directory -Force | Out-Null
 
+            New-TestAgentRegistration -RepoRoot $noAttRepo -AgentId 'health-check' -Name 'Health Check'
+
             $noAttSummary = "---`nattention: false`nheadline: `"Routine check complete`"`n---`nAll systems nominal."
 
             New-TestRun -RunsRoot $noAttRuns `
@@ -553,6 +571,7 @@ Describe 'Update-Dashboard' {
             $legOut  = Join-Path $legRepo 'dashboard.md'
             New-Item -Path $legRuns -ItemType Directory -Force | Out-Null
 
+            New-TestAgentRegistration -RepoRoot $legRepo -AgentId 'legacy-agent' -Name 'Legacy Agent'
             New-TestRun -RunsRoot $legRuns `
                         -AgentId 'legacy-agent' `
                         -AgentName 'Legacy Agent' `
@@ -574,6 +593,56 @@ Describe 'Update-Dashboard' {
 
         It 'Shows full summary in Recent Runs' {
             $script:LegDash | Should -Match 'Reviewed 5 files with no critical issues found'
+        }
+    }
+
+    Context 'Runs for deleted/unregistered agents are hidden (issue #90)' {
+        BeforeAll {
+            $delRepo = Join-Path $TestDrive 'deleted-agent-repo'
+            $delRuns = Join-Path $delRepo '.cronstate\runs'
+            $delOut  = Join-Path $delRepo 'dashboard.md'
+            New-Item -Path $delRuns -ItemType Directory -Force | Out-Null
+
+            # Register only 'active-agent'; 'deleted-agent' has no registration
+            New-TestAgentRegistration -RepoRoot $delRepo -AgentId 'active-agent' -Name 'Active Agent'
+
+            # Create a run for the registered agent
+            New-TestRun -RunsRoot $delRuns `
+                        -AgentId 'active-agent' `
+                        -AgentName 'Active Agent' `
+                        -Timestamp ([datetime]::UtcNow.AddMinutes(-5)) `
+                        -ExitCode 0 `
+                        -SummaryContent 'Active agent completed successfully.'
+
+            # Create a run for the deleted/unregistered agent with attention flag
+            $delSummary = "---`nattention: true`nheadline: `"Stale alert from deleted agent`"`n---`nThis should not appear."
+            New-TestRun -RunsRoot $delRuns `
+                        -AgentId 'deleted-agent' `
+                        -AgentName 'Deleted Agent' `
+                        -Timestamp ([datetime]::UtcNow.AddMinutes(-3)) `
+                        -ExitCode 1 `
+                        -SummaryContent $delSummary
+
+            & $script:DashboardScript -RepoRoot $delRepo -RunsRoot $delRuns -OutputPath $delOut
+            $script:DelDash = Get-Content -LiteralPath $delOut -Raw -Encoding UTF8
+        }
+
+        It 'Shows the registered agent in the dashboard' {
+            $script:DelDash | Should -Match 'Active Agent'
+        }
+
+        It 'Hides runs from the unregistered agent' {
+            $script:DelDash | Should -Not -Match 'Deleted Agent'
+        }
+
+        It 'Does not show attention banner for deleted agent' {
+            $script:DelDash | Should -Not -Match 'Needs Attention'
+            $script:DelDash | Should -Not -Match 'Stale alert from deleted agent'
+        }
+
+        It 'Shows only one run in recent runs section' {
+            $headings = [regex]::Matches($script:DelDash, '### ').Count
+            $headings | Should -Be 1
         }
     }
 }

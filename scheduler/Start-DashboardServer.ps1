@@ -48,6 +48,7 @@ $ServerStartTime = [datetime]::UtcNow
 $ServerPid = $PID
 $DashboardPidFile = Join-Path $StateRoot 'dashboard.pid'
 $script:lastRestartTime = $null
+$script:lastAgentFilterWarnTime = [datetime]::MinValue
 $LibDir = Join-Path $PSScriptRoot 'lib'
 $TrackedLibFiles = @(Get-ChildItem -Path $LibDir -Include '*.ps1','*.psd1' -File -Recurse |
     Select-Object -ExpandProperty FullName)
@@ -174,6 +175,20 @@ function script:Get-RunsPayload {
     $params = @{ RunsRoot = $RunsRoot; MaxResults = $maxRunHistory }
     if ($AgentId) { $params['AgentId'] = $AgentId }
     $runs = @(Get-RunHistory @params)
+
+    # Filter out runs for agents that are no longer registered (issue #90)
+    try {
+        $registeredIds = @(Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $PersonalRepoPath |
+            ForEach-Object { $_.Id })
+        $runs = @($runs | Where-Object { $_.AgentId -in $registeredIds })
+    }
+    catch {
+        $now = [datetime]::UtcNow
+        if (($now - $script:lastAgentFilterWarnTime).TotalMinutes -ge 5) {
+            Write-CronAgentsLog -Level 'warn' -Message "Dashboard server: could not filter unregistered agent runs: $_"
+            $script:lastAgentFilterWarnTime = $now
+        }
+    }
 
     $result = @()
     foreach ($r in $runs) {

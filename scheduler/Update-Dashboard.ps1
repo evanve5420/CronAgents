@@ -219,6 +219,17 @@ Write-CronAgentsLog -Level 'info' -Message "Generating dashboard from runs in: $
 
 $runs = @(Get-RunHistory -RunsRoot $RunsRoot -MaxResults $MaxRunHistory)
 
+# Filter out runs for agents that are no longer registered (issue #90)
+$getAgentParams = @{ RepoRoot = $RepoRoot }
+if ($PersonalRepoPath) { $getAgentParams['PersonalRepoPath'] = $PersonalRepoPath }
+try {
+    $registeredIds = @(Get-AgentConfigs @getAgentParams | ForEach-Object { $_.Id })
+    $runs = @($runs | Where-Object { $_.AgentId -in $registeredIds })
+}
+catch {
+    Write-CronAgentsLog -Level 'warn' -Message "Dashboard generator: could not filter unregistered agent runs: $_"
+}
+
 # ── Summary table (most recent per agent) ───────────────────────────
 $agentLatest = [ordered]@{}
 foreach ($run in $runs) {
