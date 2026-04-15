@@ -361,6 +361,49 @@ function script:Get-QuestionsPayload {
     return @($pending)
 }
 
+function script:Get-ActivityPayload {
+    [OutputType([hashtable])]
+    param()
+
+    $commits = [System.Collections.Generic.List[object]]::new()
+    $vsCodeLink = "vscode://file/$($PersonalRepoPath -replace '\\','/')"
+    try {
+        if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+            Write-CronAgentsLog -Level 'warn' -Message 'git not available for activity log'
+            return [ordered]@{ commits = @($commits); vsCodeLink = $vsCodeLink }
+        }
+        if (-not (Test-Path -LiteralPath (Join-Path $PersonalRepoPath '.git'))) {
+            return [ordered]@{ commits = @($commits); vsCodeLink = $vsCodeLink }
+        }
+
+        # Use %x1f (unit separator) as field delimiter to avoid clashes with commit messages
+        $logOutput = & git -C $PersonalRepoPath log --pretty=format:"%h%x1f%ai%x1f%s" -50 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-CronAgentsLog -Level 'warn' -Message "git log failed: $logOutput"
+            return [ordered]@{ commits = @($commits); vsCodeLink = $vsCodeLink }
+        }
+
+        foreach ($line in ($logOutput -split "`n")) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            $parts = $line -split "`u{1f}", 3
+            if ($parts.Count -lt 3) { continue }
+            $commits.Add([ordered]@{
+                hash    = $parts[0]
+                date    = $parts[1].Trim()
+                message = $parts[2]
+            })
+        }
+    }
+    catch {
+        Write-CronAgentsLog -Level 'warn' -Message "Failed to get activity log: $_"
+    }
+
+    return [ordered]@{
+        commits    = @($commits)
+        vsCodeLink = $vsCodeLink
+    }
+}
+
 # ── HTTP Response Helpers ────────────────────────────────────────────
 
 function script:Send-JsonResponse {
@@ -555,6 +598,13 @@ function script:Invoke-Route {
         if ($method -eq 'GET' -and $path -eq '/api/questions') {
             $agentFilter = $request.QueryString['agent']
             $payload = @(script:Get-QuestionsPayload -AgentId $agentFilter)
+            script:Send-JsonResponse -Response $response -Body $payload
+            return
+        }
+
+        # ── GET /api/activity ──────────────────────────────────
+        if ($method -eq 'GET' -and $path -eq '/api/activity') {
+            $payload = script:Get-ActivityPayload
             script:Send-JsonResponse -Response $response -Body $payload
             return
         }
