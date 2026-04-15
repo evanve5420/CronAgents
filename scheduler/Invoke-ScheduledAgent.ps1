@@ -521,7 +521,8 @@ try {
         $copilotPath   = if ($GlobalConfig.copilotPath) { $GlobalConfig.copilotPath } else { 'copilot' }
         $summaryFile   = Join-Path $runDir 'summary.md'
         $summaryShare  = Join-Path $runDir 'summarizer-session.md'
-        $summaryPrompt = "Summarize the agent run in directory: $runDir. Read output.md and meta.json."
+        $raiseAttention = $AgentConfig.raiseAttention
+        $summaryPrompt = "Summarize the agent run in directory: $runDir. Read output.md and meta.json. Attention level for this agent: $raiseAttention"
 
         $summaryArgs = @(
             "--agent=run-summarizer"

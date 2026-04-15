@@ -829,6 +829,39 @@ function script:Invoke-Route {
             return
         }
 
+        # ── POST /api/runs/:id/dismiss ──────────────────────────
+        if ($method -eq 'POST' -and $path -match '^/api/runs/(.+)/dismiss$') {
+            $runId = $Matches[1]
+
+            $resolvedRun = Resolve-CronAgentsRunPath -RunId $runId -RunsRoot $RunsRoot
+            if (-not $resolvedRun.IsValid) {
+                script:Send-ErrorResponse -Response $response -Message 'Invalid run ID format' -StatusCode 400
+                return
+            }
+
+            if (-not $resolvedRun.Exists) {
+                script:Send-ErrorResponse -Response $response -Message 'Run not found' -StatusCode 404
+                return
+            }
+
+            $runDir = $resolvedRun.Path
+            $summaryPath = Join-Path $runDir 'summary.md'
+            if (-not (Test-Path -LiteralPath $summaryPath)) {
+                script:Send-ErrorResponse -Response $response -Message 'No summary found for this run' -StatusCode 404
+                return
+            }
+
+            try {
+                Write-SummaryAttention -Path $summaryPath -Attention $false
+                script:Send-JsonResponse -Response $response -Body ([ordered]@{ ok = $true; message = 'Attention dismissed' })
+            }
+            catch {
+                Write-CronAgentsLog -Level 'error' -Message "Failed to dismiss attention for run '$runId': $_"
+                script:Send-ErrorResponse -Response $response -Message 'Failed to dismiss attention' -StatusCode 500
+            }
+            return
+        }
+
         # ── DELETE /api/runs (all or per agent via ?agent=X) ─────
         if ($method -eq 'DELETE' -and $path -eq '/api/runs') {
             $agentFilter = $request.QueryString['agent']

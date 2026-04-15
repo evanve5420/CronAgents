@@ -333,6 +333,7 @@ Describe 'Get-AgentConfigs' {
         $agents[0].Config.timeout       | Should -Be '10m'
         $agents[0].Config.skipOnBattery | Should -Be $false
         $agents[0].Config.retryCount    | Should -Be 0
+        $agents[0].Config.raiseAttention | Should -Be 'all'
         $agents[0].Config.model         | Should -BeNullOrEmpty
         $agents[0].Config.name          | Should -Be 'daily-review'
         $agents[0].AgentFilePath        | Should -BeNullOrEmpty
@@ -504,6 +505,39 @@ Describe 'Get-AgentConfigs' {
         $agents[0].Config.timeout       | Should -Be '30m'
         $agents[0].Config.retryCount    | Should -Be 3
         $agents[0].Config.skipOnBattery | Should -Be $true
+    }
+
+    It 'Parses raiseAttention setting' {
+        $repoRoot = Join-Path $TestDrive 'repo-attention'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "go", "schedule": { "type": "daily", "time": "07:00" }, "raiseAttention": "failures-only" }'
+        Set-Content -Path (Join-Path $agentDir 'monitr.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents[0].Config.raiseAttention | Should -Be 'failures-only'
+    }
+
+    It 'Defaults raiseAttention to all when omitted' {
+        $repoRoot = Join-Path $TestDrive 'repo-att-default'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "go", "schedule": { "type": "daily", "time": "07:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'basic.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents[0].Config.raiseAttention | Should -Be 'all'
+    }
+
+    It 'Defaults raiseAttention to all for invalid values' {
+        $repoRoot = Join-Path $TestDrive 'repo-att-invalid'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "go", "schedule": { "type": "daily", "time": "07:00" }, "raiseAttention": "bogus" }'
+        Set-Content -Path (Join-Path $agentDir 'inv.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents[0].Config.raiseAttention | Should -Be 'all'
     }
 
     It 'Parses built-in and script runIf values' {

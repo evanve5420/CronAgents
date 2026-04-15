@@ -127,6 +127,66 @@ function Read-SummaryFrontmatter {
     return $defaults
 }
 
+function Write-SummaryAttention {
+    <#
+    .SYNOPSIS
+        Updates the attention field in a summary.md file's YAML frontmatter.
+    .DESCRIPTION
+        Rewrites the frontmatter to set attention to the specified value while
+        preserving all other frontmatter fields and the body content.
+        If the summary has no frontmatter, prepends a frontmatter block.
+    .PARAMETER Path
+        Full path to the summary.md file.
+    .PARAMETER Attention
+        The new value for the attention field.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][bool]$Attention
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Summary file not found: $Path"
+    }
+
+    try {
+        $content = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 -ErrorAction Stop
+    } catch {
+        throw "Failed to read summary file '$Path': $($_.Exception.Message)"
+    }
+    $attentionStr = if ($Attention) { 'true' } else { 'false' }
+    $fmPattern = '(?s)\A\s*---\r?\n(.*?)\r?\n---\r?\n?(.*)'
+
+    if ($content -match $fmPattern) {
+        $fmBlock = $Matches[1]
+        $body    = $Matches[2]
+
+        # Replace or add the attention field in the frontmatter block
+        $fmLines = $fmBlock -split '\r?\n'
+        $found = $false
+        $newLines = @()
+        foreach ($line in $fmLines) {
+            if ($line -match '^\s*attention\s*:') {
+                $newLines += "attention: $attentionStr"
+                $found = $true
+            } else {
+                $newLines += $line
+            }
+        }
+        if (-not $found) {
+            $newLines = @("attention: $attentionStr") + $newLines
+        }
+
+        $newContent = "---`n$($newLines -join "`n")`n---`n$body"
+    } else {
+        # No frontmatter — prepend one
+        $newContent = "---`nattention: $attentionStr`n---`n$content"
+    }
+
+    Set-Content -LiteralPath $Path -Value $newContent -Encoding UTF8 -NoNewline -ErrorAction Stop
+}
+
 function script:Extract-Brief {
     <#
     .SYNOPSIS

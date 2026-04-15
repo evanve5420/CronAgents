@@ -96,7 +96,8 @@
         'Clear-CopilotDaemonState',
         'Get-CopilotAuthToken',
         # SummaryParser
-        'Read-SummaryFrontmatter'
+        'Read-SummaryFrontmatter',
+        'Write-SummaryAttention'
     )
     CmdletsToExport   = @()
     VariablesToExport  = @()

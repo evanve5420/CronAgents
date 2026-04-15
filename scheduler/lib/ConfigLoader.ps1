@@ -366,6 +366,10 @@ function Import-SingleAgentConfig {
                           { [bool]$parsed.notifyOnFailure } else { $false }
         notifyOnSuccess = if ($parsed.PSObject.Properties['notifyOnSuccess'] -and $null -ne $parsed.notifyOnSuccess)
                           { [bool]$parsed.notifyOnSuccess } else { $false }
+        raiseAttention  = if ($parsed.PSObject.Properties['raiseAttention'] -and
+                             -not [string]::IsNullOrWhiteSpace($parsed.raiseAttention) -and
+                             $parsed.raiseAttention -in @('all','failures-only','significant-changes','never'))
+                          { ($parsed.raiseAttention).ToLowerInvariant() } else { 'all' }
     }
 
     if ($parsed.PSObject.Properties['notificationSound'] -and

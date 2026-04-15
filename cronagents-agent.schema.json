@@ -168,6 +168,12 @@
       "default": false,
       "description": "Show a Windows toast notification when the agent completes successfully."
     },
+    "raiseAttention": {
+      "type": "string",
+      "enum": ["all", "failures-only", "significant-changes", "never"],
+      "default": "all",
+      "description": "Controls when the run-summarizer flags a run as needing attention. 'all' (default): flag on failures, actionable results, significant changes, and timeouts. 'failures-only': only on non-zero exit or timeout. 'significant-changes': on failures and codebase/PR changes, but not routine monitoring results. 'never': never flag attention (results are visible in the dashboard but won't trigger the banner)."
+    },
     "notificationSound": {
       "type": "string",
       "anyOf": [
