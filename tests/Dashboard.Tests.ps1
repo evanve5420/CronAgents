@@ -350,6 +350,20 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
         }
     }
 
+    Context 'GET /api/activity' {
+        It 'Returns activity payload with commits array' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/activity" -ErrorAction Stop
+            $data | Should -Not -BeNullOrEmpty
+            # Test env has no .git, so commits should be empty
+            @($data.commits).Count | Should -Be 0
+        }
+
+        It 'Returns null vsCodeLink when personal repo has no .git' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/activity" -ErrorAction Stop
+            $data.vsCodeLink | Should -BeNullOrEmpty
+        }
+    }
+
     # ── POST Endpoints ───────────────────────────────────────────
 
     Context 'POST /api/pause and /api/resume' {

@@ -366,18 +366,31 @@ function script:Get-ActivityPayload {
     param()
 
     $commits = [System.Collections.Generic.List[object]]::new()
-    $vsCodeLink = "vscode://file/$($PersonalRepoPath -replace '\\','/')"
+    $vsCodeLink = $null
     try {
         if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
             Write-CronAgentsLog -Level 'warn' -Message 'git not available for activity log'
+            return [ordered]@{ commits = @($commits); vsCodeLink = $vsCodeLink }
+        }
+        if (-not (Test-Path -LiteralPath $PersonalRepoPath -PathType Container)) {
             return [ordered]@{ commits = @($commits); vsCodeLink = $vsCodeLink }
         }
         if (-not (Test-Path -LiteralPath (Join-Path $PersonalRepoPath '.git'))) {
             return [ordered]@{ commits = @($commits); vsCodeLink = $vsCodeLink }
         }
 
-        # Use %x1f (unit separator) as field delimiter to avoid clashes with commit messages
-        $logOutput = & git -C $PersonalRepoPath log --pretty=format:"%h%x1f%ai%x1f%s" -50 2>&1
+        # Build a properly encoded vscode:// deeplink
+        try {
+            $repoUri = [System.Uri]::new([System.IO.Path]::GetFullPath($PersonalRepoPath))
+            $vsCodeLink = "vscode://file$($repoUri.AbsolutePath)"
+        }
+        catch {
+            Write-CronAgentsLog -Level 'debug' -Message "Could not build vscode:// link: $_"
+        }
+
+        # Use %x1f (unit separator) as field delimiter to avoid clashes with commit messages.
+        # %aI produces strict ISO-8601 timestamps that JavaScript's Date() can reliably parse.
+        $logOutput = & git -C $PersonalRepoPath log --pretty=format:"%h%x1f%aI%x1f%s" -50 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-CronAgentsLog -Level 'warn' -Message "git log failed: $logOutput"
             return [ordered]@{ commits = @($commits); vsCodeLink = $vsCodeLink }
