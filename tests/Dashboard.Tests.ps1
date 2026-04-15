@@ -79,6 +79,41 @@ Describe 'Dashboard — Data Layer' {
         $pending = Get-PendingQuestions -StateRoot $script:stateRoot
         $pending.Count | Should -Be 0
     }
+
+    It 'Get-RunHistory returns runs for unregistered agents (low-level, unfiltered)' {
+        # Create a run for an agent that is NOT registered
+        $unregRunDir = New-RunDirectory -RunsRoot $script:runsRoot -AgentId 'ghost-agent'
+        Write-RunMetadata -RunDirectory $unregRunDir -AgentId 'ghost-agent' -AgentName 'Ghost' `
+            -Prompt 'boo' -StartTime ([datetime]::UtcNow.AddMinutes(-1)) `
+            -EndTime ([datetime]::UtcNow) -ExitCode 0
+
+        $runs = Get-RunHistory -RunsRoot $script:runsRoot
+        $ghostRuns = $runs | Where-Object { $_.AgentId -eq 'ghost-agent' }
+        $ghostRuns.Count | Should -BeGreaterOrEqual 1
+    }
+
+    It 'Filtering run history by registered agents excludes unregistered agents (issue #90)' {
+        # Create a run for an unregistered agent
+        $unregRunDir = New-RunDirectory -RunsRoot $script:runsRoot -AgentId 'deleted-agent'
+        Write-RunMetadata -RunDirectory $unregRunDir -AgentId 'deleted-agent' -AgentName 'Deleted' `
+            -Prompt 'gone' -StartTime ([datetime]::UtcNow.AddMinutes(-1)) `
+            -EndTime ([datetime]::UtcNow) -ExitCode 0
+
+        # Create a run for the registered agent
+        $regRunDir = New-RunDirectory -RunsRoot $script:runsRoot -AgentId 'test-agent'
+        Write-RunMetadata -RunDirectory $regRunDir -AgentId 'test-agent' -AgentName 'Test Agent' `
+            -Prompt 'test' -StartTime ([datetime]::UtcNow.AddMinutes(-1)) `
+            -EndTime ([datetime]::UtcNow) -ExitCode 0
+
+        $allRuns = Get-RunHistory -RunsRoot $script:runsRoot
+        $registeredIds = @(Get-AgentConfigs -RepoRoot $testEnv.Root | ForEach-Object { $_.Id })
+        $filteredRuns = @($allRuns | Where-Object { $_.AgentId -in $registeredIds })
+
+        # Filtered results should contain only registered agents
+        $filteredRuns.Count | Should -BeGreaterOrEqual 1
+        $filteredRuns | ForEach-Object { $_.AgentId | Should -Be 'test-agent' }
+        ($filteredRuns | Where-Object { $_.AgentId -eq 'deleted-agent' }).Count | Should -Be 0
+    }
 }
 
 # ── Integration Tests: HTTP Server ────────────────────────────────────
@@ -286,6 +321,20 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
         It 'Returns empty array for non-existent agent filter' {
             $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs?agent=nonexistent" -ErrorAction Stop
             @($data).Count | Should -Be 0
+        }
+
+        It 'Excludes runs for unregistered/deleted agents (issue #90)' {
+            # Create a run for an agent that is NOT registered
+            $unregDir = New-RunDirectory -RunsRoot $script:testEnv.RunsRoot -AgentId 'ghost-agent'
+            Write-RunMetadata -RunDirectory $unregDir -AgentId 'ghost-agent' -AgentName 'Ghost' `
+                -Prompt 'boo' -StartTime ([datetime]::UtcNow.AddMinutes(-1)) `
+                -EndTime ([datetime]::UtcNow) -ExitCode 0
+            Set-Content -LiteralPath (Join-Path $unregDir 'summary.md') `
+                -Value "---`nattention: true`nheadline: `"Ghost alert`"`n---`nShould not appear." -Encoding UTF8
+
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/runs" -ErrorAction Stop
+            $ghostRuns = @($data | Where-Object { $_.agentId -eq 'ghost-agent' })
+            $ghostRuns.Count | Should -Be 0
         }
     }
 

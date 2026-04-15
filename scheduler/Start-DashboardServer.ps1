@@ -175,6 +175,16 @@ function script:Get-RunsPayload {
     if ($AgentId) { $params['AgentId'] = $AgentId }
     $runs = @(Get-RunHistory @params)
 
+    # Filter out runs for agents that are no longer registered (issue #90)
+    try {
+        $registeredIds = @(Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $PersonalRepoPath |
+            ForEach-Object { $_.Id })
+        $runs = @($runs | Where-Object { $_.AgentId -in $registeredIds })
+    }
+    catch {
+        Write-CronAgentsLog -Level 'warn' -Message "Dashboard server: could not filter unregistered agent runs: $_"
+    }
+
     $result = @()
     foreach ($r in $runs) {
         $dirName = Split-Path $r.RunDirectory -Leaf
