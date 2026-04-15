@@ -84,6 +84,21 @@ Show a Windows toast notification when the agent fails or times out. Requires th
 
 Show a Windows toast notification when the agent completes successfully. Requires the global `notifications` setting to be `true` in `cronagents.json`.
 
+### `raiseAttention` (string, default `"all"`)
+
+Controls when the run-summarizer flags a run as needing attention in the dashboard banner. One of:
+
+- `"all"` — Flag on failures, actionable results, significant changes, and timeouts. (Default — backwards-compatible behavior.)
+- `"significant-changes"` — Flag on failures, codebase/PR changes, and timeouts, but **not** routine monitoring results.
+- `"failures-only"` — Only flag on non-zero exit codes and timeouts.
+- `"never"` — Never flag attention. Results are visible in the dashboard but won't trigger the banner.
+
+Use `"failures-only"` or `"significant-changes"` for monitoring agents that routinely find actionable items (e.g., a PR watcher that always has open PRs). This prevents a permanent attention banner while still surfacing failures.
+
+```json
+"raiseAttention": "failures-only"
+```
+
 ### `notificationSound` (string, optional)
 
 Override the Windows toast notification sound for this agent. Applies to both success and failure toasts. Only takes effect when `notifyOnFailure` or `notifyOnSuccess` is enabled and global `notifications` is `true`.

@@ -47,11 +47,38 @@ Changed files: src/upload.ts, tests/upload.test.ts. The PR targets the main bran
 
 ## Attention Rules
 
+The prompt includes an **attention level** for the agent: `all`, `failures-only`, `significant-changes`, or `never`. Apply the rules below based on the stated level.
+
+### Level: `all` (default)
+
 Set `attention: true` when **any** of these apply:
 - The agent **failed** (non-zero exit code) and the failure looks actionable (not a transient network blip)
 - The agent produced **actionable results** the user would want to know about (e.g., a monitoring agent detected a change, a new release was found, a security issue was flagged)
 - The agent made **significant changes** to the codebase (created PRs, modified files, deployed something)
 - The agent **timed out** and the timeout likely caused incomplete work
+
+### Level: `significant-changes`
+
+Set `attention: true` **only** when:
+- The agent **failed** (non-zero exit code) with an actionable error
+- The agent made **significant changes** (created PRs, modified files, deployed something)
+- The agent **timed out** and the timeout likely caused incomplete work
+
+Do **not** flag attention for routine monitoring results even if actionable (e.g., "found 3 PRs to review" is normal output for a monitoring agent — report it in the summary but don't flag attention).
+
+### Level: `failures-only`
+
+Set `attention: true` **only** when:
+- The agent **failed** (non-zero exit code) with an actionable error
+- The agent **timed out** and the timeout likely caused incomplete work
+
+Do **not** flag attention for actionable results or significant changes — the user will see them in the dashboard summary.
+
+### Level: `never`
+
+Always set `attention: false`. The agent's results are visible in the dashboard but will never trigger the attention banner.
+
+### Common rules (all levels)
 
 Set `attention: false` when:
 - The run was a routine no-op ("no changes")

@@ -200,3 +200,75 @@ Describe 'Read-SummaryFrontmatter' {
         }
     }
 }
+
+Describe 'Write-SummaryAttention' {
+
+    Context 'With existing frontmatter' {
+        It 'Sets attention from true to false' {
+            $path = Join-Path $TestDrive 'dismiss.md'
+            Set-Content -Path $path -Value "---`nattention: true`nheadline: `"Alert`"`n---`nBody text." -Encoding UTF8 -NoNewline
+            Write-SummaryAttention -Path $path -Attention $false
+            $result = Read-SummaryFrontmatter -Path $path
+            $result.Attention | Should -Be $false
+            $result.Headline  | Should -Be 'Alert'
+            $result.Body      | Should -Match 'Body text'
+        }
+
+        It 'Sets attention from false to true' {
+            $path = Join-Path $TestDrive 'escalate.md'
+            Set-Content -Path $path -Value "---`nattention: false`nheadline: `"Routine`"`n---`nNothing." -Encoding UTF8 -NoNewline
+            Write-SummaryAttention -Path $path -Attention $true
+            $result = Read-SummaryFrontmatter -Path $path
+            $result.Attention | Should -Be $true
+            $result.Headline  | Should -Be 'Routine'
+        }
+
+        It 'Preserves headline and body content' {
+            $path = Join-Path $TestDrive 'preserve.md'
+            $content = "---`nattention: true`nheadline: `"Important finding`"`n---`nFirst paragraph.`n`nSecond paragraph with details."
+            Set-Content -Path $path -Value $content -Encoding UTF8 -NoNewline
+            Write-SummaryAttention -Path $path -Attention $false
+            $result = Read-SummaryFrontmatter -Path $path
+            $result.Attention | Should -Be $false
+            $result.Headline  | Should -Be 'Important finding'
+            $result.Body      | Should -Match 'First paragraph'
+            $result.Body      | Should -Match 'Second paragraph'
+        }
+    }
+
+    Context 'Without existing frontmatter' {
+        It 'Prepends frontmatter block' {
+            $path = Join-Path $TestDrive 'nofm.md'
+            Set-Content -Path $path -Value 'Plain summary text.' -Encoding UTF8 -NoNewline
+            Write-SummaryAttention -Path $path -Attention $true
+            $result = Read-SummaryFrontmatter -Path $path
+            $result.Attention | Should -Be $true
+            $result.Body      | Should -Match 'Plain summary text'
+        }
+    }
+
+    Context 'Edge cases' {
+        It 'Throws on nonexistent file' {
+            { Write-SummaryAttention -Path (Join-Path $TestDrive 'no-such-file.md') -Attention $false } |
+                Should -Throw '*not found*'
+        }
+
+        It 'Adds attention field when frontmatter exists but has no attention line' {
+            $path = Join-Path $TestDrive 'noatt.md'
+            Set-Content -Path $path -Value "---`nheadline: `"Test`"`n---`nBody." -Encoding UTF8 -NoNewline
+            Write-SummaryAttention -Path $path -Attention $true
+            $result = Read-SummaryFrontmatter -Path $path
+            $result.Attention | Should -Be $true
+            $result.Headline  | Should -Be 'Test'
+        }
+
+        It 'Handles CRLF line endings' {
+            $path = Join-Path $TestDrive 'crlf.md'
+            Set-Content -Path $path -Value "---`r`nattention: true`r`nheadline: `"Test`"`r`n---`r`nBody." -Encoding UTF8 -NoNewline
+            Write-SummaryAttention -Path $path -Attention $false
+            $result = Read-SummaryFrontmatter -Path $path
+            $result.Attention | Should -Be $false
+            $result.Headline  | Should -Be 'Test'
+        }
+    }
+}
