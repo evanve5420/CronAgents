@@ -411,6 +411,21 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/activity" -ErrorAction Stop
             $data.vsCodeLink | Should -BeNullOrEmpty
         }
+
+        It 'Returns vsCodeLink with correct vscode://file/ prefix when .git exists' {
+            # Temporarily init a git repo so the server builds the deeplink
+            & git init $script:testEnv.Root --quiet 2>$null
+            try {
+                $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/activity" -ErrorAction Stop
+                $data.vsCodeLink | Should -Not -BeNullOrEmpty
+                $data.vsCodeLink | Should -Match '^vscode://file/'
+                # Authority must be exactly "file" — no path chars glued to it
+                $data.vsCodeLink | Should -Not -Match '^vscode://file[^/]'
+            }
+            finally {
+                Remove-Item -LiteralPath (Join-Path $script:testEnv.Root '.git') -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 
     # ── POST Endpoints ───────────────────────────────────────────
