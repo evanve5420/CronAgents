@@ -397,7 +397,8 @@ function script:Get-ActivityPayload {
         # Build a properly encoded vscode:// deeplink
         try {
             $repoUri = [System.Uri]::new([System.IO.Path]::GetFullPath($PersonalRepoPath))
-            $vsCodeLink = "vscode://file$($repoUri.AbsolutePath)"
+            $absPath = $repoUri.AbsolutePath.TrimStart('/')
+            $vsCodeLink = "vscode://file/$absPath"
         }
         catch {
             Write-CronAgentsLog -Level 'debug' -Message "Could not build vscode:// link: $_"
