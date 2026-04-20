@@ -413,8 +413,14 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
         }
 
         It 'Returns vsCodeLink with correct vscode://file/ prefix when .git exists' {
+            $gitCommand = Get-Command git -ErrorAction SilentlyContinue
+            if (-not $gitCommand) {
+                Set-ItResult -Skipped -Because 'git is not available on this runner.'
+                return
+            }
+
             # Temporarily init a git repo so the server builds the deeplink
-            & git init $script:testEnv.Root --quiet 2>$null
+            & $gitCommand.Source init $script:testEnv.Root --quiet 2>$null
             try {
                 $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/activity" -ErrorAction Stop
                 $data.vsCodeLink | Should -Not -BeNullOrEmpty
