@@ -604,14 +604,17 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
                     break
                 } catch {
                     $lastErr = $_
-                    Start-Sleep -Milliseconds 500
+                    if ($attempt -lt 3) { Start-Sleep -Milliseconds 500 }
                 }
             }
             if (-not $resp) { throw "POST /api/run/http-working-dir failed after 3 attempts: $lastErr" }
             try {
                 $data = $resp.Content | ConvertFrom-Json
             } catch {
-                throw "POST /api/run/http-working-dir returned unparseable JSON. Content: '$($resp.Content)'. Error: $_"
+                $content = [string]$resp.Content
+                $preview = ($content -replace '\s+', ' ')
+                if ($preview.Length -gt 200) { $preview = $preview.Substring(0, 200) + '...' }
+                throw "POST /api/run/http-working-dir returned unparseable JSON. Status: $($resp.StatusCode). Content ($($content.Length) chars): '$preview'. Error: $_"
             }
             $data.ok | Should -Be $true
 
