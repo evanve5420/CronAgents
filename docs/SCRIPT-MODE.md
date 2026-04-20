@@ -80,7 +80,7 @@ Script mode uses the same per-agent `.agent-registration.json` scheduling config
 
 | Concern | Agent Mode | Prompt-Only Mode | Script Mode |
 |---------|-----------|-----------------|-------------|
-| What runs | `copilot --agent=NAME -p "PROMPT" …` | `copilot -p "PROMPT" --allow-all-tools …` | User-provided `.ps1` / `.sh` / executable |
+| What runs | `copilot --agent=NAME -p "PROMPT" …` | `copilot -p "PROMPT" --allow-all-tools …` | User-provided `.ps1` script |
 | Working directory | Repo root (or personal repo) | Repo root (or personal repo) | Repo root |
 | Stdout capture | `output.md` in run directory | `output.md` in run directory | `output.md` in run directory |
 | Exit code | Copilot CLI exit code | Copilot CLI exit code | Script exit code |
@@ -103,6 +103,7 @@ The scheduler sets these for the script's process:
 | `CRONAGENTS_RUN_DIR` | Absolute path to the run directory (e.g. `.cronstate/runs/20260322T0800_mcp-sync_a7f3/`) |
 | `CRONAGENTS_AGENT_NAME` | The `name` from config |
 | `CRONAGENTS_CONFIG` | Absolute path to `cronagents.json` |
+| `CRONAGENTS_COPILOT_PATH` | Path to the Copilot CLI binary (from `copilotPath` config or `'copilot'`) |
 
 Scripts can use `CRONAGENTS_RUN_DIR` to write additional artifacts (logs, diffs, reports) that the dashboard and feedback system will pick up.
 
@@ -110,8 +111,8 @@ Scripts can use `CRONAGENTS_RUN_DIR` to write additional artifacts (logs, diffs,
 
 ## Security Considerations
 
-- **Script paths must be relative to the repo root or absolute.** The scheduler resolves them and verifies the file exists before execution. No shell expansion or glob evaluation on the path.
-- **No implicit shell wrapping.** `.ps1` scripts are invoked via `pwsh -File <path>`, not piped through `Invoke-Expression`. Other executables are invoked directly.
+- **Script paths must be relative to the repo root.** Absolute paths and directory traversal (`..`) are rejected at config-load time. The scheduler resolves paths and performs a defense-in-depth containment check at execution time. No shell expansion or glob evaluation on the path.
+- **No implicit shell wrapping.** `.ps1` scripts are invoked via `pwsh -File <path>`, not piped through `Invoke-Expression`.
 - **Execution policy:** The scheduler does not bypass PowerShell execution policy. If the user's policy blocks unsigned scripts, they must sign them or adjust policy themselves.
 - **Same trust boundary as prompt mode.** Script mode doesn't elevate privileges — it runs in the same user context as the scheduler. Users who register a script are responsible for what it does, just as they're responsible for the prompts they write.
 

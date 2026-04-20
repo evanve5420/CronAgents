@@ -308,8 +308,28 @@ function Import-SingleAgentConfig {
     # --- Validation: required fields ---
     [System.Collections.Generic.List[string]]$valErrors = @()
 
-    if (-not $parsed.PSObject.Properties['prompt'] -or [string]::IsNullOrWhiteSpace($parsed.prompt)) {
-        $valErrors.Add('prompt is required')
+    $hasPrompt = $parsed.PSObject.Properties['prompt'] -and -not [string]::IsNullOrWhiteSpace($parsed.prompt)
+    $hasScript = $parsed.PSObject.Properties['script'] -and -not [string]::IsNullOrWhiteSpace($parsed.script)
+
+    if (-not $hasPrompt -and -not $hasScript) {
+        $valErrors.Add('either prompt or script is required')
+    }
+    if ($hasPrompt -and $hasScript) {
+        $valErrors.Add('prompt and script are mutually exclusive')
+    }
+    if ($hasScript -and $parsed.PSObject.Properties['agent'] -and -not [string]::IsNullOrWhiteSpace($parsed.agent)) {
+        $valErrors.Add('agent and script are mutually exclusive')
+    }
+    if ($hasScript) {
+        if ([System.IO.Path]::IsPathRooted($parsed.script)) {
+            $valErrors.Add('script must be a relative path')
+        }
+        elseif ($parsed.script -match '(^|[\\/])\.\.($|[\\/])') {
+            $valErrors.Add('script path must not contain directory traversal (..)')
+        }
+        elseif ($parsed.script -notmatch '\.ps1$') {
+            $valErrors.Add('script must reference a .ps1 file')
+        }
     }
     $hasSchedule = $parsed.PSObject.Properties['schedule'] -and $null -ne $parsed.schedule
     if ($hasSchedule) {
@@ -345,7 +365,7 @@ function Import-SingleAgentConfig {
     $agentConfig = [PSCustomObject]@{
         name          = if ($parsed.PSObject.Properties['name'] -and -not [string]::IsNullOrWhiteSpace($parsed.name))
                         { $parsed.name } else { $fileName }
-        prompt        = $parsed.prompt
+        prompt        = if ($hasPrompt) { $parsed.prompt } else { $null }
         schedule      = if ($hasSchedule) { $parsed.schedule } else { $null }
         timeout       = if ($parsed.PSObject.Properties['timeout'] -and -not [string]::IsNullOrWhiteSpace($parsed.timeout))
                         { $parsed.timeout } else { '10m' }
@@ -380,6 +400,11 @@ function Import-SingleAgentConfig {
     # Copy agent reference if present
     if ($parsed.PSObject.Properties['agent'] -and -not [string]::IsNullOrWhiteSpace($parsed.agent)) {
         $agentConfig | Add-Member -NotePropertyName 'agent' -NotePropertyValue $parsed.agent
+    }
+
+    # Copy script path if present
+    if ($hasScript) {
+        $agentConfig | Add-Member -NotePropertyName 'script' -NotePropertyValue $parsed.script
     }
 
     # --- Resolve .agent.md path ---

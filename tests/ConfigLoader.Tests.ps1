@@ -627,6 +627,92 @@ Describe 'Get-AgentConfigs' {
         $agents[0].Config.prompt | Should -Be 'Run a one-off task'
         $agents[0].Config.schedule | Should -BeNullOrEmpty
     }
+
+    It 'Validates script mode with schedule' {
+        $repoRoot = Join-Path $TestDrive 'repo-script-sched'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "name": "MCP Sync", "script": "./scripts/sync.ps1", "schedule": { "type": "daily", "time": "08:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'mcp-sync.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 1
+        $agents[0].Config.PSObject.Properties['script'] | Should -Not -BeNullOrEmpty
+        $agents[0].Config.script | Should -Be './scripts/sync.ps1'
+        $agents[0].Config.prompt | Should -BeNullOrEmpty
+        $agents[0].Config.schedule.type | Should -Be 'daily'
+    }
+
+    It 'Validates manual script mode (script only, no schedule)' {
+        $repoRoot = Join-Path $TestDrive 'repo-script-manual'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "name": "One-Off Script", "script": "./scripts/run-once.ps1" }'
+        Set-Content -Path (Join-Path $agentDir 'run-once.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 1
+        $agents[0].Config.PSObject.Properties['script'] | Should -Not -BeNullOrEmpty
+        $agents[0].Config.script | Should -Be './scripts/run-once.ps1'
+        $agents[0].Config.prompt | Should -BeNullOrEmpty
+        $agents[0].Config.schedule | Should -BeNullOrEmpty
+    }
+
+    It 'Rejects config with both prompt and script' {
+        $repoRoot = Join-Path $TestDrive 'repo-both-prompt-script'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "Do something", "script": "./scripts/do.ps1", "schedule": { "type": "daily", "time": "09:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'both.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 0
+    }
+
+    It 'Rejects config with both agent and script' {
+        $repoRoot = Join-Path $TestDrive 'repo-agent-and-script'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "script": "./scripts/do.ps1", "agent": "my-agent", "schedule": { "type": "daily", "time": "09:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'bad.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 0
+    }
+
+    It 'Rejects config with neither prompt nor script' {
+        $repoRoot = Join-Path $TestDrive 'repo-no-prompt-no-script'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "name": "Empty", "schedule": { "type": "daily", "time": "09:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'empty.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 0
+    }
+
+    It 'Rejects script with absolute path' {
+        $repoRoot = Join-Path $TestDrive 'repo-script-abs'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $absPath = if ($IsWindows -or $env:OS -eq 'Windows_NT') { 'C:\\scripts\\evil.ps1' } else { '/tmp/evil.ps1' }
+        $json = "{ `"script`": `"$absPath`", `"schedule`": { `"type`": `"daily`", `"time`": `"09:00`" } }"
+        Set-Content -Path (Join-Path $agentDir 'abs.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 0
+    }
+
+    It 'Rejects script with directory traversal' {
+        $repoRoot = Join-Path $TestDrive 'repo-script-traversal'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "script": "../../../tmp/evil.ps1", "schedule": { "type": "daily", "time": "09:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'traversal.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 0
+    }
 }
 
 # ===== JSON Schema Files =====
