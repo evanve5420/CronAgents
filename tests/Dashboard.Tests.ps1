@@ -591,8 +591,31 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             )
             $beforeRuns = $existingRunNames.Count
 
-            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/run/http-working-dir" `
-                -Method Post -ErrorAction Stop
+            # Use Invoke-WebRequest + manual JSON parse to guard against
+            # transient response corruption on busy CI hosts (#94).
+            # Retry only the HTTP call (not the parse) to avoid duplicate
+            # background jobs — each POST fires a new agent run server-side.
+            $resp = $null
+            $lastErr = $null
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+                try {
+                    $resp = Invoke-WebRequest -Uri "$($script:baseUrl)/api/run/http-working-dir" `
+                        -Method Post -UseBasicParsing -ErrorAction Stop
+                    break
+                } catch {
+                    $lastErr = $_
+                    if ($attempt -lt 3) { Start-Sleep -Milliseconds 500 }
+                }
+            }
+            if (-not $resp) { throw "POST /api/run/http-working-dir failed after 3 attempts: $lastErr" }
+            try {
+                $data = $resp.Content | ConvertFrom-Json
+            } catch {
+                $content = [string]$resp.Content
+                $preview = ($content -replace '\s+', ' ')
+                if ($preview.Length -gt 200) { $preview = $preview.Substring(0, 200) + '...' }
+                throw "POST /api/run/http-working-dir returned unparseable JSON. Status: $($resp.StatusCode). Content ($($content.Length) chars): '$preview'. Error: $_"
+            }
             $data.ok | Should -Be $true
 
             # Poll for the run to complete. The background job chain is:
