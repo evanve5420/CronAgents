@@ -29,4 +29,4 @@ No need to run tests for doc only changes.
 
 ## Before creating a PR
 
-Invoke the `code-reviewer` agent as a subagent to review all changes before opening a pull request. Skip this step for changes that are exclusively documentation or confined to `.github/`. For sufficiently simple or trivial changes, ask the user whether a review is needed before invoking.
+Invoke the **custom** `code-reviewer` agent (defined in `.github/agents/code-reviewer.agent.md`) as a subagent to review all changes before opening a pull request. **Do NOT use the built-in `code-review` agent type** — it lacks the project-specific sub-agent orchestration (security, privacy, a11y, maintainability, docs reviewers). The correct Task tool call is `agent_type: "code-reviewer"`, not `agent_type: "code-review"`. Skip this step for changes that are exclusively documentation or confined to `.github/`. For sufficiently simple or trivial changes, ask the user whether a review is needed before invoking.
