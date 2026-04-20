@@ -85,14 +85,17 @@ function Initialize-RunMetadata {
         [Parameter(Mandatory)]
         [string]$AgentName,
 
-        [Parameter(Mandatory)]
-        [string]$Prompt
+        [string]$Prompt,
+
+        [ValidateSet('agent', 'prompt', 'script')]
+        [string]$Mode = 'prompt'
     )
 
     $meta = [ordered]@{
         agentId           = $AgentId
         agentName         = $AgentName
         prompt            = $Prompt
+        mode              = $Mode
         startTime         = ConvertTo-CronAgentsIsoTimestamp -Time ([datetime]::UtcNow)
         endTime           = $null
         exitCode          = $null
@@ -123,7 +126,6 @@ function Write-RunMetadata {
         [Parameter(Mandatory)]
         [string]$AgentName,
 
-        [Parameter(Mandatory)]
         [string]$Prompt,
 
         [Parameter(Mandatory)]
@@ -137,13 +139,17 @@ function Write-RunMetadata {
 
         [bool]$TimedOut = $false,
 
-        [int]$RetryAttempt = 0
+        [int]$RetryAttempt = 0,
+
+        [ValidateSet('agent', 'prompt', 'script')]
+        [string]$Mode = 'prompt'
     )
 
     $meta = [ordered]@{
         agentId           = $AgentId
         agentName         = $AgentName
         prompt            = $Prompt
+        mode              = $Mode
         startTime         = ConvertTo-CronAgentsIsoTimestamp -Time $StartTime
         endTime           = ConvertTo-CronAgentsIsoTimestamp -Time $EndTime
         exitCode          = $ExitCode

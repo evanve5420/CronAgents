@@ -53,16 +53,29 @@ if (-not $RunsRoot) {
 # --- State file path ---
 $stateFile = Join-Path $stateRoot 'state.json'
 
+# --- Detect execution mode ---
+$isScriptMode = $AgentConfig.PSObject.Properties['script'] -and
+    -not [string]::IsNullOrWhiteSpace($AgentConfig.script)
+$runMode = if ($isScriptMode) {
+    'script'
+} elseif ($AgentConfig.PSObject.Properties['agent'] -and -not [string]::IsNullOrWhiteSpace($AgentConfig.agent)) {
+    'agent'
+} else {
+    'prompt'
+}
+
 # --- Auth token (resolved once, reused across runs/retries) ---
 $copilotAuthToken = $null
-try {
-    $copilotAuthToken = Get-CopilotAuthToken
-    if (-not $copilotAuthToken) {
-        Write-CronAgentsLog -Level 'warn' -Message 'No GitHub token found — copilot process may fail to authenticate.'
+if (-not $isScriptMode) {
+    try {
+        $copilotAuthToken = Get-CopilotAuthToken
+        if (-not $copilotAuthToken) {
+            Write-CronAgentsLog -Level 'warn' -Message 'No GitHub token found — copilot process may fail to authenticate.'
+        }
     }
-}
-catch {
-    Write-CronAgentsLog -Level 'warn' -Message "Failed to retrieve auth token: $_ — copilot may fail."
+    catch {
+        Write-CronAgentsLog -Level 'warn' -Message "Failed to retrieve auth token: $_ — copilot may fail."
+    }
 }
 
 # Environment overrides are built per-run in Invoke-CopilotRun because
@@ -206,6 +219,141 @@ function Invoke-CopilotRun {
 
     if ($didTimeout) {
         Write-CronAgentsLog -Level 'warn' -Message "Agent '$AgentId' timed out after ${TimeoutSeconds}s — killing process."
+        try { [void]$proc.Kill($true) } catch { <# best-effort #> }
+        try { [void]$proc.WaitForExit(5000) } catch { <# best-effort #> }
+    }
+
+    # Ensure async reads complete
+    [void]$stdout.Wait(5000)
+    [void]$stderr.Wait(5000)
+
+    $stdoutText = if ($stdout.IsCompleted) { $stdout.Result } else { '' }
+    $stderrText = if ($stderr.IsCompleted) { $stderr.Result } else { '' }
+
+    # Write stdout to output file
+    [System.IO.File]::WriteAllText($outputFile, $stdoutText, [System.Text.Encoding]::UTF8)
+
+    # Append stderr to output if present
+    if ($stderrText) {
+        $separator = "`n`n---`n**stderr:**`n"
+        [System.IO.File]::AppendAllText($outputFile, "$separator$stderrText", [System.Text.Encoding]::UTF8)
+    }
+
+    $attemptEnd = [datetime]::UtcNow
+    $code = if ($didTimeout) { -1 } else { $proc.ExitCode }
+    $proc.Dispose()
+
+    return @{
+        ExitCode  = $code
+        TimedOut  = $didTimeout
+        StartTime = $attemptStart
+        EndTime   = $attemptEnd
+    }
+}
+
+function Invoke-ScriptRun {
+    <#
+    .SYNOPSIS
+        Executes a user-provided script for one attempt.
+        Returns a hashtable with ExitCode, TimedOut, StartTime, EndTime.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string]$RunDirectory,
+        [Parameter(Mandatory)] [int]$TimeoutSeconds
+    )
+
+    # Use PersonalRepoPath when provided (same as Copilot runs)
+    $executionRoot = if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }
+
+    $scriptPath = $AgentConfig.script
+    # Resolve relative paths from execution root
+    if (-not [System.IO.Path]::IsPathRooted($scriptPath)) {
+        $scriptPath = Join-Path $executionRoot $scriptPath
+    }
+
+    # Defense-in-depth: ensure resolved path stays within execution root
+    $scriptPath = [System.IO.Path]::GetFullPath($scriptPath)
+    # Resolve symlinks if the file exists
+    if (Test-Path -LiteralPath $scriptPath) {
+        $item = Get-Item -LiteralPath $scriptPath -Force
+        if ($item.LinkTarget) {
+            $linkTarget = $item.LinkTarget
+            if (-not [System.IO.Path]::IsPathRooted($linkTarget)) {
+                $scriptDirectory = Split-Path -Parent $scriptPath
+                $linkTarget = Join-Path $scriptDirectory $linkTarget
+            }
+            $scriptPath = [System.IO.Path]::GetFullPath($linkTarget)
+        }
+    }
+    $execRootFull = [System.IO.Path]::GetFullPath($executionRoot)
+    $sep = [System.IO.Path]::DirectorySeparatorChar
+    $comparison = if (($null -eq (Get-Variable 'IsWindows' -ErrorAction Ignore)) -or $IsWindows) {
+        [System.StringComparison]::OrdinalIgnoreCase
+    } else {
+        [System.StringComparison]::Ordinal
+    }
+    if (-not $scriptPath.StartsWith("$execRootFull$sep", $comparison)) {
+        Write-CronAgentsLog -Level 'error' -Message "Script path escapes execution root: $($AgentConfig.script)"
+        return @{
+            ExitCode  = -1
+            TimedOut  = $false
+            StartTime = [datetime]::UtcNow
+            EndTime   = [datetime]::UtcNow
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $scriptPath)) {
+        Write-CronAgentsLog -Level 'error' -Message "Script not found: $scriptPath"
+        return @{
+            ExitCode  = -1
+            TimedOut  = $false
+            StartTime = [datetime]::UtcNow
+            EndTime   = [datetime]::UtcNow
+        }
+    }
+
+    $outputFile = Join-Path $RunDirectory 'output.md'
+
+    # Build environment overrides for script mode
+    $scriptEnv = @{}
+    $scriptEnv['CRONAGENTS_RUN_DIR']     = $RunDirectory
+    $scriptEnv['CRONAGENTS_AGENT_NAME']  = $AgentConfig.name
+    $configPath = Join-Path $executionRoot 'cronagents.json'
+    $scriptEnv['CRONAGENTS_CONFIG']      = $configPath
+    $copilotPath = if ($GlobalConfig.copilotPath) { $GlobalConfig.copilotPath } else { 'copilot' }
+    $scriptEnv['CRONAGENTS_COPILOT_PATH'] = $copilotPath
+
+    # Invoke .ps1 scripts via pwsh -File
+    $psi = New-CommandProcessStartInfo -CommandLine 'pwsh' `
+        -WorkingDirectory $executionRoot `
+        -Arguments @('-NoProfile', '-File', $scriptPath) `
+        -EnvironmentOverrides $scriptEnv
+
+    # Defense-in-depth: strip auth tokens from script environment
+    foreach ($key in @('GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN')) {
+        if ($psi.Environment.ContainsKey($key)) {
+            $psi.Environment.Remove($key)
+        }
+    }
+
+    Write-CronAgentsLog -Level 'debug' -Message "Script command: pwsh -NoProfile -File $scriptPath"
+
+    $proc = [System.Diagnostics.Process]::new()
+    $proc.StartInfo = $psi
+
+    $attemptStart = [datetime]::UtcNow
+    $proc.Start() | Out-Null
+    $proc.StandardInput.Close()
+
+    $stdout = $proc.StandardOutput.ReadToEndAsync()
+    $stderr = $proc.StandardError.ReadToEndAsync()
+
+    $timeoutMs  = $TimeoutSeconds * 1000
+    $didTimeout = -not $proc.WaitForExit($timeoutMs)
+
+    if ($didTimeout) {
+        Write-CronAgentsLog -Level 'warn' -Message "Script '$($AgentConfig.script)' timed out after ${TimeoutSeconds}s — killing process."
         try { [void]$proc.Kill($true) } catch { <# best-effort #> }
         try { [void]$proc.WaitForExit(5000) } catch { <# best-effort #> }
     }
@@ -395,16 +543,25 @@ try {
     $runDir = New-RunDirectory -RunsRoot $RunsRoot -AgentId $AgentId
     Write-CronAgentsLog -Level 'debug' -Message "Run directory created: $runDir"
 
-    Initialize-RunMetadata -RunDirectory $runDir -AgentId $AgentId `
-        -AgentName $AgentConfig.name -Prompt $AgentConfig.prompt
+    $initMetaParams = @{
+        RunDirectory = $runDir
+        AgentId      = $AgentId
+        AgentName    = $AgentConfig.name
+        Mode         = $runMode
+    }
+    if ($AgentConfig.prompt) { $initMetaParams['Prompt'] = $AgentConfig.prompt }
+    Initialize-RunMetadata @initMetaParams
 
     Initialize-RunLog -RunDirectory $runDir | Out-Null
-    Write-CronAgentsLog -Level 'info' -Message "Starting agent '$AgentId' — run dir: $runDir"
+    Write-CronAgentsLog -Level 'info' -Message "Starting agent '$AgentId' (mode: $runMode) — run dir: $runDir"
 
     # ------------------------------------------------------------------
     # Step 3 — Build arguments and set env vars
     # ------------------------------------------------------------------
-    $cliArgs   = Build-CopilotArguments
+    $cliArgs = $null
+    if (-not $isScriptMode) {
+        $cliArgs = Build-CopilotArguments
+    }
     $envKeys   = Set-AgentEnvVars
     $timeoutSec = ConvertTo-Seconds -Duration ($AgentConfig.timeout)
 
@@ -424,7 +581,11 @@ try {
             Write-CronAgentsLog -Level 'warn' -Message "Retrying agent '$AgentId' — attempt $attempt of $maxRetries"
         }
 
-        $result = Invoke-CopilotRun -RunDirectory $runDir -TimeoutSeconds $timeoutSec -Arguments $cliArgs
+        $result = if ($isScriptMode) {
+            Invoke-ScriptRun -RunDirectory $runDir -TimeoutSeconds $timeoutSec
+        } else {
+            Invoke-CopilotRun -RunDirectory $runDir -TimeoutSeconds $timeoutSec -Arguments $cliArgs
+        }
 
         $exitCode  = $result.ExitCode
         $timedOut  = $result.TimedOut
@@ -454,11 +615,19 @@ try {
     # ------------------------------------------------------------------
     # Step 6 — Write run metadata
     # ------------------------------------------------------------------
-    Write-RunMetadata -RunDirectory $runDir -AgentId $AgentId `
-        -AgentName $AgentConfig.name -Prompt $AgentConfig.prompt `
-        -ExitCode $exitCode -TimedOut $timedOut `
-        -StartTime $startTime -EndTime $endTime `
-        -RetryAttempt $retryAttempt
+    $writeMetaParams = @{
+        RunDirectory = $runDir
+        AgentId      = $AgentId
+        AgentName    = $AgentConfig.name
+        ExitCode     = $exitCode
+        TimedOut     = $timedOut
+        StartTime    = $startTime
+        EndTime      = $endTime
+        RetryAttempt = $retryAttempt
+        Mode         = $runMode
+    }
+    if ($AgentConfig.prompt) { $writeMetaParams['Prompt'] = $AgentConfig.prompt }
+    Write-RunMetadata @writeMetaParams
 
     # ------------------------------------------------------------------
     # Step 6b — Notify on failure or success (best-effort)
@@ -667,11 +836,19 @@ catch {
         try {
             $effectiveStart = if ($null -eq $startTime) { [datetime]::UtcNow } else { $startTime }
             $startTime = $effectiveStart
-            Write-RunMetadata -RunDirectory $runDir -AgentId $AgentId `
-                -AgentName $AgentConfig.name -Prompt $AgentConfig.prompt `
-                -ExitCode -1 -TimedOut $false `
-                -StartTime $effectiveStart -EndTime ([datetime]::UtcNow) `
-                -RetryAttempt $retryAttempt
+            $failMetaParams = @{
+                RunDirectory = $runDir
+                AgentId      = $AgentId
+                AgentName    = $AgentConfig.name
+                ExitCode     = -1
+                TimedOut     = $false
+                StartTime    = $effectiveStart
+                EndTime      = [datetime]::UtcNow
+                RetryAttempt = $retryAttempt
+                Mode         = $runMode
+            }
+            if ($AgentConfig.prompt) { $failMetaParams['Prompt'] = $AgentConfig.prompt }
+            Write-RunMetadata @failMetaParams
         }
         catch {
             Write-CronAgentsLog -Level 'error' -Message "Failed to write failure metadata: $_"

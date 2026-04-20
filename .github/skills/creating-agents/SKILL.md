@@ -117,6 +117,46 @@ For agents that should only run when manually triggered via `cronagents.ps1 run 
 
 Manual agents appear in the dashboard and CLI status with a "manual" schedule label. They are never auto-triggered by the scheduler.
 
+### Script mode
+
+Runs a user-provided PowerShell script (`.ps1`) instead of Copilot CLI. No `.agent.md` needed. The script inherits the same scheduling, timeout, retry, logging, and notification infrastructure. Useful for:
+- Token-efficient pre-work that assembles context before invoking Copilot CLI
+- Existing workflow automation scripts that need scheduling
+- Tasks that don't involve Copilot CLI at all
+
+```jsonc
+// Script mode — scheduled
+{
+  "$schema": "../../cronagents-agent.schema.json",
+  "name": "<Display Name>",
+  "script": "./scripts/<script-name>.ps1",
+  "schedule": { "type": "daily", "time": "08:00" },
+  "timeout": "15m"
+}
+
+// Script mode — manual
+{
+  "$schema": "../../cronagents-agent.schema.json",
+  "name": "<Display Name>",
+  "script": "./scripts/<script-name>.ps1"
+}
+```
+
+The `script` field is mutually exclusive with `agent` and `prompt`. Script paths must be relative to the repo root (e.g. `./scripts/my-script.ps1`); absolute paths and directory traversal (`..`) are rejected.
+
+**Environment variables provided to scripts:**
+
+| Variable | Value |
+|----------|-------|
+| `CRONAGENTS_RUN_DIR` | Absolute path to the run directory |
+| `CRONAGENTS_AGENT_NAME` | The `name` from config |
+| `CRONAGENTS_CONFIG` | Absolute path to `cronagents.json` |
+| `CRONAGENTS_COPILOT_PATH` | Resolved path to the Copilot CLI binary |
+
+Scripts can use `CRONAGENTS_RUN_DIR` to write additional artifacts. Copilot CLI invocations within scripts should use `$env:CRONAGENTS_COPILOT_PATH`.
+
+Scripts are invoked via `pwsh -NoProfile -File <path>`. Only `.ps1` files are currently supported.
+
 ### Companion SKILL.md (optional, agent mode only)
 
 Create in `~/.cronagents/.github/skills/<agent-name>/SKILL.md` if the agent needs domain knowledge.
@@ -152,10 +192,11 @@ Keep the list minimal. If you are unsure, omit `tools:` rather than guessing.
 
 - Agent mode: `.agent.md` lives in `~/.cronagents/.github/agents/` or `~/.copilot/agents/`, has explicit `tools` list (least-privilege), and `agent` in the registration matches the `.agent.md` name
 - Prompt-only: registration has `prompt`, no `agent` field, `denyTools` considered
+- Script mode: registration has `script`, no `agent` or `prompt` fields, script file exists at the specified path
 - Scheduled: registration includes `schedule` with type `interval`/`daily`/`weekly`
 - Manual: registration omits `schedule` — agent only runs via `cronagents.ps1 run <id>` or dashboard
-- Both: registration file is named `~/.cronagents/.cronagents/agents/<agent-id>.agent-registration.json`
-- Both: test with `cronagents.ps1 run <agent-id>`
+- All modes: registration file is named `~/.cronagents/.cronagents/agents/<agent-id>.agent-registration.json`
+- All modes: test with `cronagents.ps1 run <agent-id>`
 
 ## Agent Questions (Deferred Decisions)
 

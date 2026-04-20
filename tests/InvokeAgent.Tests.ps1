@@ -426,3 +426,175 @@ Describe 'Invoke-ScheduledAgent — Failure Metadata (Issue #15 Bug 2)' {
         { [DateTime]::Parse($meta.endTime) }   | Should -Not -Throw
     }
 }
+
+Describe 'Invoke-ScheduledAgent — Script Mode' {
+    BeforeEach {
+        $testEnv = New-TestEnvironment -Name 'ScriptMode'
+        # Copy mock script into test env so it can be referenced with a relative path
+        $scriptsDir = Join-Path $testEnv.Root 'scripts'
+        New-Item -ItemType Directory -Path $scriptsDir -Force | Out-Null
+        Copy-Item -Path (Join-Path $PSScriptRoot 'mocks' 'script.ps1') -Destination (Join-Path $scriptsDir 'script.ps1')
+        $script:relScriptPath = './scripts/script.ps1'
+    }
+    AfterEach {
+        Remove-Item Env:\CRONAGENTS_MOCK_SCRIPT_EXIT_CODE -ErrorAction SilentlyContinue
+        Remove-TestEnvironment -TestEnv $testEnv
+    }
+
+    It 'Executes a script-mode agent successfully' {
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'script-agent' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Script $script:relScriptPath `
+            -Name 'Test Script Agent'
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'script-agent'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Be 0
+        $result.RunDirectory | Should -Not -BeNullOrEmpty
+        Test-Path (Join-Path $result.RunDirectory 'output.md') | Should -BeTrue
+    }
+
+    It 'Sets CRONAGENTS_* environment variables for script' {
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'script-env-test' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Script $script:relScriptPath `
+            -Name 'Env Test Script'
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'script-env-test'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Be 0
+
+        $outputPath = Join-Path $result.RunDirectory 'output.md'
+        $rawOutput = Get-Content -LiteralPath $outputPath -Raw -Encoding UTF8
+        $envVars = $rawOutput | ConvertFrom-Json
+
+        $envVars.CRONAGENTS_RUN_DIR | Should -Not -BeNullOrEmpty
+        $envVars.CRONAGENTS_AGENT_NAME | Should -Be 'Env Test Script'
+        $envVars.CRONAGENTS_CONFIG | Should -Not -BeNullOrEmpty
+        $envVars.CRONAGENTS_COPILOT_PATH | Should -Not -BeNullOrEmpty
+    }
+
+    It 'Captures script exit code in meta.json' {
+        $env:CRONAGENTS_MOCK_SCRIPT_EXIT_CODE = '42'
+
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'script-fail' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Script $script:relScriptPath `
+            -Name 'Failing Script'
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'script-fail'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Be 42
+
+        $meta = Get-Content (Join-Path $result.RunDirectory 'meta.json') -Raw | ConvertFrom-Json
+        $meta.exitCode | Should -Be 42
+        $meta.mode     | Should -Be 'script'
+    }
+
+    It 'Writes mode=script in meta.json for script-mode runs' {
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'script-meta' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Script $script:relScriptPath `
+            -Name 'Meta Script'
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'script-meta'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $meta = Get-Content (Join-Path $result.RunDirectory 'meta.json') -Raw | ConvertFrom-Json
+        $meta.mode | Should -Be 'script'
+        $meta.prompt | Should -BeNullOrEmpty
+    }
+
+    It 'Reports error when script file does not exist' {
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'script-missing' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Script './nonexistent-script.ps1' `
+            -Name 'Missing Script'
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'script-missing'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Be -1
+    }
+}
+
+Describe 'Invoke-ScheduledAgent — Mode in Metadata' {
+    BeforeEach {
+        $testEnv = New-TestEnvironment -Name 'MetadataMode'
+    }
+    AfterEach {
+        Remove-TestEnvironment -TestEnv $testEnv
+    }
+
+    It 'Writes mode=agent in meta.json for agent-mode runs' {
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'agent-meta' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Agent 'my-agent' `
+            -Prompt 'Check things' `
+            -Name 'Agent Meta'
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'agent-meta'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $meta = Get-Content (Join-Path $result.RunDirectory 'meta.json') -Raw | ConvertFrom-Json
+        $meta.mode | Should -Be 'agent'
+    }
+
+    It 'Writes mode=prompt in meta.json for prompt-only runs' {
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'prompt-meta' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Prompt 'Just a prompt' `
+            -Name 'Prompt Meta'
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'prompt-meta'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $meta = Get-Content (Join-Path $result.RunDirectory 'meta.json') -Raw | ConvertFrom-Json
+        $meta.mode | Should -Be 'prompt'
+    }
+}
