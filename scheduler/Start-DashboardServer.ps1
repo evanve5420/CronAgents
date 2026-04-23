@@ -210,9 +210,12 @@ function script:Get-RunsPayload {
                 feedbackProcessed = if ($r.Meta.PSObject.Properties['feedbackProcessed']) { $r.Meta.feedbackProcessed } else { $false }
             }
 
-            $runStatus = Test-RunActive -RunDirectory $r.RunDirectory
-            $isIncomplete = $runStatus.IsIncomplete
-            $isStale = $runStatus.IsStale
+            # Only check liveness for runs that lack final metadata
+            if ($null -eq $meta.exitCode -and [string]::IsNullOrEmpty($meta.endTime)) {
+                $runStatus = Test-RunActive -RunDirectory $r.RunDirectory
+                $isIncomplete = $runStatus.IsIncomplete
+                $isStale = $runStatus.IsStale
+            }
         }
 
         # Read summary with frontmatter parsing (full content available via GET /api/runs/:id)
@@ -297,9 +300,13 @@ function script:Get-RunDetailPayload {
     $isIncomplete = $false
     $isStale = $false
     if ($meta) {
-        $runStatus = Test-RunActive -RunDirectory $runDir
-        $isIncomplete = $runStatus.IsIncomplete
-        $isStale = $runStatus.IsStale
+        $hasExitCode = $null -ne $meta.exitCode
+        $hasEndTime = -not [string]::IsNullOrWhiteSpace([string]$meta.endTime)
+        if (-not ($hasExitCode -or $hasEndTime)) {
+            $runStatus = Test-RunActive -RunDirectory $runDir
+            $isIncomplete = $runStatus.IsIncomplete
+            $isStale = $runStatus.IsStale
+        }
     }
 
     $summary = $null

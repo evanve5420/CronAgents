@@ -110,9 +110,9 @@ Describe 'Test-RunActive' {
     Context 'PID-based liveness' {
         It 'Returns stale when recorded PID does not exist' {
             $ts = [datetime]::UtcNow.AddMinutes(-30)
-            # Use a PID that is extremely unlikely to exist
+            # Use a PID value that is invalid for real processes
             $dir = New-StaleRunDir -RunsRoot $testEnv.RunsRoot -Timestamp $ts `
-                -ProcessId 99999 -PidStartTime $ts
+                -ProcessId ([int]::MaxValue) -PidStartTime $ts
 
             $result = Test-RunActive -RunDirectory $dir
             $result.IsActive | Should -Be $false
@@ -160,6 +160,21 @@ Describe 'Test-RunActive' {
             $result = Test-RunActive -RunDirectory $dir
             $result.IsActive | Should -Be $true
             $result.Reason | Should -Be 'pid-alive'
+        }
+
+        It 'Falls back to legacy detection when pid value is not numeric' {
+            $ts = [datetime]::UtcNow.AddHours(-5)
+            $dir = New-StaleRunDir -RunsRoot $testEnv.RunsRoot -Timestamp $ts
+
+            # Manually set a non-numeric pid
+            $meta = Get-Content -LiteralPath (Join-Path $dir 'meta.json') -Raw | ConvertFrom-Json
+            $meta | Add-Member -NotePropertyName 'pid' -NotePropertyValue 'not-a-number' -Force
+            $meta | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $dir 'meta.json') -Encoding UTF8
+
+            $result = Test-RunActive -RunDirectory $dir -StaleGraceHours 4
+            # Should fall through to legacy age-based check (5h > 4h grace)
+            $result.IsStale | Should -Be $true
+            $result.Reason | Should -Be 'legacy-stale-by-age'
         }
     }
 
@@ -308,7 +323,7 @@ Describe 'Clear-RunHistory with stale runs' {
 
         # Add a dead PID to make it stale
         $meta = Get-Content -LiteralPath (Join-Path $dir 'meta.json') -Raw | ConvertFrom-Json
-        $meta | Add-Member -NotePropertyName 'pid' -NotePropertyValue 99999 -Force
+        $meta | Add-Member -NotePropertyName 'pid' -NotePropertyValue ([int]::MaxValue) -Force
         $meta | Add-Member -NotePropertyName 'pidStartTime' -NotePropertyValue $ts.ToString('o') -Force
         $meta | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $dir 'meta.json') -Encoding UTF8
 

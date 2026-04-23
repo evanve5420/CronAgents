@@ -249,6 +249,7 @@ function Test-RunActive {
         [Parameter(Mandatory)]
         [string]$RunDirectory,
 
+        [ValidateRange(0, [double]::MaxValue)]
         [double]$StaleGraceHours = $script:StaleGraceHours
     )
 
@@ -296,48 +297,72 @@ function Test-RunActive {
     # 3. If PID is recorded, check process liveness.
     $hasPid = $meta.PSObject.Properties['pid'] -and $null -ne $meta.pid
     if ($hasPid) {
-        $childPid = [int]$meta.pid
-        $proc = $null
-        try { $proc = Get-Process -Id $childPid -ErrorAction SilentlyContinue } catch { }
-
-        if (-not $proc) {
-            return [PSCustomObject]@{
-                IsActive     = $false
-                IsStale      = $true
-                IsIncomplete = $false
-                Reason       = 'pid-not-found'
-            }
+        $childPid = 0
+        $pidText = [string]$meta.pid
+        if (-not [int]::TryParse($pidText, [ref]$childPid)) {
+            Write-CronAgentsLog -Level 'debug' -Message "Test-RunActive: ignoring invalid pid '$pidText' in '$RunDirectory'; falling back to legacy run-state detection."
+            # Fall through to age-based detection below
         }
-
-        # Validate start time to guard against PID recycling.
-        if ($meta.PSObject.Properties['pidStartTime'] -and $meta.pidStartTime) {
+        else {
+            $proc = $null
+            $lookupFailed = $false
             try {
-                $recordedStart = if ($meta.pidStartTime -is [datetime]) {
-                    $meta.pidStartTime.ToUniversalTime()
-                } else {
-                    [datetime]::Parse($meta.pidStartTime).ToUniversalTime()
-                }
-                $procStartUtc = $proc.StartTime.ToUniversalTime()
-                $driftSeconds = [math]::Abs(($procStartUtc - $recordedStart).TotalSeconds)
-                if ($driftSeconds -gt 5) {
-                    return [PSCustomObject]@{
-                        IsActive     = $false
-                        IsStale      = $true
-                        IsIncomplete = $false
-                        Reason       = 'pid-recycled'
-                    }
-                }
+                $proc = Get-Process -Id $childPid -ErrorAction SilentlyContinue
             }
             catch {
-                Write-CronAgentsLog -Level 'debug' -Message "Test-RunActive: could not compare pidStartTime for PID $childPid in '$RunDirectory': $_"
+                Write-CronAgentsLog -Level 'debug' -Message "Test-RunActive: Get-Process failed for PID $childPid in '$RunDirectory': $_ — assuming active."
+                $lookupFailed = $true
             }
-        }
 
-        return [PSCustomObject]@{
-            IsActive     = $true
-            IsStale      = $false
-            IsIncomplete = $false
-            Reason       = 'pid-alive'
+            if ($lookupFailed) {
+                # Can't determine liveness — assume active (safe default)
+                return [PSCustomObject]@{
+                    IsActive     = $true
+                    IsStale      = $false
+                    IsIncomplete = $false
+                    Reason       = 'pid-lookup-failed'
+                }
+            }
+
+            if (-not $proc) {
+                return [PSCustomObject]@{
+                    IsActive     = $false
+                    IsStale      = $true
+                    IsIncomplete = $false
+                    Reason       = 'pid-not-found'
+                }
+            }
+
+            # Validate start time to guard against PID recycling.
+            if ($meta.PSObject.Properties['pidStartTime'] -and $meta.pidStartTime) {
+                try {
+                    $recordedStart = if ($meta.pidStartTime -is [datetime]) {
+                        $meta.pidStartTime.ToUniversalTime()
+                    } else {
+                        [datetime]::Parse($meta.pidStartTime).ToUniversalTime()
+                    }
+                    $procStartUtc = $proc.StartTime.ToUniversalTime()
+                    $driftSeconds = [math]::Abs(($procStartUtc - $recordedStart).TotalSeconds)
+                    if ($driftSeconds -gt 5) {
+                        return [PSCustomObject]@{
+                            IsActive     = $false
+                            IsStale      = $true
+                            IsIncomplete = $false
+                            Reason       = 'pid-recycled'
+                        }
+                    }
+                }
+                catch {
+                    Write-CronAgentsLog -Level 'debug' -Message "Test-RunActive: could not compare pidStartTime for PID $childPid in '$RunDirectory': $_"
+                }
+            }
+
+            return [PSCustomObject]@{
+                IsActive     = $true
+                IsStale      = $false
+                IsIncomplete = $false
+                Reason       = 'pid-alive'
+            }
         }
     }
 
