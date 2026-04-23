@@ -53,7 +53,15 @@ function Get-StatusIcon {
     $meta = $Run.Meta
     if ($null -eq $meta) { return '❓' }
 
-    if ($null -eq $meta.exitCode)         { return '🔄' }
+    if ($null -eq $meta.exitCode) {
+        # Check if the run is actually stale
+        if ($Run.RunDirectory) {
+            $status = Test-RunActive -RunDirectory $Run.RunDirectory
+            if ($status.IsStale)      { return '💀' }
+            if ($status.IsIncomplete) { return '⚠️' }
+        }
+        return '🔄'
+    }
     if ($meta.timedOut)                  { return '⏱️' }
     if ($meta.retryAttempt -gt 0 -and
         $meta.exitCode -eq 0)           { return '🔄' }
@@ -73,7 +81,15 @@ function Get-StatusLabel {
     $meta = $Run.Meta
     if ($null -eq $meta) { return 'Unknown' }
 
-    if ($null -eq $meta.exitCode) { return 'Running' }
+    if ($null -eq $meta.exitCode) {
+        # Check if the run is actually stale
+        if ($Run.RunDirectory) {
+            $status = Test-RunActive -RunDirectory $Run.RunDirectory
+            if ($status.IsStale)      { return 'Stale' }
+            if ($status.IsIncomplete) { return 'Incomplete' }
+        }
+        return 'Running'
+    }
     if ($meta.timedOut)         { return 'Timed Out' }
     if ($meta.exitCode -eq 75) { return 'Skipped' }
     if ($meta.exitCode -eq 0)  { return 'Success' }

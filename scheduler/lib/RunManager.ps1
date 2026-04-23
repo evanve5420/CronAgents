@@ -166,6 +166,215 @@ function Write-RunMetadata {
 }
 
 # -------------------------------------------------------------------
+# Update-RunPid — record the child process PID in meta.json
+# -------------------------------------------------------------------
+function Update-RunPid {
+    <#
+    .SYNOPSIS
+        Records the child process PID and its start time in meta.json.
+        Called immediately after the agent/script process is started.
+    .PARAMETER RunDirectory
+        The run directory containing meta.json.
+    .PARAMETER ProcessId
+        The process ID of the launched child process.
+    .PARAMETER ProcessStartTime
+        The start time of the child process (UTC). Used to detect
+        PID recycling when checking liveness later.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RunDirectory,
+
+        [Parameter(Mandatory)]
+        [int]$ProcessId,
+
+        [Parameter(Mandatory)]
+        [datetime]$ProcessStartTime
+    )
+
+    $metaPath = Join-Path $RunDirectory 'meta.json'
+    if (-not (Test-Path -LiteralPath $metaPath)) {
+        Write-CronAgentsLog -Level 'warn' -Message "Update-RunPid: meta.json not found in $RunDirectory"
+        return
+    }
+
+    try {
+        $raw = Get-Content -LiteralPath $metaPath -Raw -Encoding UTF8
+        $meta = $raw | ConvertFrom-Json
+        $meta | Add-Member -NotePropertyName 'pid' -NotePropertyValue $ProcessId -Force
+        $meta | Add-Member -NotePropertyName 'pidStartTime' -NotePropertyValue (ConvertTo-CronAgentsIsoTimestamp -Time $ProcessStartTime) -Force
+        $json = $meta | ConvertTo-Json -Depth 10
+        Set-Content -LiteralPath $metaPath -Value $json -Encoding UTF8
+        Write-CronAgentsLog -Level 'debug' -Message "Recorded child PID $ProcessId in: $metaPath"
+    }
+    catch {
+        Write-CronAgentsLog -Level 'warn' -Message "Update-RunPid: failed to update meta.json in $RunDirectory — $_"
+    }
+}
+
+# -------------------------------------------------------------------
+# Test-RunActive — determine whether a run is still genuinely active
+# -------------------------------------------------------------------
+# Default grace period (hours) for legacy runs without PID info.
+# A run older than this with no exitCode is considered stale.
+$script:StaleGraceHours = 4
+
+function Test-RunActive {
+    <#
+    .SYNOPSIS
+        Returns a status object indicating whether a run is active,
+        stale, incomplete, or finished.
+    .DESCRIPTION
+        Checks run liveness in order of precision:
+        1. If exitCode/endTime are set → finished (not active).
+        2. If output.md exists but no exitCode → incomplete (not active).
+        3. If PID is recorded → check if that process is still alive.
+        4. If no PID (legacy) → use age-based staleness detection.
+    .PARAMETER RunDirectory
+        Path to the run directory.
+    .PARAMETER StaleGraceHours
+        Override for the grace period (hours) beyond which a
+        legacy run (no PID) is considered stale. Default: 4.
+    .OUTPUTS
+        PSCustomObject with:
+          IsActive      [bool]   — true only if the child process is confirmed alive
+          IsStale       [bool]   — true if the run appears dead but metadata was never finalized
+          IsIncomplete  [bool]   — true if output.md exists but final metadata is missing
+          Reason        [string] — human-readable reason for the determination
+    #>
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RunDirectory,
+
+        [double]$StaleGraceHours = $script:StaleGraceHours
+    )
+
+    $defaultResult = [PSCustomObject]@{
+        IsActive     = $false
+        IsStale      = $false
+        IsIncomplete = $false
+        Reason       = ''
+    }
+
+    $metaPath = Join-Path $RunDirectory 'meta.json'
+    if (-not (Test-Path -LiteralPath $metaPath)) {
+        $defaultResult.Reason = 'no-meta'
+        return $defaultResult
+    }
+
+    $meta = $null
+    try {
+        $meta = Get-Content -LiteralPath $metaPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    catch {
+        $defaultResult.Reason = 'unreadable-meta'
+        return $defaultResult
+    }
+
+    # 1. If exitCode/endTime are populated, the run is finished.
+    $hasExit = $meta.PSObject.Properties['exitCode'] -and ($null -ne $meta.exitCode)
+    $hasEnd  = $meta.PSObject.Properties['endTime']  -and -not [string]::IsNullOrEmpty($meta.endTime)
+    if ($hasExit -or $hasEnd) {
+        $defaultResult.Reason = 'finished'
+        return $defaultResult
+    }
+
+    # 2. If output.md exists, the process exited but metadata was never written.
+    $hasOutput = Test-Path -LiteralPath (Join-Path $RunDirectory 'output.md')
+    if ($hasOutput) {
+        return [PSCustomObject]@{
+            IsActive     = $false
+            IsStale      = $false
+            IsIncomplete = $true
+            Reason       = 'output-exists-no-metadata'
+        }
+    }
+
+    # 3. If PID is recorded, check process liveness.
+    $hasPid = $meta.PSObject.Properties['pid'] -and $null -ne $meta.pid
+    if ($hasPid) {
+        $childPid = [int]$meta.pid
+        $proc = $null
+        try { $proc = Get-Process -Id $childPid -ErrorAction SilentlyContinue } catch { }
+
+        if (-not $proc) {
+            return [PSCustomObject]@{
+                IsActive     = $false
+                IsStale      = $true
+                IsIncomplete = $false
+                Reason       = 'pid-not-found'
+            }
+        }
+
+        # Validate start time to guard against PID recycling.
+        if ($meta.PSObject.Properties['pidStartTime'] -and $meta.pidStartTime) {
+            try {
+                $recordedStart = if ($meta.pidStartTime -is [datetime]) {
+                    $meta.pidStartTime.ToUniversalTime()
+                } else {
+                    [datetime]::Parse($meta.pidStartTime).ToUniversalTime()
+                }
+                $procStartUtc = $proc.StartTime.ToUniversalTime()
+                $driftSeconds = [math]::Abs(($procStartUtc - $recordedStart).TotalSeconds)
+                if ($driftSeconds -gt 5) {
+                    return [PSCustomObject]@{
+                        IsActive     = $false
+                        IsStale      = $true
+                        IsIncomplete = $false
+                        Reason       = 'pid-recycled'
+                    }
+                }
+            }
+            catch {
+                Write-CronAgentsLog -Level 'debug' -Message "Test-RunActive: could not compare pidStartTime for PID $childPid in '$RunDirectory': $_"
+            }
+        }
+
+        return [PSCustomObject]@{
+            IsActive     = $true
+            IsStale      = $false
+            IsIncomplete = $false
+            Reason       = 'pid-alive'
+        }
+    }
+
+    # 4. No PID recorded (legacy run). Use age-based staleness detection.
+    $startTimeStr = if ($meta.PSObject.Properties['startTime']) { $meta.startTime } else { $null }
+    if ($startTimeStr) {
+        try {
+            $startTime = if ($startTimeStr -is [datetime]) {
+                $startTimeStr.ToUniversalTime()
+            } else {
+                [datetime]::Parse($startTimeStr).ToUniversalTime()
+            }
+            $age = ([datetime]::UtcNow - $startTime)
+            if ($age.TotalHours -gt $StaleGraceHours) {
+                return [PSCustomObject]@{
+                    IsActive     = $false
+                    IsStale      = $true
+                    IsIncomplete = $false
+                    Reason       = 'legacy-stale-by-age'
+                }
+            }
+        }
+        catch {
+            Write-CronAgentsLog -Level 'debug' -Message "Test-RunActive: could not parse startTime for age check in '$RunDirectory': $_"
+        }
+    }
+
+    # Within grace period or can't determine age — assume active (safe default).
+    return [PSCustomObject]@{
+        IsActive     = $true
+        IsStale      = $false
+        IsIncomplete = $false
+        Reason       = 'assumed-active'
+    }
+}
+
+# -------------------------------------------------------------------
 # Test-FeedbackPresent (helper)
 # -------------------------------------------------------------------
 function Test-FeedbackPresent {
@@ -406,24 +615,13 @@ function Clear-RunHistory {
         }
     }
 
-    # Helper: returns $true when meta.json indicates the run is still active.
-    # A run with no exitCode/endTime but an existing output.md is considered
-    # incomplete (the process exited without writing final metadata), not active.
+    # Helper: returns $true when the run is still genuinely active.
+    # Delegates to Test-RunActive which checks PID liveness and
+    # falls back to age-based staleness for legacy runs.
     $isRunActive = {
         param([string]$Dir)
-        $metaPath = Join-Path $Dir 'meta.json'
-        if (-not (Test-Path -LiteralPath $metaPath)) { return $false }
-        try {
-            $meta = Get-Content -LiteralPath $metaPath -Raw -Encoding UTF8 | ConvertFrom-Json
-            $noExit = ($null -eq $meta.PSObject.Properties['exitCode']) -or ($null -eq $meta.exitCode)
-            $noEnd  = ($null -eq $meta.PSObject.Properties['endTime'])  -or [string]::IsNullOrEmpty($meta.endTime)
-            if (-not ($noExit -and $noEnd)) { return $false }
-            # output.md is written after the agent process exits; its presence
-            # means the process finished but final metadata was never recorded.
-            $hasOutput = Test-Path -LiteralPath (Join-Path $Dir 'output.md')
-            return (-not $hasOutput)
-        }
-        catch { return $false }
+        $status = Test-RunActive -RunDirectory $Dir
+        return $status.IsActive
     }
 
     # ── Single run ──────────────────────────────────────────────

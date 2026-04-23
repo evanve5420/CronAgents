@@ -206,6 +206,15 @@ function Invoke-CopilotRun {
     $attemptStart = [datetime]::UtcNow
     $proc.Start() | Out-Null
 
+    # Record child PID in meta.json for liveness detection
+    try {
+        $procStartTime = $proc.StartTime.ToUniversalTime()
+        Update-RunPid -RunDirectory $RunDirectory -ProcessId $proc.Id -ProcessStartTime $procStartTime
+    }
+    catch {
+        Write-CronAgentsLog -Level 'debug' -Message "Could not record child PID: $_ — stale detection will use age-based fallback."
+    }
+
     # Close stdin immediately — unattended runs never provide input.
     # Without this, the child process can hang in background-job contexts
     # where there is no console and the inherited stdin handle is dead.
@@ -344,6 +353,16 @@ function Invoke-ScriptRun {
 
     $attemptStart = [datetime]::UtcNow
     $proc.Start() | Out-Null
+
+    # Record child PID in meta.json for liveness detection
+    try {
+        $procStartTime = $proc.StartTime.ToUniversalTime()
+        Update-RunPid -RunDirectory $RunDirectory -ProcessId $proc.Id -ProcessStartTime $procStartTime
+    }
+    catch {
+        Write-CronAgentsLog -Level 'debug' -Message "Could not record script PID: $_ — stale detection will use age-based fallback."
+    }
+
     $proc.StandardInput.Close()
 
     $stdout = $proc.StandardOutput.ReadToEndAsync()
