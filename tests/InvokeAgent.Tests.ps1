@@ -257,6 +257,42 @@ Describe 'Invoke-ScheduledAgent — Exit Code and State' {
     }
 }
 
+Describe 'Invoke-ScheduledAgent — Summary Result Reconciliation' {
+    BeforeEach {
+        $testEnv = New-TestEnvironment -Name 'InvokeAgentSummaryResult'
+    }
+    AfterEach {
+        Remove-Item Env:\CRONAGENTS_MOCK_OUTPUT -ErrorAction SilentlyContinue
+        Remove-TestEnvironment -TestEnv $testEnv
+    }
+
+    It 'Marks a zero-exit Copilot run failed when the summary reports functional failure' {
+        $env:CRONAGENTS_MOCK_OUTPUT = "---`nattention: true`nresult: failure`nheadline: `"Sandbox blocked required path`"`n---`nThe agent could not access a required local directory, so the requested work was not completed."
+
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'summary-failure-agent' `
+            -Agent 'worker-agent' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Prompt 'Inspect a local project path'
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'summary-failure-agent'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Be 1
+
+        $meta = Get-Content (Join-Path $result.RunDirectory 'meta.json') -Raw | ConvertFrom-Json
+        $meta.exitCode        | Should -Be 1
+        $meta.processExitCode | Should -Be 0
+        $meta.summaryResult   | Should -Be 'failure'
+        $meta.failureSource   | Should -Be 'summary'
+    }
+}
+
 Describe 'Invoke-ScheduledAgent — Single-Word CopilotPath (Issue #15 Bug 1)' {
     <#
         When copilotPath is a single token (e.g. 'copilot'), Split-CommandLine
@@ -438,6 +474,7 @@ Describe 'Invoke-ScheduledAgent — Script Mode' {
     }
     AfterEach {
         Remove-Item Env:\CRONAGENTS_MOCK_SCRIPT_EXIT_CODE -ErrorAction SilentlyContinue
+        Remove-Item Env:\CRONAGENTS_MOCK_OUTPUT -ErrorAction SilentlyContinue
         Remove-TestEnvironment -TestEnv $testEnv
     }
 
@@ -486,6 +523,32 @@ Describe 'Invoke-ScheduledAgent — Script Mode' {
         $envVars.CRONAGENTS_AGENT_NAME | Should -Be 'Env Test Script'
         $envVars.CRONAGENTS_CONFIG | Should -Not -BeNullOrEmpty
         $envVars.CRONAGENTS_COPILOT_PATH | Should -Not -BeNullOrEmpty
+    }
+
+    It 'Keeps script exit code authoritative when the summary reports functional failure' {
+        $env:CRONAGENTS_MOCK_OUTPUT = "---`nattention: true`nresult: failure`nheadline: `"Script output looked blocked`"`n---`nThe summarizer interpreted the script output as incomplete."
+
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'script-summary-failure' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Script $script:relScriptPath `
+            -Name 'Script Summary Failure'
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'script-summary-failure'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Be 0
+
+        $meta = Get-Content (Join-Path $result.RunDirectory 'meta.json') -Raw | ConvertFrom-Json
+        $meta.exitCode      | Should -Be 0
+        $meta.summaryResult | Should -Be 'failure'
+        $meta.PSObject.Properties['processExitCode'] | Should -BeNullOrEmpty
+        $meta.PSObject.Properties['failureSource']   | Should -BeNullOrEmpty
     }
 
     It 'Captures script exit code in meta.json' {

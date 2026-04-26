@@ -11,10 +11,11 @@ BeforeAll {
 Describe 'Read-SummaryFrontmatter' {
 
     Context 'With full YAML frontmatter' {
-        It 'Parses attention=true and headline' {
-            $content = "---`nattention: true`nheadline: `"New song detected!`"`n---`nFull summary body here."
+        It 'Parses attention=true, result, and headline' {
+            $content = "---`nattention: true`nresult: failure`nheadline: `"New song detected!`"`n---`nFull summary body here."
             $result = Read-SummaryFrontmatter -Content $content
             $result.Attention | Should -Be $true
+            $result.Result    | Should -Be 'failure'
             $result.Headline  | Should -Be 'New song detected!'
             $result.Body      | Should -Be 'Full summary body here.'
         }
@@ -23,8 +24,21 @@ Describe 'Read-SummaryFrontmatter' {
             $content = "---`nattention: false`nheadline: `"Routine check`"`n---`nNothing happened."
             $result = Read-SummaryFrontmatter -Content $content
             $result.Attention | Should -Be $false
+            $result.Result    | Should -BeNullOrEmpty
             $result.Headline  | Should -Be 'Routine check'
             $result.Body      | Should -Be 'Nothing happened.'
+        }
+
+        It 'Parses quoted result case-insensitively' {
+            $content = "---`nattention: false`nresult: `"Success`"`nheadline: Routine check`n---`nDone."
+            $result = Read-SummaryFrontmatter -Content $content
+            $result.Result | Should -Be 'success'
+        }
+
+        It 'Ignores unsupported result values' {
+            $content = "---`nattention: false`nresult: partial`nheadline: Routine check`n---`nDone."
+            $result = Read-SummaryFrontmatter -Content $content
+            $result.Result | Should -BeNullOrEmpty
         }
 
         It 'Handles single-quoted headline' {
@@ -51,6 +65,7 @@ Describe 'Read-SummaryFrontmatter' {
             $content = 'Just a plain summary without any frontmatter.'
             $result = Read-SummaryFrontmatter -Content $content
             $result.Attention | Should -Be $false
+            $result.Result    | Should -BeNullOrEmpty
             $result.Headline  | Should -BeNullOrEmpty
             $result.Body      | Should -Be $content
         }

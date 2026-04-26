@@ -5,6 +5,7 @@
 #
 #   ---
 #   attention: true
+#   result: success
 #   headline: "Short one-line description"
 #   ---
 #   Brief 1-5 sentence summary (first paragraph).
@@ -23,6 +24,7 @@ function Read-SummaryFrontmatter {
     .DESCRIPTION
         Reads a summary.md file and returns an object with:
         - Attention  [bool]   — whether this run needs user attention
+        - Result     [string] — success, failure, unknown, or $null
         - Headline   [string] — short one-liner for table display (or $null)
         - Brief      [string] — concise 1-5 sentence summary (first paragraph of body)
         - Body       [string] — the full summary text after the frontmatter
@@ -30,7 +32,7 @@ function Read-SummaryFrontmatter {
         - ReadError  [string] — error message if file could not be read (or $null)
         Gracefully handles files without frontmatter (returns defaults).
         NOTE: Purpose-built parser for CronAgents summary frontmatter only.
-        Supports scalar values for: attention, headline.
+        Supports scalar values for: attention, result, headline.
     .PARAMETER Path
         Full path to the summary.md file.
     .PARAMETER Content
@@ -51,6 +53,7 @@ function Read-SummaryFrontmatter {
 
     $defaults = [PSCustomObject]@{
         Attention = $false
+        Result    = $null
         Headline  = $null
         Brief     = $null
         Body      = ''
@@ -90,6 +93,7 @@ function Read-SummaryFrontmatter {
         $body    = $Matches[2]
 
         $attention = $false
+        $result    = $null
         $headline  = $null
 
         foreach ($line in ($fmBlock -split '\r?\n')) {
@@ -98,13 +102,13 @@ function Read-SummaryFrontmatter {
                 $val = $Matches[1].Trim().ToLower()
                 $attention = $val -eq 'true' -or $val -eq 'yes' -or $val -eq '1'
             }
+            elseif ($line -match '^result\s*:\s*(.+)$') {
+                $val = script:Unquote-SummaryScalar -Value $Matches[1]
+                $normalized = $val.Trim().ToLowerInvariant()
+                if ($normalized -in @('success', 'failure', 'unknown')) { $result = $normalized }
+            }
             elseif ($line -match '^headline\s*:\s*(.+)$') {
-                $val = $Matches[1].Trim()
-                # Strip surrounding quotes if present
-                if (($val.StartsWith('"') -and $val.EndsWith('"')) -or
-                    ($val.StartsWith("'") -and $val.EndsWith("'"))) {
-                    $val = $val.Substring(1, $val.Length - 2)
-                }
+                $val = script:Unquote-SummaryScalar -Value $Matches[1]
                 if ($val.Length -gt 0) { $headline = $val }
             }
         }
@@ -112,6 +116,7 @@ function Read-SummaryFrontmatter {
         $trimmedBody = $body.TrimStart("`r", "`n").TrimEnd()
         return [PSCustomObject]@{
             Attention = $attention
+            Result    = $result
             Headline  = $headline
             Brief     = (script:Extract-Brief -Body $trimmedBody)
             Body      = $trimmedBody
@@ -185,6 +190,22 @@ function Write-SummaryAttention {
     }
 
     Set-Content -LiteralPath $Path -Value $newContent -Encoding UTF8 -NoNewline -ErrorAction Stop
+}
+
+function script:Unquote-SummaryScalar {
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Value
+    )
+
+    $trimmed = $Value.Trim()
+    if (($trimmed.StartsWith('"') -and $trimmed.EndsWith('"')) -or
+        ($trimmed.StartsWith("'") -and $trimmed.EndsWith("'"))) {
+        return $trimmed.Substring(1, $trimmed.Length - 2)
+    }
+
+    return $trimmed
 }
 
 function script:Extract-Brief {

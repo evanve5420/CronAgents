@@ -142,7 +142,14 @@ function Write-RunMetadata {
         [int]$RetryAttempt = 0,
 
         [ValidateSet('agent', 'prompt', 'script')]
-        [string]$Mode = 'prompt'
+        [string]$Mode = 'prompt',
+
+        [int]$ProcessExitCode,
+
+        [ValidateSet('success', 'failure', 'unknown')]
+        [string]$SummaryResult,
+
+        [string]$FailureSource
     )
 
     $meta = [ordered]@{
@@ -156,6 +163,15 @@ function Write-RunMetadata {
         timedOut          = $TimedOut
         retryAttempt      = $RetryAttempt
         feedbackProcessed = $false
+    }
+    if ($PSBoundParameters.ContainsKey('ProcessExitCode')) {
+        $meta['processExitCode'] = $ProcessExitCode
+    }
+    if ($PSBoundParameters.ContainsKey('SummaryResult')) {
+        $meta['summaryResult'] = $SummaryResult
+    }
+    if ($FailureSource) {
+        $meta['failureSource'] = $FailureSource
     }
 
     $metaPath = Join-Path $RunDirectory 'meta.json'
