@@ -15,17 +15,21 @@ You will receive the path to a run directory containing:
 
 ## Output Format
 
-Your summary **must** start with YAML frontmatter containing two fields:
+Your summary **must** start with YAML frontmatter containing three fields:
 
 ```
 ---
 attention: true
+result: success
 headline: "Short one-line description (under 80 chars)"
 ---
 ```
 
 - **`attention`** — set to `true` when the user should notice this run. See the Attention Rules below.
+- **`result`** — set to `success`, `failure`, or `unknown`. Use `failure` when the requested work did not complete, even if `meta.json` has `exitCode: 0`.
 - **`headline`** — a short plain-text sentence (under 80 characters) suitable for display in a table cell.
+
+CronAgents uses `result` to reconcile Copilot `agent` and `prompt` runs whose process exit code is `0` but whose output shows functional failure. For `script` mode, the script process exit code remains authoritative and `result` is recorded as troubleshooting context.
 
 After the closing `---`, write the summary in **two sections** separated by a blank line:
 
@@ -52,25 +56,22 @@ The prompt includes an **attention level** for the agent: `all`, `failures-only`
 ### Level: `all` (default)
 
 Set `attention: true` when **any** of these apply:
-- The agent **failed** (non-zero exit code) and the failure looks actionable (not a transient network blip)
+- The run **failed** (non-zero exit code, timeout, or `result: failure`) and the failure looks actionable (not a transient network blip)
 - The agent produced **actionable results** the user would want to know about (e.g., a monitoring agent detected a change, a new release was found, a security issue was flagged)
 - The agent made **significant changes** to the codebase (created PRs, modified files, deployed something)
-- The agent **timed out** and the timeout likely caused incomplete work
 
 ### Level: `significant-changes`
 
 Set `attention: true` **only** when:
-- The agent **failed** (non-zero exit code) with an actionable error
+- The run **failed** (non-zero exit code, timeout, or `result: failure`) with an actionable error
 - The agent made **significant changes** (created PRs, modified files, deployed something)
-- The agent **timed out** and the timeout likely caused incomplete work
 
 Do **not** flag attention for routine monitoring results even if actionable (e.g., "found 3 PRs to review" is normal output for a monitoring agent — report it in the summary but don't flag attention).
 
 ### Level: `failures-only`
 
 Set `attention: true` **only** when:
-- The agent **failed** (non-zero exit code) with an actionable error
-- The agent **timed out** and the timeout likely caused incomplete work
+- The run **failed** (non-zero exit code, timeout, or `result: failure`) with an actionable error
 
 Do **not** flag attention for actionable results or significant changes — the user will see them in the dashboard summary.
 
@@ -85,11 +86,23 @@ Set `attention: false` when:
 - The run succeeded with only minor or expected housekeeping
 - A transient failure occurred that will likely self-resolve on the next run
 
+## Result Rules
+
+Set `result: failure` when:
+- `meta.json` has a non-zero `exitCode`
+- the run timed out before completing the requested work
+- the agent reports that it could not complete the requested work because required files, directories, tools, credentials, or permissions were unavailable
+- the output says the requested task was blocked, failed, incomplete, or needs manual intervention before it can be considered done
+
+Set `result: success` when the requested work completed, including legitimate no-op runs where there was nothing to change.
+
+Set `result: unknown` only when the output is too ambiguous to determine whether the requested work succeeded. Do not use `unknown` just because the run was routine.
+
 ## Summary Detail Rules
 
 Adapt detail level to what happened:
 
-- **Failures** (non-zero exit code): Brief states what failed. Details section has error context, which tools failed, suggested next steps.
+- **Failures** (`result: failure`, non-zero exit code, or timeout): Brief states what failed. Details section has error context, which tools failed, suggested next steps.
 - **Work happened** (non-trivial output, file edits mentioned): Brief states what was done and the outcome. Details section lists specifics if useful.
 - **No-op runs** (empty or trivial output): Brief only: "✓ No changes detected." — no details section needed.
 

@@ -85,6 +85,9 @@ if ($copilotAuthToken) { $copilotEnvBase['GH_TOKEN'] = $copilotAuthToken }
 
 # --- Result tracking ---
 $exitCode     = -1
+$processExitCode = $null
+$summaryResult   = $null
+$failureSource   = $null
 $timedOut     = $false
 $startTime    = $null
 $endTime      = $null
@@ -607,6 +610,7 @@ try {
         }
 
         $exitCode  = $result.ExitCode
+        $processExitCode = $exitCode
         $timedOut  = $result.TimedOut
         $startTime = if ($attempt -eq 0) { $result.StartTime } else { $startTime }
         $endTime   = $result.EndTime
@@ -649,31 +653,6 @@ try {
     Write-RunMetadata @writeMetaParams
 
     # ------------------------------------------------------------------
-    # Step 6b — Notify on failure or success (best-effort)
-    # ------------------------------------------------------------------
-    if ($exitCode -ne 0) {
-        try {
-            Send-AgentFailureNotification `
-                -AgentId $AgentId -AgentName $AgentConfig.name `
-                -ExitCode $exitCode -TimedOut $timedOut `
-                -GlobalConfig $GlobalConfig -AgentConfig $AgentConfig
-        }
-        catch {
-            Write-CronAgentsLog -Level 'warn' -Message "Failure notification error for '$AgentId': $_ — continuing."
-        }
-    }
-    else {
-        try {
-            Send-AgentSuccessNotification `
-                -AgentId $AgentId -AgentName $AgentConfig.name `
-                -GlobalConfig $GlobalConfig -AgentConfig $AgentConfig
-        }
-        catch {
-            Write-CronAgentsLog -Level 'warn' -Message "Success notification error for '$AgentId': $_ — continuing."
-        }
-    }
-
-    # ------------------------------------------------------------------
     # Step 6c — Clear consumed answers and pick up new questions
     # ------------------------------------------------------------------
     try {
@@ -705,6 +684,8 @@ try {
     # ------------------------------------------------------------------
     # Step 7 — Invoke run-summarizer (best-effort)
     # ------------------------------------------------------------------
+    $summaryFile = $null
+    $summaryWritten = $false
     try {
         $copilotPath   = if ($GlobalConfig.copilotPath) { $GlobalConfig.copilotPath } else { 'copilot' }
         $summaryFile   = Join-Path $runDir 'summary.md'
@@ -775,6 +756,7 @@ try {
 
         if (-not [string]::IsNullOrWhiteSpace($sumText)) {
             [System.IO.File]::WriteAllText($summaryFile, $sumText, [System.Text.Encoding]::UTF8)
+            $summaryWritten = $true
             if ($sumErrText) {
                 Write-CronAgentsLog -Level 'debug' -Message "Run-summarizer stderr for '$AgentId': $sumErrText"
             }
@@ -802,6 +784,57 @@ try {
     }
     catch {
         Write-CronAgentsLog -Level 'warn' -Message "Run-summarizer failed for '$AgentId': $_ — continuing."
+    }
+
+    # ------------------------------------------------------------------
+    # Step 7b — Reconcile structured summary result with run metadata
+    # ------------------------------------------------------------------
+    if ($summaryWritten -and $summaryFile -and (Test-Path -LiteralPath $summaryFile)) {
+        $parsedSummary = Read-SummaryFrontmatter -Path $summaryFile -MetadataOnly
+        if ($parsedSummary.ReadError) {
+            Write-CronAgentsLog -Level 'warn' -Message "Failed to parse summary result for '$AgentId': $($parsedSummary.ReadError)"
+        }
+        elseif ($parsedSummary.Result) {
+            $summaryResult = $parsedSummary.Result
+            if ($runMode -ne 'script' -and $exitCode -eq 0 -and $summaryResult -eq 'failure') {
+                $failureSource = 'summary'
+                $exitCode = 1
+                Write-CronAgentsLog -Level 'warn' -Message "Agent '$AgentId' reported functional failure in summary despite process exit code $processExitCode; marking run failed."
+            }
+
+            $writeMetaParams['ExitCode'] = $exitCode
+            $writeMetaParams['SummaryResult'] = $summaryResult
+            if ($failureSource) {
+                $writeMetaParams['ProcessExitCode'] = [int]$processExitCode
+                $writeMetaParams['FailureSource'] = $failureSource
+            }
+            Write-RunMetadata @writeMetaParams
+        }
+    }
+
+    # ------------------------------------------------------------------
+    # Step 7c — Notify on failure or success (best-effort)
+    # ------------------------------------------------------------------
+    if ($exitCode -ne 0) {
+        try {
+            Send-AgentFailureNotification `
+                -AgentId $AgentId -AgentName $AgentConfig.name `
+                -ExitCode $exitCode -TimedOut $timedOut `
+                -GlobalConfig $GlobalConfig -AgentConfig $AgentConfig
+        }
+        catch {
+            Write-CronAgentsLog -Level 'warn' -Message "Failure notification error for '$AgentId': $_ — continuing."
+        }
+    }
+    else {
+        try {
+            Send-AgentSuccessNotification `
+                -AgentId $AgentId -AgentName $AgentConfig.name `
+                -GlobalConfig $GlobalConfig -AgentConfig $AgentConfig
+        }
+        catch {
+            Write-CronAgentsLog -Level 'warn' -Message "Success notification error for '$AgentId': $_ — continuing."
+        }
     }
 
     # ------------------------------------------------------------------

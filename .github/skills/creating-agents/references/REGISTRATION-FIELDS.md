@@ -42,7 +42,7 @@ Skip when the machine is on battery power.
 
 ### `retryCount` (integer, default `0`, min `0`)
 
-Number of retries on failure. Each retry is a full re-invocation.
+Number of retries on process failure (non-zero exit code or timeout). Each retry is a full re-invocation. Summary-derived functional failures are detected after the final attempt and are not retried.
 
 ### `model` (string or null)
 
@@ -88,9 +88,9 @@ Show a Windows toast notification when the agent completes successfully. Require
 
 Controls when the run-summarizer flags a run as needing attention in the dashboard banner. One of:
 
-- `"all"` — Flag on failures, actionable results, significant changes, and timeouts. (Default — backwards-compatible behavior.)
-- `"significant-changes"` — Flag on failures, codebase/PR changes, and timeouts, but **not** routine monitoring results.
-- `"failures-only"` — Only flag on non-zero exit codes and timeouts.
+- `"all"` — Flag on actionable failures (non-zero exit, timeout, or `result: failure`), actionable results, and significant changes. (Default — backwards-compatible behavior.)
+- `"significant-changes"` — Flag on actionable failures and significant changes such as codebase/PR changes or deployments, but **not** routine monitoring results.
+- `"failures-only"` — Only flag on actionable failures.
 - `"never"` — Never flag attention. Results are visible in the dashboard but won't trigger the banner.
 
 Use `"failures-only"` or `"significant-changes"` for monitoring agents that routinely find actionable items (e.g., a PR watcher that always has open PRs). This prevents a permanent attention banner while still surfacing failures.

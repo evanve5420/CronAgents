@@ -184,19 +184,29 @@ Get-Content ".cronstate\runs\20240115T143022_daily-review_a1b2\meta.json" | Conv
   "agentId": "daily-review",
   "agentName": "Daily Code Review",
   "prompt": "Review yesterday's code changes",
+  "mode": "agent",
   "startTime": "2024-01-15T14:30:22",
   "endTime": "2024-01-15T14:35:18",
   "exitCode": 0,
   "timedOut": false,
   "retryAttempt": 0,
+  "summaryResult": "success",
   "feedbackProcessed": false
 }
 ```
 
 Key fields for troubleshooting:
-- `exitCode`: `0` = success, non-zero = failure
+- `mode`: `agent`, `prompt`, or `script`
+- `exitCode`: `0` = success, non-zero = failure. For Copilot `agent` and `prompt` runs, CronAgents can mark this non-zero when the run summary reports that the requested work did not actually complete.
+- `processExitCode`: present when CronAgents overrode the Copilot process exit code based on `summaryResult`. For example, `exitCode: 1` with `processExitCode: 0` means Copilot exited cleanly but the summary identified a functional failure.
+- `summaryResult`: run-summarizer's structured result (`success`, `failure`, or `unknown`) when available.
+- `failureSource`: present when the failure status came from a source other than the raw process exit code, such as `summary`.
 - `timedOut`: `true` if the agent hit its timeout
 - `retryAttempt`: which retry this was (0 = first attempt)
+
+For `script` mode, the script process exit code remains authoritative. A script run can record `summaryResult: failure` for troubleshooting context while keeping `exitCode: 0`; update the script to return a non-zero exit code if that condition should fail the run.
+
+`retryCount` retries process failures and timeouts. Summary-derived functional failures are detected after the final attempt, so they are recorded in metadata but are not retried.
 
 ---
 

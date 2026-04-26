@@ -360,7 +360,7 @@ CronAgents invokes the script with named parameters `-RepoRoot`, `-AgentId`, and
 | **Type** | `integer` |
 | **Default** | `0` |
 | **Min** | `0` |
-| **Description** | Number of times to retry the agent if it fails (non-zero exit code). Each retry is a full re-invocation. |
+| **Description** | Number of times to retry the agent if the process fails (non-zero exit code or timeout). Each retry is a full re-invocation. Summary-derived functional failures are detected after the final attempt and are not retried. |
 
 #### `model`
 

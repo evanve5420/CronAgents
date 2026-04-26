@@ -105,7 +105,14 @@ if ($null -ne $mockOutputOverride) {
 else {
     $output = switch ($Agent) {
         'run-summarizer' {
-            "✓ no changes"
+            @"
+---
+attention: false
+result: success
+headline: "No changes detected"
+---
+✓ no changes
+"@
         }
         'feedback-evaluator' {
             @"

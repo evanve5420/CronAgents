@@ -130,7 +130,7 @@
       "type": "integer",
       "minimum": 0,
       "default": 0,
-      "description": "Number of times to retry on failure."
+      "description": "Number of times to retry on process failure (non-zero exit code or timeout). Summary-derived functional failures are detected after the final attempt and are not retried."
     },
     "model": {
       "oneOf": [
@@ -178,7 +178,7 @@
       "type": "string",
       "enum": ["all", "failures-only", "significant-changes", "never"],
       "default": "all",
-      "description": "Controls when the run-summarizer flags a run as needing attention. 'all' (default): flag on failures, actionable results, significant changes, and timeouts. 'failures-only': only on non-zero exit or timeout. 'significant-changes': on failures and codebase/PR changes, but not routine monitoring results. 'never': never flag attention (results are visible in the dashboard but won't trigger the banner)."
+      "description": "Controls when the run-summarizer flags a run as needing attention. 'all' (default): flag on actionable failures (non-zero exit, timeout, or summary result failure), actionable results, and significant changes. 'failures-only': only on actionable failures. 'significant-changes': on actionable failures and significant changes such as codebase/PR changes or deployments, but not routine monitoring results. 'never': never flag attention (results are visible in the dashboard but won't trigger the banner)."
     },
     "notificationSound": {
       "type": "string",
