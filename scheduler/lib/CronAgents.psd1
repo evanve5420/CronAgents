@@ -49,6 +49,8 @@
         'New-RunDirectory',
         'Initialize-RunMetadata',
         'Write-RunMetadata',
+        'Update-RunPid',
+        'Test-RunActive',
         'Get-RunHistory',
         'Clear-RunHistory',
         'Test-FeedbackPresent',

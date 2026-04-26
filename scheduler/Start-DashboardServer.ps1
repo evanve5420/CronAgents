@@ -196,6 +196,7 @@ function script:Get-RunsPayload {
         $meta = $null
         $hasOutput = Test-Path -LiteralPath (Join-Path $r.RunDirectory 'output.md')
         $isIncomplete = $false
+        $isStale = $false
         if ($r.Meta) {
             $meta = [ordered]@{
                 agentId           = $r.Meta.agentId
@@ -209,8 +210,11 @@ function script:Get-RunsPayload {
                 feedbackProcessed = if ($r.Meta.PSObject.Properties['feedbackProcessed']) { $r.Meta.feedbackProcessed } else { $false }
             }
 
-            if (($null -eq $meta.exitCode) -and [string]::IsNullOrEmpty($meta.endTime) -and $hasOutput) {
-                $isIncomplete = $true
+            # Only check liveness for runs that lack final metadata
+            if ($null -eq $meta.exitCode -and [string]::IsNullOrEmpty($meta.endTime)) {
+                $runStatus = Test-RunActive -RunDirectory $r.RunDirectory
+                $isIncomplete = $runStatus.IsIncomplete
+                $isStale = $runStatus.IsStale
             }
         }
 
@@ -245,6 +249,7 @@ function script:Get-RunsPayload {
             meta              = $meta
             hasOutput         = $hasOutput
             isIncomplete      = $isIncomplete
+            isStale           = $isStale
             hasFeedback       = $r.HasFeedback
             feedbackProcessed = $r.FeedbackProcessed
             hasSummary        = $r.HasSummary
@@ -293,11 +298,15 @@ function script:Get-RunDetailPayload {
 
     $hasOutput = Test-Path -LiteralPath (Join-Path $runDir 'output.md')
     $isIncomplete = $false
-    if ($meta -and
-        ($null -eq $meta.PSObject.Properties['exitCode'] -or $null -eq $meta.exitCode) -and
-        ($null -eq $meta.PSObject.Properties['endTime'] -or [string]::IsNullOrEmpty($meta.endTime)) -and
-        $hasOutput) {
-        $isIncomplete = $true
+    $isStale = $false
+    if ($meta) {
+        $hasExitCode = $null -ne $meta.exitCode
+        $hasEndTime = -not [string]::IsNullOrWhiteSpace([string]$meta.endTime)
+        if (-not ($hasExitCode -or $hasEndTime)) {
+            $runStatus = Test-RunActive -RunDirectory $runDir
+            $isIncomplete = $runStatus.IsIncomplete
+            $isStale = $runStatus.IsStale
+        }
     }
 
     $summary = $null
@@ -355,6 +364,7 @@ function script:Get-RunDetailPayload {
             meta           = $meta
             hasOutput      = $hasOutput
             isIncomplete   = $isIncomplete
+            isStale        = $isStale
             summary        = $summary
             brief          = $brief
             attention      = $attention

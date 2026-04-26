@@ -45,6 +45,23 @@ function Format-RunTime {
     return "$($local.ToString('MMM d yyyy')), $timeStr"
 }
 
+# Cache for Test-RunActive results to avoid duplicate file/process reads
+# within a single dashboard generation run.
+$script:runActiveCache = @{}
+
+function Get-CachedRunActiveStatus {
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param([Parameter(Mandatory)][string]$RunDirectory)
+
+    if ($script:runActiveCache.ContainsKey($RunDirectory)) {
+        return $script:runActiveCache[$RunDirectory]
+    }
+    $status = Test-RunActive -RunDirectory $RunDirectory
+    $script:runActiveCache[$RunDirectory] = $status
+    return $status
+}
+
 function Get-StatusIcon {
     [CmdletBinding()]
     [OutputType([string])]
@@ -53,7 +70,14 @@ function Get-StatusIcon {
     $meta = $Run.Meta
     if ($null -eq $meta) { return '❓' }
 
-    if ($null -eq $meta.exitCode)         { return '🔄' }
+    if ($null -eq $meta.exitCode) {
+        if ($Run.RunDirectory) {
+            $status = Get-CachedRunActiveStatus -RunDirectory $Run.RunDirectory
+            if ($status.IsStale)      { return '💀' }
+            if ($status.IsIncomplete) { return '⚠️' }
+        }
+        return '🔄'
+    }
     if ($meta.timedOut)                  { return '⏱️' }
     if ($meta.retryAttempt -gt 0 -and
         $meta.exitCode -eq 0)           { return '🔄' }
@@ -73,7 +97,14 @@ function Get-StatusLabel {
     $meta = $Run.Meta
     if ($null -eq $meta) { return 'Unknown' }
 
-    if ($null -eq $meta.exitCode) { return 'Running' }
+    if ($null -eq $meta.exitCode) {
+        if ($Run.RunDirectory) {
+            $status = Get-CachedRunActiveStatus -RunDirectory $Run.RunDirectory
+            if ($status.IsStale)      { return 'Stale' }
+            if ($status.IsIncomplete) { return 'Incomplete' }
+        }
+        return 'Running'
+    }
     if ($meta.timedOut)         { return 'Timed Out' }
     if ($meta.exitCode -eq 75) { return 'Skipped' }
     if ($meta.exitCode -eq 0)  { return 'Success' }

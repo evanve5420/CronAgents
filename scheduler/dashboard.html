@@ -419,6 +419,7 @@
             <button type="button" class="filter-pill" data-status="timedout" aria-pressed="false">⏱️ Timed Out</button>
             <button type="button" class="filter-pill" data-status="skipped" aria-pressed="false">⏭️ Skipped</button>
             <button type="button" class="filter-pill" data-status="incomplete" aria-pressed="false">⚠️ Incomplete</button>
+            <button type="button" class="filter-pill" data-status="stale" aria-pressed="false">💀 Stale</button>
           </div>
         </div>
         <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
@@ -599,6 +600,7 @@ function statusBadge(run) {
   }
   const map = {
     unknown:    '<span class="badge badge-muted">Unknown</span>',
+    stale:      '<span class="badge badge-warn">💀 Stale</span>',
     incomplete: '<span class="badge badge-warn">⚠️ Incomplete</span>',
     running:    '<span class="badge badge-info">🔄 Running</span>',
     timedout:   '<span class="badge badge-warn">⏱️ Timed Out</span>',
@@ -691,6 +693,7 @@ function renderAttention() {
 function getRunStatus(run) {
   const meta = run?.meta;
   if (!meta) return 'unknown';
+  if (run?.isStale) return 'stale';
   if (run?.isIncomplete) return 'incomplete';
   if (meta.exitCode === null || meta.exitCode === undefined) return 'running';
   if (meta.timedOut) return 'timedout';
@@ -700,6 +703,7 @@ function getRunStatus(run) {
 }
 
 function isRunDeletable(run) {
+  if (run?.isStale) return true;
   if (run?.isIncomplete) return true;
   const meta = run?.meta;
   if (!meta) return true;
