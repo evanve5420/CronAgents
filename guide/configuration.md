@@ -290,17 +290,23 @@ Manual agents appear in the dashboard and CLI status with a "manual" schedule la
 "schedule": { "type": "daily", "time": "09:00" }
 ```
 
-**Weekly schedule** — run once a week on a specific day and time:
+**Weekly schedule** — run once a week on a specific day and time, or on multiple weekdays at the same time:
 
 ```json
 "schedule": { "type": "weekly", "day": "monday", "time": "08:00" }
 ```
 
+```json
+"schedule": { "type": "weekly", "days": ["tuesday", "friday"], "time": "12:00" }
+```
+
+Weekly schedules must specify exactly one of `day` or `days`. `days` must be a non-empty array of unique lowercase weekday names.
+
 | Schedule type | Required fields | Pattern |
 |---------------|----------------|---------|
 | `interval` | `type`, `every` | `every`: `^[0-9]+(h\|m)$`, min 30m |
 | `daily` | `type`, `time` | `time`: `HH:MM` (24h) |
-| `weekly` | `type`, `day`, `time` | `day`: lowercase day name, `time`: `HH:MM` |
+| `weekly` | `type`, `time`, exactly one of `day` or `days` | lowercase day name(s), `time`: `HH:MM` |
 
 #### `runIf`
 

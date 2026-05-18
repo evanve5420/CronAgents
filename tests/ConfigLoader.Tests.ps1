@@ -482,6 +482,80 @@ Describe 'Get-AgentConfigs' {
         $agents[0].Config.schedule.type | Should -Be 'weekly'
     }
 
+    It 'Loads weekly schedules with multiple days' {
+        $repoRoot = Join-Path $TestDrive 'repo-weekly-days'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "multi", "schedule": { "type": "weekly", "days": ["tuesday", "friday"], "time": "12:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'multi-day.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+
+        $agents | Should -HaveCount 1
+        $agents[0].Config.schedule.type | Should -Be 'weekly'
+        @($agents[0].Config.schedule.days) | Should -Be @('tuesday', 'friday')
+    }
+
+    It 'Skips weekly schedules that specify both day and days' {
+        $repoRoot = Join-Path $TestDrive 'repo-weekly-both'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "bad", "schedule": { "type": "weekly", "day": "monday", "days": ["friday"], "time": "12:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'bad-weekly.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+
+        $agents | Should -HaveCount 0
+    }
+
+    It 'Skips weekly schedules that specify empty day with days' {
+        $repoRoot = Join-Path $TestDrive 'repo-weekly-empty-day'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "bad", "schedule": { "type": "weekly", "day": "", "days": ["friday"], "time": "12:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'bad-weekly-empty.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+
+        $agents | Should -HaveCount 0
+    }
+
+    It 'Skips weekly schedules with duplicate days' {
+        $repoRoot = Join-Path $TestDrive 'repo-weekly-dupes'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "bad", "schedule": { "type": "weekly", "days": ["friday", "friday"], "time": "12:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'bad-weekly-dupes.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+
+        $agents | Should -HaveCount 0
+    }
+
+    It 'Skips weekly schedules with non-lowercase day' {
+        $repoRoot = Join-Path $TestDrive 'repo-weekly-uppercase-day'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "bad", "schedule": { "type": "weekly", "day": "Friday", "time": "12:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'bad-weekly-uppercase-day.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+
+        $agents | Should -HaveCount 0
+    }
+
+    It 'Skips weekly schedules with non-lowercase days entries' {
+        $repoRoot = Join-Path $TestDrive 'repo-weekly-uppercase-days'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "bad", "schedule": { "type": "weekly", "days": ["tuesday", "Friday"], "time": "12:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'bad-weekly-uppercase-days.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+
+        $agents | Should -HaveCount 0
+    }
+
     It 'Uses agent name from JSON when provided' {
         $repoRoot = Join-Path $TestDrive 'repo-name'
         $agentDir = Join-Path $repoRoot '.cronagents\agents'

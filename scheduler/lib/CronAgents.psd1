@@ -45,6 +45,8 @@
         'Get-NextRunTime',
         'ConvertTo-Minutes',
         'ConvertTo-Seconds',
+        'ConvertTo-ScheduleHashtable',
+        'Format-Schedule',
         # RunManager
         'New-RunDirectory',
         'Initialize-RunMetadata',

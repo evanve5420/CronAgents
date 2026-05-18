@@ -41,6 +41,122 @@ function ConvertTo-Seconds {
     throw "Invalid duration '$Duration'. Use '<N>h', '<N>m', '<N>s', or a bare number (minutes)."
 }
 
+function Test-ScheduleMember {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Schedule,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    if ($Schedule -is [hashtable]) {
+        return $Schedule.ContainsKey($Name)
+    }
+    return ($null -ne $Schedule.PSObject.Properties[$Name])
+}
+
+function Get-ScheduleMember {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Schedule,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    if ($Schedule -is [hashtable]) {
+        return $Schedule[$Name]
+    }
+    return $Schedule.PSObject.Properties[$Name].Value
+}
+
+function ConvertTo-ScheduleHashtable {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [AllowNull()]
+        $Schedule
+    )
+
+    if ($null -eq $Schedule) { return $null }
+
+    $ht = @{ type = (Get-ScheduleMember -Schedule $Schedule -Name 'type') }
+    foreach ($name in @('every', 'time', 'day', 'days')) {
+        if (Test-ScheduleMember -Schedule $Schedule -Name $name) {
+            $ht[$name] = Get-ScheduleMember -Schedule $Schedule -Name $name
+        }
+    }
+    return $ht
+}
+
+function Format-Schedule {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [AllowNull()]
+        $Schedule
+    )
+
+    if ($null -eq $Schedule) { return 'manual' }
+    $type = Get-ScheduleMember -Schedule $Schedule -Name 'type'
+    switch ($type) {
+        'interval' { return "every $(Get-ScheduleMember -Schedule $Schedule -Name 'every')" }
+        'daily'    { return "daily at $(Get-ScheduleMember -Schedule $Schedule -Name 'time')" }
+        'weekly'   {
+            $time = Get-ScheduleMember -Schedule $Schedule -Name 'time'
+            if (Test-ScheduleMember -Schedule $Schedule -Name 'days') {
+                $days = @((Get-ScheduleMember -Schedule $Schedule -Name 'days') | ForEach-Object { [string]$_ })
+                return "weekly $($days -join ', ') at $time"
+            }
+            return "weekly $(Get-ScheduleMember -Schedule $Schedule -Name 'day') at $time"
+        }
+        default { return [string]$type }
+    }
+}
+
+function Get-WeeklyScheduleDays {
+    [CmdletBinding()]
+    [OutputType([System.DayOfWeek[]])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Schedule
+    )
+
+    $dayValues = @(
+        if (Test-ScheduleMember -Schedule $Schedule -Name 'days') {
+            Get-ScheduleMember -Schedule $Schedule -Name 'days'
+        }
+        elseif (Test-ScheduleMember -Schedule $Schedule -Name 'day') {
+            Get-ScheduleMember -Schedule $Schedule -Name 'day'
+        }
+        else {
+            throw "Weekly schedule requires 'day' or 'days'."
+        }
+    )
+
+    if ($dayValues.Count -eq 0) {
+        throw "Weekly schedule 'days' must contain at least one day."
+    }
+
+    $days = [System.Collections.Generic.List[System.DayOfWeek]]::new()
+    foreach ($day in $dayValues) {
+        if ([string]::IsNullOrWhiteSpace([string]$day)) {
+            throw "Weekly schedule contains an empty day."
+        }
+        try {
+            $days.Add([System.DayOfWeek]([string]$day))
+        }
+        catch {
+            throw "Invalid weekly schedule day '$day'."
+        }
+    }
+    return $days.ToArray()
+}
+
 # ---------------------------------------------------------------------------
 # Test-AgentDue — returns $true if an agent should run now
 # ---------------------------------------------------------------------------
@@ -79,11 +195,10 @@ function Test-AgentDue {
             return (([datetime]$LastRun) -lt $todaySlot -and $Now -ge $todaySlot)
         }
         'weekly' {
-            $targetDay = [System.DayOfWeek]$Schedule.day
-            $tod       = [datetime]::ParseExact($Schedule.time, 'HH:mm', $null).TimeOfDay
+            $targetDays = @(Get-WeeklyScheduleDays -Schedule $Schedule)
+            $tod        = [datetime]::ParseExact($Schedule.time, 'HH:mm', $null).TimeOfDay
 
-            # Is today the target day?
-            if ($Now.DayOfWeek -ne $targetDay) { return $false }
+            if ($Now.DayOfWeek -notin $targetDays) { return $false }
 
             $todaySlot = $Now.Date.Add($tod)
             if ($Now -lt $todaySlot) { return $false }
@@ -139,20 +254,30 @@ function Get-NextRunTime {
             return $Now
         }
         'weekly' {
-            $targetDay = [System.DayOfWeek]$Schedule.day
-            $tod       = [datetime]::ParseExact($Schedule.time, 'HH:mm', $null).TimeOfDay
+            $targetDays = @(Get-WeeklyScheduleDays -Schedule $Schedule)
+            $tod        = [datetime]::ParseExact($Schedule.time, 'HH:mm', $null).TimeOfDay
+            $nextRun    = $null
 
-            $daysForward = (($targetDay.value__ - $Now.DayOfWeek.value__ + 7) % 7)
-            $nextSlot    = $Now.Date.AddDays($daysForward).Add($tod)
+            foreach ($targetDay in $targetDays) {
+                $daysForward = (($targetDay.value__ - $Now.DayOfWeek.value__ + 7) % 7)
+                $slot        = $Now.Date.AddDays($daysForward).Add($tod)
 
-            # Slot is still in the future
-            if ($Now -lt $nextSlot) { return $nextSlot }
+                $candidate = if ($Now -lt $slot) {
+                    $slot
+                }
+                elseif ($null -eq $LastRun -or ([datetime]$LastRun) -lt $slot) {
+                    $Now
+                }
+                else {
+                    $slot.AddDays(7)
+                }
 
-            # Slot is now or past — never run or not run this week
-            if ($null -eq $LastRun -or ([datetime]$LastRun) -lt $nextSlot) { return $Now }
+                if ($null -eq $nextRun -or $candidate -lt $nextRun) {
+                    $nextRun = $candidate
+                }
+            }
 
-            # Already ran this week's slot — next week
-            return $nextSlot.AddDays(7)
+            return $nextRun
         }
         default { throw "Unknown schedule type '$($Schedule.type)'." }
     }

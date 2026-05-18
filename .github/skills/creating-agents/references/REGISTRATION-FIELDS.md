@@ -16,7 +16,10 @@ When the agent runs. Omit entirely for manual (ad-hoc) agents that are only trig
 { "type": "interval", "every": "2h" }       // min 30m, pattern: ^[0-9]+(h|m)$
 { "type": "daily", "time": "09:00" }        // HH:MM 24h
 { "type": "weekly", "day": "monday", "time": "08:00" }  // lowercase day name
+{ "type": "weekly", "days": ["tuesday", "friday"], "time": "12:00" }  // one or more lowercase day names
 ```
+
+Weekly schedules must specify exactly one of `day` or `days`. `days` must be a non-empty array of unique lowercase weekday names.
 
 ### `agent` (string) — agent mode only
 

@@ -47,7 +47,17 @@
         "day": {
           "type": "string",
           "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
-          "description": "Day of the week (lowercase)."
+          "description": "Single day of the week (lowercase). Use either day or days."
+        },
+        "days": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "One or more days of the week (lowercase). Use either days or day."
         },
         "time": {
           "type": "string",
@@ -55,7 +65,17 @@
           "description": "Time of day in HH:MM format."
         }
       },
-      "required": ["type", "day", "time"],
+      "required": ["type", "time"],
+      "oneOf": [
+        {
+          "required": ["day"],
+          "not": { "required": ["days"] }
+        },
+        {
+          "required": ["days"],
+          "not": { "required": ["day"] }
+        }
+      ],
       "additionalProperties": false
     },
     "schedule": {

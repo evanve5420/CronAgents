@@ -81,6 +81,20 @@ Describe 'ConvertTo-Seconds' {
     }
 }
 
+# ===== Schedule formatting =====
+
+Describe 'Format-Schedule' {
+    It 'Formats single-day weekly schedules clearly' {
+        $schedule = @{ type = 'weekly'; day = 'tuesday'; time = '12:00' }
+        Format-Schedule -Schedule $schedule | Should -Be 'weekly tuesday at 12:00'
+    }
+
+    It 'Formats weekly schedules with multiple days clearly' {
+        $schedule = @{ type = 'weekly'; days = @('tuesday', 'friday'); time = '12:00' }
+        Format-Schedule -Schedule $schedule | Should -Be 'weekly tuesday, friday at 12:00'
+    }
+}
+
 # ===== Test-AgentDue — Interval Schedules =====
 
 Describe 'Test-AgentDue - Interval' {
@@ -185,6 +199,25 @@ Describe 'Test-AgentDue - Weekly' {
         $lastRun = [datetime]::new(2025, 6, 9, 9, 5, 0)
         Test-AgentDue -Schedule $schedule -LastRun $lastRun -Now $now | Should -Be $true
     }
+
+    It 'Is due on any listed weekly day' {
+        $schedule = @{ type = 'weekly'; days = @('Tuesday', 'Friday'); time = '12:00' }
+        $now = [datetime]::new(2025, 6, 20, 12, 30, 0)
+        Test-AgentDue -Schedule $schedule -LastRun $null -Now $now | Should -Be $true
+    }
+
+    It 'Is not due on a day outside the weekly days list' {
+        $schedule = @{ type = 'weekly'; days = @('Tuesday', 'Friday'); time = '12:00' }
+        $now = [datetime]::new(2025, 6, 18, 12, 30, 0)
+        Test-AgentDue -Schedule $schedule -LastRun $null -Now $now | Should -Be $false
+    }
+
+    It 'Allows the next listed weekly day after an earlier listed day ran' {
+        $schedule = @{ type = 'weekly'; days = @('Tuesday', 'Friday'); time = '12:00' }
+        $now     = [datetime]::new(2025, 6, 20, 12, 30, 0)
+        $lastRun = [datetime]::new(2025, 6, 17, 12, 5, 0)
+        Test-AgentDue -Schedule $schedule -LastRun $lastRun -Now $now | Should -Be $true
+    }
 }
 
 # ===== Test-AgentDue — Edge cases =====
@@ -283,6 +316,29 @@ Describe 'Get-NextRunTime - Weekly' {
         $now = [datetime]::new(2025, 6, 15, 10, 0, 0)
         $result = Get-NextRunTime -Schedule $schedule -LastRun $null -Now $now
         $result | Should -Be ([datetime]::new(2025, 6, 20, 9, 0, 0))
+    }
+
+    It 'Returns the earliest upcoming slot across multiple weekly days' {
+        $schedule = @{ type = 'weekly'; days = @('Tuesday', 'Friday'); time = '12:00' }
+        $now = [datetime]::new(2025, 6, 18, 10, 0, 0)
+        $result = Get-NextRunTime -Schedule $schedule -LastRun $null -Now $now
+        $result | Should -Be ([datetime]::new(2025, 6, 20, 12, 0, 0))
+    }
+
+    It 'Returns the next listed day when the current listed day already ran' {
+        $schedule = @{ type = 'weekly'; days = @('Tuesday', 'Friday'); time = '12:00' }
+        $now     = [datetime]::new(2025, 6, 17, 13, 0, 0)
+        $lastRun = [datetime]::new(2025, 6, 17, 12, 5, 0)
+        $result = Get-NextRunTime -Schedule $schedule -LastRun $lastRun -Now $now
+        $result | Should -Be ([datetime]::new(2025, 6, 20, 12, 0, 0))
+    }
+
+    It 'Returns Now when a later listed weekly slot is currently due' {
+        $schedule = @{ type = 'weekly'; days = @('Tuesday', 'Friday'); time = '12:00' }
+        $now     = [datetime]::new(2025, 6, 20, 13, 0, 0)
+        $lastRun = [datetime]::new(2025, 6, 17, 12, 5, 0)
+        $result = Get-NextRunTime -Schedule $schedule -LastRun $lastRun -Now $now
+        $result | Should -Be $now
     }
 
     It 'Throws on unknown schedule type' {

@@ -14,6 +14,7 @@ $script:AgentRegistrationSuffix = '.agent-registration.json'
 # Valid enum values
 $script:ValidLogLevels   = @('debug', 'info', 'warn', 'error')
 $script:ValidScheduleTypes = @('interval', 'daily', 'weekly')
+$script:ValidWeekdays    = @('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday')
 $script:DurationPattern  = '^[0-9]+(m|h|s)?$|^0$'
 $script:TimePattern      = '^([01]\d|2[0-3]):[0-5]\d$'
 $script:SafeIdentifierPattern = '^[A-Za-z0-9._-]+$'
@@ -336,6 +337,52 @@ function Import-SingleAgentConfig {
         if (-not $parsed.schedule.PSObject.Properties['type'] -or
             $parsed.schedule.type -notin $script:ValidScheduleTypes) {
             $valErrors.Add("schedule.type must be one of: $($script:ValidScheduleTypes -join ', ')")
+        }
+        elseif ($parsed.schedule.type -eq 'weekly') {
+            if (-not $parsed.schedule.PSObject.Properties['time'] -or
+                $parsed.schedule.time -notmatch $script:TimePattern) {
+                $valErrors.Add('schedule.time must be in HH:MM format for weekly schedules')
+            }
+
+            $hasDay = $null -ne $parsed.schedule.PSObject.Properties['day']
+            $hasDays = $null -ne $parsed.schedule.PSObject.Properties['days']
+
+            if ($hasDay -eq $hasDays) {
+                $valErrors.Add("weekly schedules must specify exactly one of schedule.day or schedule.days")
+            }
+            elseif ($hasDay) {
+                $day = [string]$parsed.schedule.day
+                if ([string]::IsNullOrWhiteSpace($day) -or
+                    $day -cne $day.ToLowerInvariant() -or
+                    $day -notin $script:ValidWeekdays) {
+                    $valErrors.Add("schedule.day must be one of: $($script:ValidWeekdays -join ', ')")
+                }
+            }
+            else {
+                $days = @($parsed.schedule.days)
+                if ($null -eq $parsed.schedule.days -or -not ($parsed.schedule.days -is [array])) {
+                    $valErrors.Add('schedule.days must be an array of weekday names')
+                }
+                elseif ($days.Count -eq 0) {
+                    $valErrors.Add('schedule.days must contain at least one weekday')
+                }
+                else {
+                    $seenDays = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+                    foreach ($day in $days) {
+                        $dayText = [string]$day
+                        if ([string]::IsNullOrWhiteSpace($dayText) -or
+                            $dayText -cne $dayText.ToLowerInvariant() -or
+                            $dayText -notin $script:ValidWeekdays) {
+                            $valErrors.Add("schedule.days entries must be one of: $($script:ValidWeekdays -join ', ')")
+                            break
+                        }
+                        if (-not $seenDays.Add($dayText)) {
+                            $valErrors.Add('schedule.days entries must be unique')
+                            break
+                        }
+                    }
+                }
+            }
         }
     }
 

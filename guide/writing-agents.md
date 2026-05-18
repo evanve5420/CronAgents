@@ -213,6 +213,14 @@ Runs once a day at the specified time (24-hour format). If the scheduler starts 
 
 Runs once a week on the specified day and time. Day names must be lowercase.
 
+Use `days` instead of `day` when the same registration should run on multiple weekdays at the same time:
+
+```json
+"schedule": { "type": "weekly", "days": ["tuesday", "friday"], "time": "12:00" }
+```
+
+Weekly schedules must specify exactly one of `day` or `days`. `days` must be a non-empty array of unique lowercase weekday names.
+
 ## Conditional execution with `runIf`
 
 Use `runIf` when an agent should run only after something meaningful changed in its execution root.
