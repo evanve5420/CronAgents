@@ -128,7 +128,7 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             name             = 'HTTP Working Dir Agent'
             agent            = 'http-working-dir'
             prompt           = 'HTTP working directory test prompt'
-            schedule         = @{ type = 'daily'; time = '11:00' }
+            schedule         = @{ type = 'weekly'; days = @('tuesday', 'friday'); time = '12:00' }
             workingDirectory = $script:testEnv.Root
         } | ConvertTo-Json -Depth 5 | Set-Content `
             -LiteralPath (Join-Path $script:testEnv.AgentsDir 'http-working-dir.agent-registration.json') `
@@ -252,6 +252,14 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             $agent = $data.agents | Where-Object { $_.id -eq 'http-agent' }
             $agent.schedule.type | Should -Be 'daily'
             $agent.schedule.time | Should -Be '10:00'
+        }
+
+        It 'Agent can expose multiple weekly schedule days' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/status" -ErrorAction Stop
+            $agent = $data.agents | Where-Object { $_.id -eq 'http-working-dir' }
+            $agent.schedule.type | Should -Be 'weekly'
+            @($agent.schedule.days) | Should -Be @('tuesday', 'friday')
+            $agent.nextRun | Should -Not -BeNullOrEmpty
         }
 
         It 'Agent includes pendingQuestions count' {

@@ -133,10 +133,7 @@ function Get-OverdueAgents {
             try { $lastRun = [datetime]::Parse($agentState.lastRun) } catch { }
         }
 
-        $schedule = @{ type = $agent.Config.schedule.type }
-        if ($agent.Config.schedule.PSObject.Properties['every']) { $schedule['every'] = $agent.Config.schedule.every }
-        if ($agent.Config.schedule.PSObject.Properties['time'])  { $schedule['time']  = $agent.Config.schedule.time }
-        if ($agent.Config.schedule.PSObject.Properties['day'])   { $schedule['day']   = $agent.Config.schedule.day }
+        $schedule = ConvertTo-ScheduleHashtable -Schedule $agent.Config.schedule
 
         if (Test-AgentDue -Schedule $schedule -LastRun $lastRun -Now $Now) {
             $overdue.Add($agent.Id)

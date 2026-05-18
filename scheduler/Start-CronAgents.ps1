@@ -487,16 +487,7 @@ try {
                     Write-CronAgentsLog -Level 'debug' -Message "Agent '$agentId' has no schedule (manual-only) — skipping"
                     continue
                 }
-                $schedule = @{ type = $agent.Config.schedule.type }
-                if ($agent.Config.schedule.PSObject.Properties['every']) {
-                    $schedule['every'] = $agent.Config.schedule.every
-                }
-                if ($agent.Config.schedule.PSObject.Properties['time']) {
-                    $schedule['time'] = $agent.Config.schedule.time
-                }
-                if ($agent.Config.schedule.PSObject.Properties['day']) {
-                    $schedule['day'] = $agent.Config.schedule.day
-                }
+                $schedule = ConvertTo-ScheduleHashtable -Schedule $agent.Config.schedule
 
                 # Check if due
                 if (Test-AgentDue -Schedule $schedule -LastRun $lastRun -Now $now) {
@@ -705,10 +696,7 @@ try {
                     try { $lastRun = [datetime]::Parse($agentState.lastRun) } catch { }
                 }
 
-                $schedule = @{ type = $agent.Config.schedule.type }
-                if ($agent.Config.schedule.PSObject.Properties['every']) { $schedule['every'] = $agent.Config.schedule.every }
-                if ($agent.Config.schedule.PSObject.Properties['time'])  { $schedule['time']  = $agent.Config.schedule.time }
-                if ($agent.Config.schedule.PSObject.Properties['day'])   { $schedule['day']   = $agent.Config.schedule.day }
+                $schedule = ConvertTo-ScheduleHashtable -Schedule $agent.Config.schedule
 
                 $agentNext = Get-NextRunTime -Schedule $schedule -LastRun $lastRun -Now $now
                 if ($null -eq $nextDue -or $agentNext -lt $nextDue) {

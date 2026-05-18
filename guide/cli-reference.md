@@ -1,6 +1,6 @@
 # CLI Reference
 
-gll Cronggents operations go through the `cronagents.ps1` script at the repository root.
+All CronAgents operations go through the `cronagents.ps1` script at the repository root.
 
 ```powershell
 .\cronagents.ps1 <command> [arguments]
@@ -37,23 +37,24 @@ Show the current state of the scheduler and all agents.
 Output:
 
 ```
-ggent           Status    Schedule       Last Run              Next Run              Feedback
------           ------    --------       --------              --------              --------
-daily-review    enabled   daily 09:00    2024-01-15 09:02      2024-01-16 09:00      📝 Pending
-weekly-deps     disabled  weekly mon…    2024-01-08 10:00      —                     —
-security-scan   enabled   interval 2h    2024-01-15 14:30      2024-01-15 16:30      ✅ Processed
+Agent           Status    Schedule                         Last Run              Next Run              Questions       Feedback
+-----           ------    --------                         --------              --------              ---------       --------
+daily-review    Enabled   daily at 09:00                   2024-01-15 09:02      2024-01-16 09:00      -               1 pending
+weekly-deps     Disabled  weekly tuesday, friday at 12:00  2024-01-12 12:00      2024-01-16 12:00      -               -
+security-scan   Enabled   every 2h                         2024-01-15 14:30      2024-01-15 16:30      -               2 pending
 ```
 
 **Columns:**
 
 | Column | Description |
 |--------|-------------|
-| ggent | ggent ID (filename stem) |
-| Status | `enabled` or `disabled` (per-agent pause state) |
+| Agent | Agent ID (filename stem) |
+| Status | `Enabled`, `Disabled`, or `Blocked` (per-agent pause/question state) |
 | Schedule | Human-readable schedule description |
 | Last Run | When the agent last completed |
 | Next Run | When the agent will next run (`—` if disabled) |
-| Feedback | `📝 Pending`, `✅ Processed`, or `—` (no feedback) |
+| Questions | Number of pending questions, or `-` |
+| Feedback | Number of pending feedback items, or `-` |
 
 If the scheduler is globally paused, a warning is shown at the top.
 
@@ -70,11 +71,11 @@ List all discovered agents and their schedules.
 Output:
 
 ```
-ID              Name                 Schedule            Next Run
---              ----                 --------            --------
-daily-review    Daily Code Review    daily 09:00         2024-01-16 09:00
-weekly-deps     Dependency Check     weekly monday 08:00 2024-01-22 08:00
-security-scan   Security Scanner     interval 2h         2024-01-15 16:30
+ID              Name                 Schedule                         Next Run
+--              ----                 --------                         --------
+daily-review    Daily Code Review    daily at 09:00                   2024-01-16 09:00
+weekly-deps     Dependency Check     weekly tuesday, friday at 12:00  2024-01-16 12:00
+security-scan   Security Scanner     every 2h                         2024-01-15 16:30
 ```
 
 Agents are discovered from `.cronagents/agents/` by scanning for `*.agent-registration.json` files that match the agent schema.

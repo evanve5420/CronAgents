@@ -68,29 +68,6 @@ function Resolve-Agent {
     return $match
 }
 
-function ConvertTo-ScheduleHashtable {
-    [OutputType([hashtable])]
-    param([AllowNull()]$Schedule)
-    if ($null -eq $Schedule) { return $null }
-    $ht = @{ type = $Schedule.type }
-    if ($Schedule.PSObject.Properties['every']) { $ht['every'] = $Schedule.every }
-    if ($Schedule.PSObject.Properties['time'])  { $ht['time']  = $Schedule.time }
-    if ($Schedule.PSObject.Properties['day'])   { $ht['day']   = $Schedule.day }
-    return $ht
-}
-
-function Format-Schedule {
-    [OutputType([string])]
-    param([AllowNull()]$Schedule)
-    if ($null -eq $Schedule) { return 'manual' }
-    switch ($Schedule.type) {
-        'interval' { return "every $($Schedule.every)" }
-        'daily'    { return "daily at $($Schedule.time)" }
-        'weekly'   { return "$($Schedule.day) at $($Schedule.time)" }
-        default    { return $Schedule.type }
-    }
-}
-
 function Get-SafeHeader {
     [OutputType([string])]
     param()

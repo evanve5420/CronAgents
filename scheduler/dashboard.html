@@ -569,7 +569,12 @@ function formatSchedule(sched) {
   switch (sched.type) {
     case 'interval': return `every ${sched.every}`;
     case 'daily':    return `daily at ${sched.time}`;
-    case 'weekly':   return `${sched.day} at ${sched.time}`;
+    case 'weekly': {
+      const days = Array.isArray(sched.days) && sched.days.length > 0
+        ? sched.days.join(', ')
+        : sched.day;
+      return `weekly ${days} at ${sched.time}`;
+    }
     default:         return sched.type;
   }
 }

@@ -33,7 +33,7 @@ Agent definitions and registrations live in the user's **personal repo** (`~/.cr
 Skip anything already clear from context:
 
 1. **What should it do?**
-2. **Schedule** — daily at 9am, every 4h, weekly Monday, etc. Or **manual** (no schedule) if the agent should only be triggered via the dashboard or `cronagents.ps1 run`.
+2. **Schedule** — daily at 9am, every 4h, weekly Monday, weekly Tuesday and Friday, etc. Or **manual** (no schedule) if the agent should only be triggered via the dashboard or `cronagents.ps1 run`.
 3. **Agent or prompt-only?** — Prompt-only is simpler when no custom system instructions or tool scoping is needed. Agent mode when the task needs custom behavior, tool restrictions, or a system prompt.
 4. **What tools does it need?** — Scope to the **minimum required**. Use CLI tool names, not VS Code-style labels. See [AGENT-PROFILE.md](references/AGENT-PROFILE.md).
 5. **Parallel decomposition?** — If the task is broad (many files, modules, or independent subtasks), the agent can orchestrate parallel subagents via the `agent` tool. This requires `agent` in the tools list and an orchestrator-style system prompt. Only ask this when the described task sounds parallelizable. See [ORCHESTRATOR-PATTERN.md](../../../docs/ORCHESTRATOR-PATTERN.md) for the full pattern.
@@ -78,6 +78,15 @@ CronAgents registration file — **filename stem = stable agent ID**:
   "schedule": { "type": "daily", "time": "09:00" }
 }
 ```
+
+Weekly schedules can use either a single `day` or multiple `days`:
+
+```jsonc
+"schedule": { "type": "weekly", "day": "monday", "time": "09:00" }
+"schedule": { "type": "weekly", "days": ["tuesday", "friday"], "time": "12:00" }
+```
+
+`days` must be a non-empty array of unique lowercase weekday names.
 
 ### Prompt-only mode
 
@@ -193,7 +202,7 @@ Keep the list minimal. If you are unsure, omit `tools:` rather than guessing.
 - Agent mode: `.agent.md` lives in `~/.cronagents/.github/agents/` or `~/.copilot/agents/`, has explicit `tools` list (least-privilege), and `agent` in the registration matches the `.agent.md` name
 - Prompt-only: registration has `prompt`, no `agent` field, `denyTools` considered
 - Script mode: registration has `script`, no `agent` or `prompt` fields, script file exists at the specified path
-- Scheduled: registration includes `schedule` with type `interval`/`daily`/`weekly`
+- Scheduled: registration includes `schedule` with type `interval`/`daily`/`weekly`; weekly schedules use either `day` or `days`
 - Manual: registration omits `schedule` — agent only runs via `cronagents.ps1 run <id>` or dashboard
 - All modes: registration file is named `~/.cronagents/.cronagents/agents/<agent-id>.agent-registration.json`
 - All modes: test with `cronagents.ps1 run <agent-id>`

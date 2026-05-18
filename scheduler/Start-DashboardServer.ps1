@@ -115,10 +115,7 @@ function script:Get-AgentsList {
         $schedPayload = $null
         if ($null -ne $a.Config.schedule) {
             try {
-                $schedHt = @{ type = $a.Config.schedule.type }
-                if ($a.Config.schedule.PSObject.Properties['every']) { $schedHt['every'] = $a.Config.schedule.every }
-                if ($a.Config.schedule.PSObject.Properties['time'])  { $schedHt['time']  = $a.Config.schedule.time }
-                if ($a.Config.schedule.PSObject.Properties['day'])   { $schedHt['day']   = $a.Config.schedule.day }
+                $schedHt = ConvertTo-ScheduleHashtable -Schedule $a.Config.schedule
                 $nextRun = Get-NextRunTime -Schedule $schedHt -LastRun $lastRunDt -Now $now
                 if ($null -ne $nextRun) {
                     $nextRunStr = $nextRun.ToString('o')
@@ -129,6 +126,7 @@ function script:Get-AgentsList {
                 every = if ($a.Config.schedule.PSObject.Properties['every']) { $a.Config.schedule.every } else { $null }
                 time  = if ($a.Config.schedule.PSObject.Properties['time'])  { $a.Config.schedule.time }  else { $null }
                 day   = if ($a.Config.schedule.PSObject.Properties['day'])   { $a.Config.schedule.day }   else { $null }
+                days  = if ($a.Config.schedule.PSObject.Properties['days'])  { @($a.Config.schedule.days) } else { $null }
             }
         }
 

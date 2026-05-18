@@ -123,6 +123,7 @@ The filename stem must match the agent ID you're using. For example, `daily-revi
    - Interval: `{ "type": "interval", "every": "2h" }` (minimum "30m")
    - Daily: `{ "type": "daily", "time": "09:00" }`
    - Weekly: `{ "type": "weekly", "day": "monday", "time": "09:00" }` (lowercase day)
+   - Weekly multi-day: `{ "type": "weekly", "days": ["tuesday", "friday"], "time": "12:00" }` (`days` must be non-empty and unique; use exactly one of `day` or `days`)
 
 4. Use the `$schema` field for editor validation:
 
