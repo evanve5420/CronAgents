@@ -84,6 +84,11 @@ Describe 'ConvertTo-Seconds' {
 # ===== Schedule formatting =====
 
 Describe 'Format-Schedule' {
+    It 'Formats single-day weekly schedules clearly' {
+        $schedule = @{ type = 'weekly'; day = 'tuesday'; time = '12:00' }
+        Format-Schedule -Schedule $schedule | Should -Be 'weekly tuesday at 12:00'
+    }
+
     It 'Formats weekly schedules with multiple days clearly' {
         $schedule = @{ type = 'weekly'; days = @('tuesday', 'friday'); time = '12:00' }
         Format-Schedule -Schedule $schedule | Should -Be 'weekly tuesday, friday at 12:00'

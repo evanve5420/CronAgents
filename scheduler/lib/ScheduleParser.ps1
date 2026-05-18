@@ -112,7 +112,7 @@ function Format-Schedule {
                 $days = @((Get-ScheduleMember -Schedule $Schedule -Name 'days') | ForEach-Object { [string]$_ })
                 return "weekly $($days -join ', ') at $time"
             }
-            return "$(Get-ScheduleMember -Schedule $Schedule -Name 'day') at $time"
+            return "weekly $(Get-ScheduleMember -Schedule $Schedule -Name 'day') at $time"
         }
         default { return [string]$type }
     }

@@ -351,8 +351,10 @@ function Import-SingleAgentConfig {
                 $valErrors.Add("weekly schedules must specify exactly one of schedule.day or schedule.days")
             }
             elseif ($hasDay) {
-                if ([string]::IsNullOrWhiteSpace([string]$parsed.schedule.day) -or
-                    ([string]$parsed.schedule.day).ToLowerInvariant() -notin $script:ValidWeekdays) {
+                $day = [string]$parsed.schedule.day
+                if ([string]::IsNullOrWhiteSpace($day) -or
+                    $day -cne $day.ToLowerInvariant() -or
+                    $day -notin $script:ValidWeekdays) {
                     $valErrors.Add("schedule.day must be one of: $($script:ValidWeekdays -join ', ')")
                 }
             }
@@ -365,14 +367,16 @@ function Import-SingleAgentConfig {
                     $valErrors.Add('schedule.days must contain at least one weekday')
                 }
                 else {
-                    $seenDays = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                    $seenDays = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
                     foreach ($day in $days) {
-                        if ([string]::IsNullOrWhiteSpace([string]$day) -or
-                            ([string]$day).ToLowerInvariant() -notin $script:ValidWeekdays) {
+                        $dayText = [string]$day
+                        if ([string]::IsNullOrWhiteSpace($dayText) -or
+                            $dayText -cne $dayText.ToLowerInvariant() -or
+                            $dayText -notin $script:ValidWeekdays) {
                             $valErrors.Add("schedule.days entries must be one of: $($script:ValidWeekdays -join ', ')")
                             break
                         }
-                        if (-not $seenDays.Add([string]$day)) {
+                        if (-not $seenDays.Add($dayText)) {
                             $valErrors.Add('schedule.days entries must be unique')
                             break
                         }
