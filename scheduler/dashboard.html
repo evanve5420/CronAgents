@@ -1189,8 +1189,6 @@ function showConfirm(message, options = {}) {
 
 // ── Delete Actions ──────────────────────────────────────────────
 async function deleteRun(runId) {
-  const ok = await showConfirm(`Delete run ${runId}?`);
-  if (!ok) return;
   try {
     const res = await api('DELETE', `/api/runs/${encodeURIComponent(runId)}`);
     showToast(res.message || 'Run deleted');

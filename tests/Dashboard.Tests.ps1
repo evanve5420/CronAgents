@@ -1124,6 +1124,12 @@ Describe 'Dashboard — File Integrity' {
         $content | Should -Match '/api/runs/batch-delete'
     }
 
+    It 'dashboard.html deletes single runs without a confirmation dialog' {
+        $content = Get-Content -LiteralPath $script:dashboardHtml -Raw
+        $content | Should -Match 'async function deleteRun\(runId\)'
+        $content | Should -Not -Match 'Delete run \$\{runId\}\?'
+    }
+
     It 'Start-DashboardServer.ps1 exists' {
         Test-Path -LiteralPath $script:dashboardScript | Should -Be $true
     }
