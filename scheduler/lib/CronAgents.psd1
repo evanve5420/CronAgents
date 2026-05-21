@@ -46,6 +46,8 @@
         'ConvertTo-Minutes',
         'ConvertTo-Seconds',
         'ConvertTo-ScheduleHashtable',
+        'Resolve-AgentQuietHours',
+        'Test-InQuietHours',
         'Format-Schedule',
         # RunManager
         'New-RunDirectory',

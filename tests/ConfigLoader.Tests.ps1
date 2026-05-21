@@ -336,6 +336,7 @@ Describe 'Get-AgentConfigs' {
         $agents[0].Config.raiseAttention | Should -Be 'all'
         $agents[0].Config.model         | Should -BeNullOrEmpty
         $agents[0].Config.name          | Should -Be 'daily-review'
+        $agents[0].Config.PSObject.Properties['quietHours'] | Should -BeNullOrEmpty
         $agents[0].AgentFilePath        | Should -BeNullOrEmpty
     }
 
@@ -579,6 +580,46 @@ Describe 'Get-AgentConfigs' {
         $agents[0].Config.timeout       | Should -Be '30m'
         $agents[0].Config.retryCount    | Should -Be 3
         $agents[0].Config.skipOnBattery | Should -Be $true
+    }
+
+    It 'Parses per-agent quietHours override' {
+        $repoRoot = Join-Path $TestDrive 'repo-agent-quiet'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "go", "schedule": { "type": "interval", "every": "1h" }, "quietHours": { "start": "18:00", "end": "08:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'quiet.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+
+        $agents | Should -HaveCount 1
+        $agents[0].Config.quietHours.start | Should -Be '18:00'
+        $agents[0].Config.quietHours.end   | Should -Be '08:00'
+    }
+
+    It 'Preserves per-agent quietHours null as an explicit override' {
+        $repoRoot = Join-Path $TestDrive 'repo-agent-quiet-null'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "go", "schedule": { "type": "interval", "every": "1h" }, "quietHours": null }'
+        Set-Content -Path (Join-Path $agentDir 'quiet-null.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+
+        $agents | Should -HaveCount 1
+        $agents[0].Config.PSObject.Properties['quietHours'] | Should -Not -BeNullOrEmpty
+        $agents[0].Config.quietHours | Should -BeNullOrEmpty
+    }
+
+    It 'Skips configs with invalid per-agent quietHours' {
+        $repoRoot = Join-Path $TestDrive 'repo-agent-quiet-invalid'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "go", "schedule": { "type": "interval", "every": "1h" }, "quietHours": { "start": "25:00", "end": "08:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'quiet-invalid.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+
+        $agents | Should -HaveCount 0
     }
 
     It 'Parses raiseAttention setting' {

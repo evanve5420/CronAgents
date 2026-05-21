@@ -35,6 +35,14 @@ Display name for the dashboard. Falls back to agent ID (filename stem) if omitte
 
 Execution condition checked after the schedule says the agent is due. See [RUNIF.md](RUNIF.md).
 
+### `quietHours` (object, null, or omitted)
+
+Per-agent quiet-hours override for automatic scheduler dispatch. Omit this field to inherit global `quietHours` from `cronagents.json`, set `"quietHours": null` to allow this agent's scheduled runs during the global quiet window, or provide an object with `start` and `end` in `HH:MM` format. Manual runs via CLI or dashboard are never blocked.
+
+```json
+"quietHours": { "start": "18:00", "end": "08:00" }
+```
+
 ### `timeout` (string, default `"10m"`)
 
 Max run duration. Pattern: `^[0-9]+(m|h|s)?$` or `"0"` (no timeout).

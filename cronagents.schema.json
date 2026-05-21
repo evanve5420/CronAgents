@@ -65,7 +65,7 @@
         }
       ],
       "default": null,
-      "description": "Time window during which no agents are run. Null to disable."
+      "description": "Default time window during which automatic scheduler dispatch skips due agents. Per-agent quietHours can override this or set null to disable for that agent. Manual runs are never blocked. Null disables the global default."
     },
     "notifications": {
       "type": "boolean",

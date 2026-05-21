@@ -95,6 +95,80 @@ Describe 'Format-Schedule' {
     }
 }
 
+Describe 'Resolve-AgentQuietHours' {
+    It 'Inherits global quiet hours when the agent omits quietHours' {
+        $globalQuietHours = [PSCustomObject]@{ start = '22:00'; end = '06:00' }
+        $agentConfig = [PSCustomObject]@{ schedule = @{ type = 'interval'; every = '1h' } }
+
+        $result = Resolve-AgentQuietHours -AgentConfig $agentConfig -GlobalQuietHours $globalQuietHours
+
+        $result.start | Should -Be '22:00'
+        $result.end   | Should -Be '06:00'
+    }
+
+    It 'Uses agent quietHours when the agent provides an override' {
+        $globalQuietHours = [PSCustomObject]@{ start = '22:00'; end = '06:00' }
+        $agentConfig = [PSCustomObject]@{
+            quietHours = [PSCustomObject]@{ start = '18:00'; end = '08:00' }
+        }
+
+        $result = Resolve-AgentQuietHours -AgentConfig $agentConfig -GlobalQuietHours $globalQuietHours
+
+        $result.start | Should -Be '18:00'
+        $result.end   | Should -Be '08:00'
+    }
+
+    It 'Allows agent quietHours null to disable inherited quiet hours' {
+        $globalQuietHours = [PSCustomObject]@{ start = '22:00'; end = '06:00' }
+        $agentConfig = [PSCustomObject]@{ quietHours = $null }
+
+        $result = Resolve-AgentQuietHours -AgentConfig $agentConfig -GlobalQuietHours $globalQuietHours
+
+        $result | Should -BeNullOrEmpty
+        Test-InQuietHours -QuietHours $result -Now ([datetime]::Parse('2025-01-15 23:30:00')) | Should -Be $false
+    }
+}
+
+Describe 'Time-of-day parsing' {
+    It 'Evaluates quiet hours with literal colon times under a culture with a different time separator' {
+        $originalCulture = [System.Threading.Thread]::CurrentThread.CurrentCulture
+        $culture = [System.Globalization.CultureInfo]::InvariantCulture.Clone()
+        $culture.DateTimeFormat.TimeSeparator = '.'
+
+        try {
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = $culture
+
+            $quietHours = [PSCustomObject]@{ start = '22:00'; end = '06:00' }
+            $now = [datetime]::Parse('2025-01-15 23:30:00', [System.Globalization.CultureInfo]::InvariantCulture)
+
+            Test-InQuietHours -QuietHours $quietHours -Now $now | Should -Be $true
+        }
+        finally {
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = $originalCulture
+        }
+    }
+
+    It 'Evaluates schedule times with literal colon times under a culture with a different time separator' {
+        $originalCulture = [System.Threading.Thread]::CurrentThread.CurrentCulture
+        $culture = [System.Globalization.CultureInfo]::InvariantCulture.Clone()
+        $culture.DateTimeFormat.TimeSeparator = '.'
+
+        try {
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = $culture
+
+            $schedule = @{ type = 'daily'; time = '09:00' }
+            $now = [datetime]::new(2025, 6, 15, 10, 0, 0)
+            $lastRun = [datetime]::new(2025, 6, 14, 9, 5, 0)
+
+            Test-AgentDue -Schedule $schedule -LastRun $lastRun -Now $now | Should -Be $true
+            Get-NextRunTime -Schedule $schedule -LastRun $null -Now $now | Should -Be $now
+        }
+        finally {
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = $originalCulture
+        }
+    }
+}
+
 # ===== Test-AgentDue — Interval Schedules =====
 
 Describe 'Test-AgentDue - Interval' {
