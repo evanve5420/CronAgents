@@ -1126,8 +1126,31 @@ Describe 'Dashboard — File Integrity' {
 
     It 'dashboard.html deletes single runs without a confirmation dialog' {
         $content = Get-Content -LiteralPath $script:dashboardHtml -Raw
-        $content | Should -Match 'async function deleteRun\(runId\)'
-        $content | Should -Not -Match 'Delete run \$\{runId\}\?'
+        $signaturePattern = 'async function deleteRun\(runId\)\s*\{'
+        $signatureMatch = [regex]::Match($content, $signaturePattern)
+        $signatureMatch.Success | Should -Be $true
+
+        $openBraceIndex = $content.IndexOf('{', $signatureMatch.Index)
+        $openBraceIndex | Should -BeGreaterThanOrEqual 0
+
+        $braceDepth = 0
+        $endBraceIndex = -1
+        for ($i = $openBraceIndex; $i -lt $content.Length; $i++) {
+            switch ($content[$i]) {
+                '{' { $braceDepth++ }
+                '}' {
+                    $braceDepth--
+                    if ($braceDepth -eq 0) {
+                        $endBraceIndex = $i
+                        break
+                    }
+                }
+            }
+        }
+
+        $endBraceIndex | Should -BeGreaterThan $openBraceIndex
+        $deleteRunBody = $content.Substring($openBraceIndex, $endBraceIndex - $openBraceIndex + 1)
+        $deleteRunBody | Should -Not -Match '\bshowConfirm\s*\('
     }
 
     It 'Start-DashboardServer.ps1 exists' {
