@@ -74,6 +74,21 @@ function Get-ScheduleMember {
     return $Schedule.PSObject.Properties[$Name].Value
 }
 
+function ConvertTo-TimeOfDay {
+    [CmdletBinding()]
+    [OutputType([timespan])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Time
+    )
+
+    return [datetime]::ParseExact(
+        $Time,
+        'HH\:mm',
+        [System.Globalization.CultureInfo]::InvariantCulture
+    ).TimeOfDay
+}
+
 function ConvertTo-ScheduleHashtable {
     [CmdletBinding()]
     [OutputType([hashtable])]
@@ -91,6 +106,56 @@ function ConvertTo-ScheduleHashtable {
         }
     }
     return $ht
+}
+
+function Resolve-AgentQuietHours {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        $AgentConfig,
+
+        [AllowNull()]
+        $GlobalQuietHours
+    )
+
+    if ($null -eq $AgentConfig) { return $GlobalQuietHours }
+
+    if ($AgentConfig -is [hashtable]) {
+        if ($AgentConfig.ContainsKey('quietHours')) {
+            return $AgentConfig['quietHours']
+        }
+        return $GlobalQuietHours
+    }
+
+    if ($AgentConfig.PSObject.Properties['quietHours']) {
+        return $AgentConfig.quietHours
+    }
+
+    return $GlobalQuietHours
+}
+
+function Test-InQuietHours {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [AllowNull()]
+        $QuietHours,
+
+        [Parameter(Mandatory = $true)]
+        [datetime]$Now
+    )
+
+    if ($null -eq $QuietHours) { return $false }
+
+    $start = ConvertTo-TimeOfDay -Time $QuietHours.start
+    $end   = ConvertTo-TimeOfDay -Time $QuietHours.end
+    $nowTod = $Now.TimeOfDay
+
+    if ($start -lt $end) {
+        return ($nowTod -ge $start -and $nowTod -lt $end)
+    }
+
+    return ($nowTod -ge $start -or $nowTod -lt $end)
 }
 
 function Format-Schedule {
@@ -185,7 +250,7 @@ function Test-AgentDue {
             return ($elapsed -ge $minutes)
         }
         'daily' {
-            $tod       = [datetime]::ParseExact($Schedule.time, 'HH:mm', $null).TimeOfDay
+            $tod       = ConvertTo-TimeOfDay -Time $Schedule.time
             $todaySlot = $Now.Date.Add($tod)
 
             if ($null -eq $LastRun) {
@@ -196,7 +261,7 @@ function Test-AgentDue {
         }
         'weekly' {
             $targetDays = @(Get-WeeklyScheduleDays -Schedule $Schedule)
-            $tod        = [datetime]::ParseExact($Schedule.time, 'HH:mm', $null).TimeOfDay
+            $tod        = ConvertTo-TimeOfDay -Time $Schedule.time
 
             if ($Now.DayOfWeek -notin $targetDays) { return $false }
 
@@ -240,7 +305,7 @@ function Get-NextRunTime {
             return $Now
         }
         'daily' {
-            $tod       = [datetime]::ParseExact($Schedule.time, 'HH:mm', $null).TimeOfDay
+            $tod       = ConvertTo-TimeOfDay -Time $Schedule.time
             $todaySlot = $Now.Date.Add($tod)
 
             if ($null -eq $LastRun) {
@@ -255,7 +320,7 @@ function Get-NextRunTime {
         }
         'weekly' {
             $targetDays = @(Get-WeeklyScheduleDays -Schedule $Schedule)
-            $tod        = [datetime]::ParseExact($Schedule.time, 'HH:mm', $null).TimeOfDay
+            $tod        = ConvertTo-TimeOfDay -Time $Schedule.time
             $nextRun    = $null
 
             foreach ($targetDay in $targetDays) {

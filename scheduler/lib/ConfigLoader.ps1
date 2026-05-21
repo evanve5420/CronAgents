@@ -85,6 +85,38 @@ function Test-CronAgentsSafeIdentifier {
         $Value -eq [System.IO.Path]::GetFileName($Value))
 }
 
+function Add-QuietHoursValidationErrors {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        $QuietHours,
+
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [System.Collections.Generic.List[string]]$Errors
+    )
+
+    if ($null -eq $QuietHours) { return }
+
+    $hasStart = $null -ne $QuietHours.PSObject.Properties['start']
+    $hasEnd   = $null -ne $QuietHours.PSObject.Properties['end']
+
+    if (-not $hasStart -or -not $hasEnd) {
+        $Errors.Add("$Path must have both start and end fields when not null")
+        return
+    }
+
+    if ($QuietHours.start -notmatch $script:TimePattern) {
+        $Errors.Add("$Path.start must be a valid HH:mm string. Got: '$($QuietHours.start)'")
+    }
+    if ($QuietHours.end -notmatch $script:TimePattern) {
+        $Errors.Add("$Path.end must be a valid HH:mm string. Got: '$($QuietHours.end)'")
+    }
+}
+
 # -------------------------------------------------------------------
 # Import-CronAgentsConfig
 # -------------------------------------------------------------------
@@ -217,23 +249,8 @@ function Test-CronAgentsConfig {
         $errors.Add("startupDelay must match duration pattern (e.g. '5m', '1h', '30s', '0'). Got: '$($Config.startupDelay)'")
     }
 
-    # quietHours
     if ($null -ne $Config.quietHours) {
-        $qh = $Config.quietHours
-        $hasStart = $null -ne $qh.PSObject.Properties['start']
-        $hasEnd   = $null -ne $qh.PSObject.Properties['end']
-
-        if (-not $hasStart -or -not $hasEnd) {
-            $errors.Add('quietHours must have both start and end fields when not null')
-        }
-        else {
-            if ($qh.start -notmatch $script:TimePattern) {
-                $errors.Add("quietHours.start must be a valid HH:mm string. Got: '$($qh.start)'")
-            }
-            if ($qh.end -notmatch $script:TimePattern) {
-                $errors.Add("quietHours.end must be a valid HH:mm string. Got: '$($qh.end)'")
-            }
-        }
+        Add-QuietHoursValidationErrors -QuietHours $Config.quietHours -Path 'quietHours' -Errors $errors
     }
 
     return ,$errors.ToArray()
@@ -386,6 +403,11 @@ function Import-SingleAgentConfig {
         }
     }
 
+    $hasQuietHoursOverride = $null -ne $parsed.PSObject.Properties['quietHours']
+    if ($hasQuietHoursOverride -and $null -ne $parsed.quietHours) {
+        Add-QuietHoursValidationErrors -QuietHours $parsed.quietHours -Path 'quietHours' -Errors $valErrors
+    }
+
     $runIfDefinition = $null
     if ($parsed.PSObject.Properties['runIf'] -and $null -ne $parsed.runIf) {
         try {
@@ -436,7 +458,11 @@ function Import-SingleAgentConfig {
         raiseAttention  = if ($parsed.PSObject.Properties['raiseAttention'] -and
                              -not [string]::IsNullOrWhiteSpace($parsed.raiseAttention) -and
                              $parsed.raiseAttention -in @('all','failures-only','significant-changes','never'))
-                          { ($parsed.raiseAttention).ToLowerInvariant() } else { 'all' }
+                           { ($parsed.raiseAttention).ToLowerInvariant() } else { 'all' }
+    }
+
+    if ($hasQuietHoursOverride) {
+        $agentConfig | Add-Member -NotePropertyName 'quietHours' -NotePropertyValue $parsed.quietHours
     }
 
     if ($parsed.PSObject.Properties['notificationSound'] -and

@@ -97,6 +97,29 @@
       },
       "required": ["script"],
       "additionalProperties": false
+    },
+    "quietHours": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "string",
+              "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+              "description": "Start of quiet hours in HH:MM format."
+            },
+            "end": {
+              "type": "string",
+              "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+              "description": "End of quiet hours in HH:MM format."
+            }
+          },
+          "required": ["start", "end"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "Per-agent quiet-hours override for automatic scheduler dispatch. Omit to inherit global quietHours, set null to disable quiet hours for this agent, or provide start/end to use an agent-specific window. Manual runs are never blocked."
     }
   },
   "properties": {
@@ -145,6 +168,9 @@
       "type": "boolean",
       "default": false,
       "description": "Skip execution when the machine is on battery power."
+    },
+    "quietHours": {
+      "$ref": "#/definitions/quietHours"
     },
     "retryCount": {
       "type": "integer",

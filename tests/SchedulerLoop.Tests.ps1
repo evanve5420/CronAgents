@@ -10,25 +10,6 @@ BeforeAll {
     Import-Module (Join-Path $repoRoot 'scheduler/lib/CronAgents.psd1') -Force
     Import-Module (Join-Path $PSScriptRoot 'TestHelpers.psm1') -Force
 
-    # Replicate the Test-InQuietHours logic from Start-CronAgents.ps1
-    function Test-InQuietHours {
-        [CmdletBinding()]
-        [OutputType([bool])]
-        param(
-            [PSCustomObject]$QuietHours,
-            [datetime]$Now
-        )
-        if ($null -eq $QuietHours) { return $false }
-        $start = [datetime]::ParseExact($QuietHours.start, 'HH:mm', $null).TimeOfDay
-        $end   = [datetime]::ParseExact($QuietHours.end,   'HH:mm', $null).TimeOfDay
-        $nowTod = $Now.TimeOfDay
-        if ($start -lt $end) {
-            return ($nowTod -ge $start -and $nowTod -lt $end)
-        }
-        else {
-            return ($nowTod -ge $start -or $nowTod -lt $end)
-        }
-    }
 }
 
 Describe 'Scheduler — Startup Delay' {
@@ -80,6 +61,54 @@ Describe 'Scheduler — Quiet Hours' {
 
     It 'Null quiet hours → proceed' {
         Test-InQuietHours -QuietHours $null -Now (Get-Date) | Should -Be $false
+    }
+}
+
+Describe 'Scheduler — Per-Agent Quiet Hours' {
+    It 'Skips only due agents whose effective quiet hours are active' {
+        $globalQuietHours = [PSCustomObject]@{ start = '22:00'; end = '06:00' }
+        $tickStart = [datetime]::Parse('2025-01-15 23:30:00', [System.Globalization.CultureInfo]::InvariantCulture)
+        $schedule = [PSCustomObject]@{ type = 'interval'; every = '1h' }
+        $agents = @(
+            [PSCustomObject]@{
+                Id = 'inherits-global'
+                Config = [PSCustomObject]@{ schedule = $schedule }
+            },
+            [PSCustomObject]@{
+                Id = 'disables-quiet-hours'
+                Config = [PSCustomObject]@{ schedule = $schedule; quietHours = $null }
+            },
+            [PSCustomObject]@{
+                Id = 'override-inactive'
+                Config = [PSCustomObject]@{
+                    schedule = $schedule
+                    quietHours = [PSCustomObject]@{ start = '01:00'; end = '02:00' }
+                }
+            },
+            [PSCustomObject]@{
+                Id = 'override-active'
+                Config = [PSCustomObject]@{
+                    schedule = $schedule
+                    quietHours = [PSCustomObject]@{ start = '18:00'; end = '08:00' }
+                }
+            }
+        )
+
+        $queued = @()
+        foreach ($agent in $agents) {
+            $scheduleHt = ConvertTo-ScheduleHashtable -Schedule $agent.Config.schedule
+            if (-not (Test-AgentDue -Schedule $scheduleHt -LastRun $null -Now $tickStart)) { continue }
+
+            $quietHours = Resolve-AgentQuietHours -AgentConfig $agent.Config -GlobalQuietHours $globalQuietHours
+            if (Test-InQuietHours -QuietHours $quietHours -Now $tickStart) { continue }
+
+            $queued += $agent.Id
+        }
+
+        $queued | Should -Not -Contain 'inherits-global'
+        $queued | Should -Contain 'disables-quiet-hours'
+        $queued | Should -Contain 'override-inactive'
+        $queued | Should -Not -Contain 'override-active'
     }
 }
 

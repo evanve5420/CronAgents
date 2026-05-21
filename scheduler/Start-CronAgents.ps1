@@ -188,33 +188,6 @@ $null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
 }
 
 # -----------------------------------------------------------------------
-# Quiet-hours helper
-# -----------------------------------------------------------------------
-function Test-InQuietHours {
-    [CmdletBinding()]
-    [OutputType([bool])]
-    param(
-        [PSCustomObject]$QuietHours,
-        [datetime]$Now
-    )
-
-    if ($null -eq $QuietHours) { return $false }
-
-    $start = [datetime]::ParseExact($QuietHours.start, 'HH:mm', $null).TimeOfDay
-    $end   = [datetime]::ParseExact($QuietHours.end,   'HH:mm', $null).TimeOfDay
-    $nowTod = $Now.TimeOfDay
-
-    if ($start -lt $end) {
-        # Same-day window (e.g., 09:00–17:00)
-        return ($nowTod -ge $start -and $nowTod -lt $end)
-    }
-    else {
-        # Overnight window (e.g., 22:00–06:00)
-        return ($nowTod -ge $start -or $nowTod -lt $end)
-    }
-}
-
-# -----------------------------------------------------------------------
 # Sleep helper — breaks sleep into 10s chunks for Ctrl+C responsiveness
 # -----------------------------------------------------------------------
 function Start-InterruptibleSleep {
@@ -426,169 +399,162 @@ try {
         }
 
         # -----------------------------------------------------------
-        # Step 3: Quiet hours check
+        # Step 3: Scheduled agents
         # -----------------------------------------------------------
-        $skipAgents = $false
-        if ($null -ne $config.quietHours) {
-            if (Test-InQuietHours -QuietHours $config.quietHours -Now $tickStart) {
-                Write-CronAgentsLog -Level 'info' -Message "Quiet hours active ($($config.quietHours.start)–$($config.quietHours.end)). Skipping agent evaluation."
-                $skipAgents = $true
+        $agents = Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath
+        $state  = Get-AgentState -StateFile $stateFile
+        $now    = (Get-Date).ToUniversalTime()
+        $queue  = [System.Collections.Generic.List[PSCustomObject]]::new()
+        $seenAgentIds = [System.Collections.Generic.HashSet[string]]::new()
+
+        foreach ($agent in $agents) {
+            if (-not $script:running) { break }
+
+            $agentId = $agent.Id
+
+            # Deduplicate within the same tick
+            if ($seenAgentIds.Contains($agentId)) { continue }
+            [void]$seenAgentIds.Add($agentId)
+
+            # Check if disabled in state
+            $agentState = if ($state.agents.ContainsKey($agentId)) { $state.agents[$agentId] } else { $null }
+            if ($agentState -and $agentState.enabled -eq $false) {
+                Write-CronAgentsLog -Level 'debug' -Message "Agent '$agentId' is disabled — skipping"
+                continue
+            }
+
+            # Expire stale questions for this agent before checking
+            try { Remove-ExpiredQuestions -StateRoot $cronStateDir -AgentId $agentId } catch { }
+
+            # Check for unanswered questions blocking this agent
+            if (Test-AgentHasPendingQuestions -StateRoot $cronStateDir -AgentId $agentId) {
+                Write-CronAgentsLog -Level 'info' -Message "Agent '$agentId' has unanswered questions — blocked until answered"
+                continue
+            }
+
+            # Parse lastRun
+            $lastRun = $null
+            if ($agentState -and $agentState.lastRun) {
+                try {
+                    $lastRun = [datetime]::Parse($agentState.lastRun)
+                }
+                catch {
+                    Write-CronAgentsLog -Level 'warn' -Message "Invalid lastRun for '$agentId': $($agentState.lastRun)"
+                }
+            }
+
+            # Build schedule hashtable from config (null for manual-only agents)
+            if ($null -eq $agent.Config.schedule) {
+                Write-CronAgentsLog -Level 'debug' -Message "Agent '$agentId' has no schedule (manual-only) — skipping"
+                continue
+            }
+            $schedule = ConvertTo-ScheduleHashtable -Schedule $agent.Config.schedule
+
+            # Check if due
+            if (Test-AgentDue -Schedule $schedule -LastRun $lastRun -Now $now) {
+                $quietHours = Resolve-AgentQuietHours -AgentConfig $agent.Config -GlobalQuietHours $config.quietHours
+                if (Test-InQuietHours -QuietHours $quietHours -Now $tickStart) {
+                    Write-CronAgentsLog -Level 'info' -Message "Agent '$agentId' is due but quiet hours are active ($($quietHours.start)-$($quietHours.end)) - skipping."
+                    continue
+                }
+
+                $executionRoot = Get-AgentRunIfExecutionRoot -AgentConfig $agent.Config -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath
+                $runIfState = if ($agentState -and $agentState.runIfState) { $agentState.runIfState } else { @{} }
+                if (-not (Test-AgentRunIf -RunIf $agent.Config.runIf -ExecutionRoot $executionRoot -AgentId $agentId -StateFile $stateFile -RunIfState $runIfState)) {
+                    Write-CronAgentsLog -Level 'info' -Message "Agent '$agentId' is due but runIf evaluated to false — skipping."
+                    continue
+                }
+
+                $snapshotResult = Get-AgentRunIfSnapshot -RunIf $agent.Config.runIf -ExecutionRoot $executionRoot
+                $runIfSnapshot = if ($snapshotResult.Success) {
+                    $snapshotResult.Snapshot
+                } else {
+                    Write-CronAgentsLog -Level 'warn' -Message "Snapshot capture failed for '$agentId': $($snapshotResult.Reason) — preserving previous runIfState."
+                    $runIfState
+                }
+                if ($agent.PSObject.Properties['RunIfSnapshot']) {
+                    $agent.RunIfSnapshot = $runIfSnapshot
+                }
+                else {
+                    $agent | Add-Member -NotePropertyName 'RunIfSnapshot' -NotePropertyValue $runIfSnapshot
+                }
+
+                Write-CronAgentsLog -Level 'info' -Message "Agent '$agentId' is due"
+                $queue.Add($agent)
             }
         }
 
-        if (-not $skipAgents) {
-            # -----------------------------------------------------------
-            # Step 4: Scheduled agents
-            # -----------------------------------------------------------
-            $agents = Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath
-            $state  = Get-AgentState -StateFile $stateFile
-            $now    = (Get-Date).ToUniversalTime()
-            $queue  = [System.Collections.Generic.List[PSCustomObject]]::new()
-            $seenAgentIds = [System.Collections.Generic.HashSet[string]]::new()
+        # Run queued agents sequentially in discovery order
+        $invokeScript = Join-Path $PSScriptRoot 'Invoke-ScheduledAgent.ps1'
+        foreach ($agent in $queue) {
+            if (-not $script:running) { break }
 
-            foreach ($agent in $agents) {
-                if (-not $script:running) { break }
+            $agentId = $agent.Id
+            Write-CronAgentsLog -Level 'info' -Message "Starting agent: $agentId"
 
-                $agentId = $agent.Id
-
-                # Deduplicate within the same tick
-                if ($seenAgentIds.Contains($agentId)) { continue }
-                [void]$seenAgentIds.Add($agentId)
-
-                # Check if disabled in state
-                $agentState = if ($state.agents.ContainsKey($agentId)) { $state.agents[$agentId] } else { $null }
-                if ($agentState -and $agentState.enabled -eq $false) {
-                    Write-CronAgentsLog -Level 'debug' -Message "Agent '$agentId' is disabled — skipping"
-                    continue
+            try {
+                if (Test-Path $invokeScript) {
+                    & $invokeScript -AgentId $agent.Id `
+                        -AgentConfig $agent.Config `
+                        -GlobalConfig $config `
+                        -RepoRoot $RepoRoot `
+                        -PersonalRepoPath $personalRepoPath `
+                        -RunIfSnapshot $agent.RunIfSnapshot `
+                        -RunsRoot $runsRoot
                 }
-
-                # Expire stale questions for this agent before checking
-                try { Remove-ExpiredQuestions -StateRoot $cronStateDir -AgentId $agentId } catch { }
-
-                # Check for unanswered questions blocking this agent
-                if (Test-AgentHasPendingQuestions -StateRoot $cronStateDir -AgentId $agentId) {
-                    Write-CronAgentsLog -Level 'info' -Message "Agent '$agentId' has unanswered questions — blocked until answered"
-                    continue
-                }
-
-                # Parse lastRun
-                $lastRun = $null
-                if ($agentState -and $agentState.lastRun) {
-                    try {
-                        $lastRun = [datetime]::Parse($agentState.lastRun)
-                    }
-                    catch {
-                        Write-CronAgentsLog -Level 'warn' -Message "Invalid lastRun for '$agentId': $($agentState.lastRun)"
-                    }
-                }
-
-                # Build schedule hashtable from config (null for manual-only agents)
-                if ($null -eq $agent.Config.schedule) {
-                    Write-CronAgentsLog -Level 'debug' -Message "Agent '$agentId' has no schedule (manual-only) — skipping"
-                    continue
-                }
-                $schedule = ConvertTo-ScheduleHashtable -Schedule $agent.Config.schedule
-
-                # Check if due
-                if (Test-AgentDue -Schedule $schedule -LastRun $lastRun -Now $now) {
-                    $executionRoot = Get-AgentRunIfExecutionRoot -AgentConfig $agent.Config -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath
-                    $runIfState = if ($agentState -and $agentState.runIfState) { $agentState.runIfState } else { @{} }
-                    if (-not (Test-AgentRunIf -RunIf $agent.Config.runIf -ExecutionRoot $executionRoot -AgentId $agentId -StateFile $stateFile -RunIfState $runIfState)) {
-                        Write-CronAgentsLog -Level 'info' -Message "Agent '$agentId' is due but runIf evaluated to false — skipping."
-                        continue
-                    }
-
-                    $snapshotResult = Get-AgentRunIfSnapshot -RunIf $agent.Config.runIf -ExecutionRoot $executionRoot
-                    $runIfSnapshot = if ($snapshotResult.Success) {
-                        $snapshotResult.Snapshot
-                    } else {
-                        Write-CronAgentsLog -Level 'warn' -Message "Snapshot capture failed for '$agentId': $($snapshotResult.Reason) — preserving previous runIfState."
-                        $runIfState
-                    }
-                    if ($agent.PSObject.Properties['RunIfSnapshot']) {
-                        $agent.RunIfSnapshot = $runIfSnapshot
-                    }
-                    else {
-                        $agent | Add-Member -NotePropertyName 'RunIfSnapshot' -NotePropertyValue $runIfSnapshot
-                    }
-
-                    Write-CronAgentsLog -Level 'info' -Message "Agent '$agentId' is due"
-                    $queue.Add($agent)
+                else {
+                    Write-CronAgentsLog -Level 'warn' -Message "Invoke-ScheduledAgent.ps1 not found at: $invokeScript — skipping agent '$agentId'"
                 }
             }
-
-            # Run queued agents sequentially in discovery order
-            $invokeScript = Join-Path $PSScriptRoot 'Invoke-ScheduledAgent.ps1'
-            foreach ($agent in $queue) {
-                if (-not $script:running) { break }
-
-                $agentId = $agent.Id
-                Write-CronAgentsLog -Level 'info' -Message "Starting agent: $agentId"
-
+            catch {
+                Write-CronAgentsLog -Level 'error' -Message "Agent '$agentId' failed: $_"
                 try {
-                    if (Test-Path $invokeScript) {
-                        & $invokeScript -AgentId $agent.Id `
-                            -AgentConfig $agent.Config `
-                            -GlobalConfig $config `
-                            -RepoRoot $RepoRoot `
-                            -PersonalRepoPath $personalRepoPath `
-                            -RunIfSnapshot $agent.RunIfSnapshot `
-                            -RunsRoot $runsRoot
-                    }
-                    else {
-                        Write-CronAgentsLog -Level 'warn' -Message "Invoke-ScheduledAgent.ps1 not found at: $invokeScript — skipping agent '$agentId'"
+                    Send-SchedulerErrorNotification -Operation "Agent execution ($agentId)" `
+                        -ErrorMessage "$_" -GlobalConfig $config
+                } catch { <# best-effort #> }
+            }
+
+            # Post-run feedback for this specific agent
+            if ($config.autoFeedback) {
+                try {
+                    $latestRun = Get-RunHistory -RunsRoot $runsRoot -AgentId $agentId -MaxResults 1
+                    if ($latestRun -and $latestRun.Count -gt 0 -and $latestRun[0].HasFeedback -and -not $latestRun[0].FeedbackProcessed) {
+                        $runDir = $latestRun[0].RunDirectory
+                        Write-CronAgentsLog -Level 'info' -Message "Running feedback evaluator for agent '$agentId' run: $runDir"
+                        $evalSharePath  = Join-Path $runDir 'evaluator-session.md'
+                        $copilotArgs = @(
+                            "--agent=feedback-evaluator"
+                            "-p"
+                            "Process feedback for run in: $runDir"
+                            "--silent"
+                            "--add-dir=$runDir"
+                            "--add-dir=$personalRepoPath"
+                            "--allow-all-tools"
+                            "--no-ask-user"
+                            "--share=$evalSharePath"
+                        )
+                        Invoke-WithSchedulerCopilotEnv -ScriptBlock {
+                            Push-Location $RepoRoot
+                            try { & $config.copilotPath @copilotArgs 2>&1 | Out-Null }
+                            finally { Pop-Location }
+                        }
+
+                        # Mark processed
+                        $metaPath = Join-Path $runDir 'meta.json'
+                        if (Test-Path $metaPath) {
+                            $meta = Get-Content -LiteralPath $metaPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                            $meta.feedbackProcessed = $true
+                            $json = $meta | ConvertTo-Json -Depth 10
+                            Set-Content -LiteralPath $metaPath -Value $json -Encoding UTF8
+                        }
                     }
                 }
                 catch {
-                    Write-CronAgentsLog -Level 'error' -Message "Agent '$agentId' failed: $_"
+                    Write-CronAgentsLog -Level 'warn' -Message "Post-run feedback for '$agentId' failed: $_"
                     try {
-                        Send-SchedulerErrorNotification -Operation "Agent execution ($agentId)" `
+                        Send-SchedulerErrorNotification -Operation "Post-run feedback ($agentId)" `
                             -ErrorMessage "$_" -GlobalConfig $config
                     } catch { <# best-effort #> }
-                }
-
-                # Post-run feedback for this specific agent
-                if ($config.autoFeedback) {
-                    try {
-                        $latestRun = Get-RunHistory -RunsRoot $runsRoot -AgentId $agentId -MaxResults 1
-                        if ($latestRun -and $latestRun.Count -gt 0 -and $latestRun[0].HasFeedback -and -not $latestRun[0].FeedbackProcessed) {
-                            $runDir = $latestRun[0].RunDirectory
-                            Write-CronAgentsLog -Level 'info' -Message "Running feedback evaluator for agent '$agentId' run: $runDir"
-                            $evalSharePath  = Join-Path $runDir 'evaluator-session.md'
-                            $copilotArgs = @(
-                                "--agent=feedback-evaluator"
-                                "-p"
-                                "Process feedback for run in: $runDir"
-                                "--silent"
-                                "--add-dir=$runDir"
-                                "--add-dir=$personalRepoPath"
-                                "--allow-all-tools"
-                                "--no-ask-user"
-                                "--share=$evalSharePath"
-                            )
-                            Invoke-WithSchedulerCopilotEnv -ScriptBlock {
-                                Push-Location $RepoRoot
-                                try { & $config.copilotPath @copilotArgs 2>&1 | Out-Null }
-                                finally { Pop-Location }
-                            }
-
-                            # Mark processed
-                            $metaPath = Join-Path $runDir 'meta.json'
-                            if (Test-Path $metaPath) {
-                                $meta = Get-Content -LiteralPath $metaPath -Raw -Encoding UTF8 | ConvertFrom-Json
-                                $meta.feedbackProcessed = $true
-                                $json = $meta | ConvertTo-Json -Depth 10
-                                Set-Content -LiteralPath $metaPath -Value $json -Encoding UTF8
-                            }
-                        }
-                    }
-                    catch {
-                        Write-CronAgentsLog -Level 'warn' -Message "Post-run feedback for '$agentId' failed: $_"
-                        try {
-                            Send-SchedulerErrorNotification -Operation "Post-run feedback ($agentId)" `
-                                -ErrorMessage "$_" -GlobalConfig $config
-                        } catch { <# best-effort #> }
-                    }
                 }
             }
         }

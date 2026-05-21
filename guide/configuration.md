@@ -121,7 +121,7 @@ Located at the repository root. Controls scheduler-wide behavior.
 |---|---|
 | **Type** | `object` or `null` |
 | **Default** | `null` |
-| **Description** | Time window during which no agents run. Set to `null` to disable. Both `start` and `end` are required when the object is present. Uses 24-hour HH:MM format. |
+| **Description** | Default quiet-hours window for automatic scheduler dispatch. Agents that do not override it skip due scheduled runs during this window. Set to `null` to disable globally. Both `start` and `end` are required when the object is present. Uses 24-hour HH:MM format. |
 
 ```json
 "quietHours": {
@@ -134,6 +134,8 @@ Located at the repository root. Controls scheduler-wide behavior.
 |-----------|------|---------|-------------|
 | `start` | `string` | `HH:MM` (24h) | Start of quiet window |
 | `end` | `string` | `HH:MM` (24h) | End of quiet window |
+
+Per-agent registrations can override this window with their own `quietHours`, or set `"quietHours": null` to run even during the global quiet window. Quiet hours do not block manual runs via CLI or dashboard.
 
 #### `notifications`
 
@@ -307,6 +309,25 @@ Weekly schedules must specify exactly one of `day` or `days`. `days` must be a n
 | `interval` | `type`, `every` | `every`: `^[0-9]+(h\|m)$`, min 30m |
 | `daily` | `type`, `time` | `time`: `HH:MM` (24h) |
 | `weekly` | `type`, `time`, exactly one of `day` or `days` | lowercase day name(s), `time`: `HH:MM` |
+
+#### `quietHours`
+
+| | |
+|---|---|
+| **Type** | `object`, `null`, or omitted |
+| **Required** | No |
+| **Description** | Per-agent quiet-hours override for automatic scheduler dispatch. Omit to inherit global `quietHours`; set to `null` to disable quiet hours for this agent; provide `start` and `end` to use an agent-specific window. Manual runs via CLI or dashboard are never blocked. |
+
+```json
+"quietHours": {
+  "start": "18:00",
+  "end": "08:00"
+}
+```
+
+```json
+"quietHours": null
+```
 
 #### `runIf`
 

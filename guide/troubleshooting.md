@@ -362,10 +362,19 @@ Check `quietHours` in `cronagents.json`:
 }
 ```
 
-During quiet hours, no agents run. Set to `null` to disable:
+Global quiet hours apply only to automatic scheduler dispatch for agents that do not override `quietHours` in their `.agent-registration.json`. Manual runs via CLI or dashboard are not blocked. Set the global value to `null` to disable the default:
 
 ```json
 "quietHours": null
+```
+
+For one agent, omit `quietHours` to inherit the global window, set `"quietHours": null` to ignore the global window for scheduled runs, or set an agent-specific window:
+
+```json
+"quietHours": {
+  "start": "18:00",
+  "end": "08:00"
+}
 ```
 
 ---
