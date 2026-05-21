@@ -560,7 +560,7 @@ try {
         }
 
         # -----------------------------------------------------------
-        # Step 6: Dashboard update
+        # Step 4: Dashboard update
         # -----------------------------------------------------------
         try {
             $dashboardScript = Join-Path $PSScriptRoot 'Update-Dashboard.ps1'
@@ -584,7 +584,7 @@ try {
         }
 
         # -----------------------------------------------------------
-        # Step 7: Retention cleanup (once per day)
+        # Step 5: Retention cleanup (once per day)
         # -----------------------------------------------------------
         $today = (Get-Date).Date
         if ($script:lastCleanupDate -ne $today) {
@@ -612,7 +612,7 @@ try {
         }
 
         # -----------------------------------------------------------
-        # Step 8: Flush batched scheduler-error notifications
+        # Step 6: Flush batched scheduler-error notifications
         # -----------------------------------------------------------
         try {
             Complete-SchedulerErrorBatch -GlobalConfig $config
@@ -641,7 +641,7 @@ try {
         }
 
         # -----------------------------------------------------------
-        # Step 9: Sleep until next tick
+        # Step 7: Sleep until next tick
         # -----------------------------------------------------------
         $sleepSec = 60  # Default fallback
         try {
