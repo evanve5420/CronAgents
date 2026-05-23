@@ -162,6 +162,171 @@ function script:Get-StatusPayload {
     }
 }
 
+# Approved root directories for custom agent file reads.
+# Paths that do not descend from one of these are rejected.
+function script:Test-AgentFilePathSafe {
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string[]]$ApprovedRoots
+    )
+    if (-not ($Path -match '\.agent\.md$')) { return $false }
+    $canonical = try { (Resolve-Path -LiteralPath $Path -ErrorAction Stop).Path } catch { return $false }
+    foreach ($root in $ApprovedRoots) {
+        $rootCanon = try { (Resolve-Path -LiteralPath $root -ErrorAction SilentlyContinue)?.Path } catch { $null }
+        if ($rootCanon -and $canonical.StartsWith($rootCanon, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+    return $false
+}
+
+# Safely read a text file, returning a result object.
+# Returns @{ Content = <string>; Error = $null } on success
+# or @{ Content = $null; Error = <message> } on failure.
+function script:Read-FileSafe {
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [int]$MaxBytes = 524288  # 512 KB cap
+    )
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return @{ Content = $null; Error = "file not found" }
+    }
+    try {
+        $info = Get-Item -LiteralPath $Path -ErrorAction Stop
+        if ($info.Length -gt $MaxBytes) {
+            return @{ Content = $null; Error = "file too large to display ($(($info.Length / 1024).ToString('F0')) KB)" }
+        }
+        $text = [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8)
+        return @{ Content = $text; Error = $null }
+    }
+    catch {
+        return @{ Content = $null; Error = "read error: $_" }
+    }
+}
+
+# Redact envVars values so secret-bearing environment variables are never
+# sent over the API. Only keys are retained; all values become "***".
+function script:ConvertTo-RedactedEnvVars {
+    [OutputType([hashtable])]
+    param($EnvVarsObj)
+    if ($null -eq $EnvVarsObj) { return [ordered]@{} }
+    $result = [ordered]@{}
+    foreach ($prop in $EnvVarsObj.PSObject.Properties) {
+        $result[$prop.Name] = '***'
+    }
+    return $result
+}
+
+# Build a dashboard-safe copy of an agent config object:
+# - envVars values redacted
+# - no sensitive platform specifics added
+function script:ConvertTo-SafeAgentConfig {
+    [OutputType([hashtable])]
+    param([Parameter(Mandatory)][PSCustomObject]$Config)
+    $safe = [ordered]@{}
+    foreach ($prop in $Config.PSObject.Properties) {
+        if ($prop.Name -eq 'envVars') {
+            $safe[$prop.Name] = script:ConvertTo-RedactedEnvVars -EnvVarsObj $prop.Value
+        } else {
+            $safe[$prop.Name] = $prop.Value
+        }
+    }
+    return $safe
+}
+
+# Build a dashboard-safe copy of the global config object (same redaction).
+function script:ConvertTo-SafeGlobalConfig {
+    [OutputType([hashtable])]
+    param([Parameter(Mandatory)][PSCustomObject]$Config)
+    $safe = [ordered]@{}
+    foreach ($prop in $Config.PSObject.Properties) {
+        $safe[$prop.Name] = $prop.Value
+    }
+    return $safe
+}
+
+function script:Get-ConfigPayload {
+    [OutputType([hashtable])]
+    param()
+
+    $approvedRoots = @(
+        (Join-Path $RepoRoot '.github' 'agents')
+        (Join-Path $RepoRoot '.github' 'copilot-agents')
+        (Join-Path $PersonalRepoPath '.github' 'agents')
+        (Join-Path $PersonalRepoPath '.github' 'copilot-agents')
+        (Join-Path $PersonalRepoPath '.cronagents' 'agents')
+        (Join-Path $RepoRoot '.cronagents' 'agents')
+    )
+
+    $agentDetails = @()
+    $agents = @(Get-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $PersonalRepoPath)
+    foreach ($a in $agents) {
+        # Validate custom agent file path before reading
+        $customContent = $null
+        $customReadError = $null
+        $customExists = $false
+        if ($a.AgentFilePath) {
+            if (script:Test-AgentFilePathSafe -Path $a.AgentFilePath -ApprovedRoots $approvedRoots) {
+                $customExists = $true
+                $readResult = script:Read-FileSafe -Path $a.AgentFilePath
+                $customContent = $readResult.Content
+                $customReadError = $readResult.Error
+            } else {
+                Write-CronAgentsLog -Level 'warn' -Message "/api/config: agent file path rejected (not a *.agent.md under approved roots): $($a.AgentFilePath)"
+                $customExists = $false
+                $customReadError = "path not permitted"
+            }
+        }
+
+        $customAgent = [ordered]@{
+            reference = if ($a.Config.PSObject.Properties['agent']) { $a.Config.agent } else { $null }
+            path      = $a.AgentFilePath
+            exists    = $customExists
+            content   = $customContent
+            error     = $customReadError
+        }
+
+        # Read registration JSON safely — generate redacted JSON from sanitized config
+        # so envVars values (which may contain secrets) are never exposed in rawJson.
+        $regResult = script:Read-FileSafe -Path $a.ConfigPath
+        $safeConfig = script:ConvertTo-SafeAgentConfig -Config $a.Config
+        $registration = [ordered]@{
+            path    = $a.ConfigPath
+            rawJson = ConvertTo-Json -InputObject $safeConfig -Depth 10
+            error   = $regResult.Error
+        }
+
+        $agentDetails += [ordered]@{
+            id          = $a.Id
+            name        = $a.Config.name
+            configPath  = $a.ConfigPath
+            config      = $safeConfig
+            registration = $registration
+            customAgent = $customAgent
+        }
+    }
+
+    # Derive redacted global rawJson from the sanitized config object.
+    $globalResult = script:Read-FileSafe -Path $ConfigPath
+    $safeGlobal = script:ConvertTo-SafeGlobalConfig -Config $GlobalConfig
+
+    return [ordered]@{
+        global    = [ordered]@{
+            configPath       = $ConfigPath
+            personalRepoPath = $PersonalRepoPath
+            stateRoot        = $StateRoot
+            runsRoot         = $RunsRoot
+            config           = $safeGlobal
+            rawJson          = ConvertTo-Json -InputObject $safeGlobal -Depth 10
+            rawJsonError     = $globalResult.Error
+        }
+        agents    = $agentDetails
+        timestamp = [datetime]::UtcNow.ToString('o')
+    }
+}
+
 function script:Get-RunsPayload {
     [OutputType([object[]])]
     param([string]$AgentId)
@@ -603,6 +768,13 @@ function script:Invoke-Route {
         # ── GET /api/agents ──────────────────────────────────────
         if ($method -eq 'GET' -and $path -eq '/api/agents') {
             $payload = @(script:Get-AgentsList)
+            script:Send-JsonResponse -Response $response -Body $payload
+            return
+        }
+
+        # ── GET /api/config ──────────────────────────────────────
+        if ($method -eq 'GET' -and $path -eq '/api/config') {
+            $payload = script:Get-ConfigPayload
             script:Send-JsonResponse -Response $response -Body $payload
             return
         }

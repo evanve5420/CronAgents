@@ -280,6 +280,49 @@
   .commit-time { color: var(--muted); font-size: 0.75rem; min-width: 80px; flex-shrink: 0; }
   .commit-msg { flex: 1; color: var(--text); word-break: break-word; }
 
+  /* ── Configuration tab ─────────────────────── */
+  .config-toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; margin-bottom: 12px;
+  }
+  .config-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px; margin-bottom: 16px;
+  }
+  .config-agent-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 12px; margin-bottom: 12px;
+  }
+  .config-agent-title { font-weight: 600; }
+  .config-agent-id {
+    color: var(--muted); font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.75rem;
+  }
+  .config-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 8px 18px; margin-bottom: 12px;
+  }
+  .config-row { min-width: 0; }
+  .config-label {
+    display: block; color: var(--muted); font-size: 0.72rem;
+    text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .config-value {
+    display: block; color: var(--text); font-size: 0.85rem;
+    overflow-wrap: anywhere;
+  }
+  .config-section {
+    border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px;
+  }
+  .config-section summary {
+    cursor: pointer; color: var(--accent); font-size: 0.85rem;
+  }
+  .config-pre {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px; margin-top: 8px; font-size: 0.78rem; overflow-x: auto;
+    white-space: pre-wrap; max-height: 360px; overflow-y: auto; color: var(--muted);
+  }
+
   /* ── Confirm dialog ───────────────────────────── */
   .confirm-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.6);
@@ -369,6 +412,7 @@
   <div id="staleness-banner" class="staleness-banner" style="display:none;" role="status" aria-live="polite"></div>
   <div class="tab-bar">
     <button class="tab active" data-tab="agents" data-action="switchTab">Agents</button>
+    <button class="tab" data-tab="config" data-action="switchTab">Configuration</button>
     <button class="tab" data-tab="runs" data-action="switchTab">Recent Runs</button>
     <button class="tab" data-tab="questions" data-action="switchTab">
       Questions <span id="question-badge"></span>
@@ -393,6 +437,15 @@
         <tbody id="agents-body"></tbody>
       </table>
     </section>
+  </div>
+
+  <!-- ── Configuration Tab ───────────────────── -->
+  <div id="tab-config" class="tab-content">
+    <div class="config-toolbar">
+      <span style="color:var(--muted);font-size:0.85rem">Global scheduler settings, agent registrations, prompts, and custom agent files</span>
+      <button class="btn" data-action="refreshConfig" title="Reload configuration details">🔄 Refresh config</button>
+    </div>
+    <div id="config-list"><div class="empty-state">Loading configuration...</div></div>
   </div>
 
   <!-- ── Runs Tab ────────────────────────────── -->
@@ -475,6 +528,7 @@ let state = { schedulerPaused: false, agents: [], timestamp: null };
 let runs = [];
 let questions = [];
 let activity = [];
+let configDetails = null;
 let knownQuestionKeys = new Set();
 let hasLoadedQuestions = false;
 let pollTimer = null;
@@ -483,6 +537,7 @@ let filterStatus = '';
 let selectedRuns = new Set();
 let freshness = null;
 let freshnessIssues = [];
+let lastConfigRefresh = 0;
 const pageLoadedAt = new Date().toISOString();
 
 // ── API helpers ──────────────────────────────────────────────────
@@ -529,6 +584,7 @@ function activateTab(name) {
 function switchTab(name) {
   activateTab(name);
   closeRunDetail();
+  if (name === 'config') refreshConfig();
 }
 
 // ── Time formatting ─────────────────────────────────────────────
@@ -620,6 +676,113 @@ function feedbackBadge(run) {
   if (run.feedbackProcessed) return '<span class="badge badge-success">Processed</span>';
   if (run.hasFeedback) return '<span class="badge badge-warn">Pending</span>';
   return '<span class="badge badge-muted">—</span>';
+}
+
+function configValue(value) {
+  if (value == null || value === '') return '—';
+  if (Array.isArray(value)) return value.length ? value.join(', ') : '—';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+function configRows(rows) {
+  return `<div class="config-grid">${rows.map(([label, value]) => `
+    <div class="config-row">
+      <span class="config-label">${esc(label)}</span>
+      <span class="config-value">${esc(configValue(value))}</span>
+    </div>`).join('')}</div>`;
+}
+
+function configBlock(title, value, open = false) {
+  const text = typeof value === 'string' ? value : JSON.stringify(value ?? null, null, 2);
+  return `<details class="config-section"${open ? ' open' : ''}>
+    <summary>${esc(title)}</summary>
+    <pre class="config-pre">${esc(text || '—')}</pre>
+  </details>`;
+}
+
+function renderAgentConfig(agent) {
+  const cfg = agent.config || {};
+  const registration = agent.registration || {};
+  const custom = agent.customAgent || {};
+  const mode = cfg.script ? 'Script' : 'Prompt';
+  const customStatus = custom.reference
+    ? `${custom.reference}${custom.exists ? '' : ' (file not found)'}`
+    : null;
+
+  return `<div class="config-card">
+    <div class="config-agent-header">
+      <div>
+        <div class="config-agent-title">${esc(agent.name || agent.id)}</div>
+        <div class="config-agent-id">${esc(agent.id)}</div>
+      </div>
+      <span class="badge badge-info">${esc(mode)}</span>
+    </div>
+    ${configRows([
+      ['Registration file', registration.path || agent.configPath],
+      ['Schedule', formatSchedule(cfg.schedule)],
+      ['Timeout', cfg.timeout],
+      ['Model', cfg.model],
+      ['Working directory', cfg.workingDirectory],
+      ['Retry count', cfg.retryCount],
+      ['Skip on battery', cfg.skipOnBattery],
+      ['Raise attention', cfg.raiseAttention],
+      ['Notify on success', cfg.notifyOnSuccess],
+      ['Notify on failure', cfg.notifyOnFailure],
+      ['Notification sound', cfg.notificationSound],
+      ['Denied tools', cfg.denyTools],
+      ['Extra CLI flags', cfg.extraCliFlags],
+      ['Environment variables', cfg.envVars],
+      ['Run condition', cfg.runIf],
+      ['Custom agent', customStatus],
+      ['Custom agent file', custom.path],
+    ])}
+    ${cfg.prompt ? configBlock('Prompt', cfg.prompt, true) : ''}
+    ${cfg.script ? configBlock('Script', cfg.script, true) : ''}
+    ${configBlock('Resolved agent configuration', cfg)}
+    ${configBlock('Registration JSON', registration.rawJson)}
+    ${custom.content ? configBlock('Custom agent file', custom.content) : ''}
+  </div>`;
+}
+
+function renderConfig() {
+  const container = document.getElementById('config-list');
+  if (!configDetails) {
+    container.innerHTML = '<div class="empty-state">Loading configuration...</div>';
+    return;
+  }
+
+  const global = configDetails.global || {};
+  const cfg = global.config || {};
+  const agents = configDetails.agents || [];
+  container.innerHTML = `
+    <section>
+      <h2>Global Configuration</h2>
+      <div class="config-card">
+        ${configRows([
+          ['Config file', global.configPath],
+          ['Personal repo', global.personalRepoPath],
+          ['State root', global.stateRoot],
+          ['Runs root', global.runsRoot],
+          ['Copilot path', cfg.copilotPath],
+          ['Log level', cfg.logLevel],
+          ['Auto feedback', cfg.autoFeedback],
+          ['Notifications', cfg.notifications],
+          ['Startup delay', cfg.startupDelay],
+          ['Retention days', cfg.retentionDays],
+          ['Max run history', cfg.maxRunHistory],
+          ['Question expiration days', cfg.questionExpirationDays],
+          ['Quiet hours', cfg.quietHours],
+          ['Personal repo settings', cfg.personalRepo],
+        ])}
+        ${configBlock('cronagents.json', global.rawJson)}
+      </div>
+    </section>
+    <section>
+      <h2>Agent Configuration (${agents.length})</h2>
+      ${agents.length ? agents.map(renderAgentConfig).join('') : '<div class="empty-state">No agents discovered</div>'}
+    </section>`;
 }
 
 // ── Render: Header ──────────────────────────────────────────────
@@ -1327,6 +1490,24 @@ async function refreshActivity() {
   } catch { }
 }
 
+async function refreshConfig(force = false) {
+  const now = Date.now();
+  if (!force && configDetails && now - lastConfigRefresh < 30000) {
+    // Cache is still fresh — do not re-render; avoids collapsing open <details>
+    // and resetting scroll position while the user inspects config.
+    return;
+  }
+
+  try {
+    configDetails = await api('GET', '/api/config');
+    lastConfigRefresh = now;
+    renderConfig();
+  } catch (err) {
+    const container = document.getElementById('config-list');
+    container.innerHTML = `<div class="empty-state">Unable to load configuration: ${esc(err.message)}</div>`;
+  }
+}
+
 function renderActivity() {
   const container = document.getElementById('activity-list');
   if (!activity || activity.length === 0) {
@@ -1348,7 +1529,10 @@ async function refresh() {
   const activityPromise = (now - lastActivityRefresh > 30000)
     ? refreshActivity().then(() => { lastActivityRefresh = now; })
     : Promise.resolve();
-  await Promise.all([refreshStatus(), refreshRuns(), refreshQuestions(), activityPromise, checkFreshness()]);
+  const configPromise = document.getElementById('tab-config').classList.contains('active')
+    ? refreshConfig()
+    : Promise.resolve();
+  await Promise.all([refreshStatus(), refreshRuns(), refreshQuestions(), activityPromise, configPromise, checkFreshness()]);
 }
 
 // ── Freshness Detection ──────────────────────────────────────────
@@ -1576,6 +1760,7 @@ document.addEventListener('click', (e) => {
     case 'deleteSelectedRuns':  deleteSelectedRuns(); break;
     case 'clearFilteredRuns':   clearFilteredRuns(); break;
     case 'clearAllRuns':      clearAllRuns(); break;
+    case 'refreshConfig':     refreshConfig(true); break;
     case 'fullRefresh':       fullRefresh(); break;
     case 'stalenessAction':   handleStalenessAction(btn.dataset.staleType); break;
   }

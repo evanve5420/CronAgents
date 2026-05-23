@@ -32,14 +32,13 @@ The scheduler already runs as a persistent polling process (`Start-CronAgents.ps
 |--------|--------------|---------|
 | View agent status / next runs | `GET /api/status` | `cronagents.ps1 status` |
 | List agents with schedules | `GET /api/agents` | `cronagents.ps1 list` |
+| View configuration details | `GET /api/config` | agent registrations, prompts, custom agent files |
 | Trigger one-off run | `POST /api/run/:agent` | `cronagents.ps1 run <agent>` |
 | Pause an agent | `POST /api/pause/:agent` | `cronagents.ps1 pause <agent>` |
 | Resume an agent | `POST /api/resume/:agent` | `cronagents.ps1 resume <agent>` |
 | View run history | `GET /api/runs[?agent=X]` | reading `.cronstate/runs/` |
 | View run detail | `GET /api/runs/:id` | reading specific run directory |
 | Submit feedback | `POST /api/feedback/:runId` | writing to `feedback.md` in run directory |
-| Trigger feedback evaluator | `POST /api/evaluate` | `cronagents.ps1 evaluate` |
-| View pending feedback count | `GET /api/feedback/pending` | scanning `meta.json` files |
 
 ---
 

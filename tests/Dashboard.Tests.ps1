@@ -121,9 +121,17 @@ Describe 'Dashboard — Data Layer' {
 Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
     BeforeAll {
         $script:testEnv = New-TestEnvironment -Name 'DashHTTP'
-        $null = New-TestAgentConfig -TestEnv $script:testEnv -AgentId 'http-agent' `
-            -Schedule @{ type = 'daily'; time = '10:00' } `
-            -Prompt 'HTTP test prompt' -Name 'HTTP Agent'
+        # Write http-agent registration with envVars so redaction tests have something to check.
+        @{
+            name     = 'HTTP Agent'
+            prompt   = 'HTTP test prompt'
+            agent    = 'http-profile'
+            schedule = @{ type = 'daily'; time = '10:00' }
+            envVars  = @{ MY_SECRET = 'super-secret-value'; OTHER = 'also-secret' }
+        } | ConvertTo-Json -Depth 5 | Set-Content `
+            -LiteralPath (Join-Path $script:testEnv.AgentsDir 'http-agent.agent-registration.json') -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path (Join-Path (Join-Path $script:testEnv.Root '.github') 'agents') 'http-profile.agent.md') `
+            -Value "# HTTP profile`n`nHTTP profile instructions" -Encoding UTF8
         @{
             name             = 'HTTP Working Dir Agent'
             agent            = 'http-working-dir'
@@ -287,6 +295,62 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             $agent.id | Should -Be 'http-agent'
             $agent.name | Should -Be 'HTTP Agent'
             $agent.enabled | Should -Be $true
+        }
+    }
+
+    Context 'GET /api/config' {
+        It 'Returns global configuration details' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/config" -ErrorAction Stop
+            $data.global.configPath | Should -Be $script:testEnv.ConfigPath
+            $data.global.personalRepoPath | Should -Be $script:testEnv.Root
+            $data.global.config.maxRunHistory | Should -Be 50
+            $data.global.rawJson | Should -Match '"maxRunHistory"'
+            $data.timestamp | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Returns agent registration, prompt, and custom agent file details' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/config" -ErrorAction Stop
+            $agent = $data.agents | Where-Object { $_.id -eq 'http-agent' }
+            $agent | Should -Not -BeNullOrEmpty
+            $agent.config.prompt | Should -Be 'HTTP test prompt'
+            $agent.config.agent | Should -Be 'http-profile'
+            $agent.registration.rawJson | Should -Match 'HTTP test prompt'
+            $agent.customAgent.exists | Should -Be $true
+            $agent.customAgent.path | Should -BeLike '*http-profile.agent.md'
+            $agent.customAgent.content | Should -Match 'HTTP profile instructions'
+        }
+
+        It 'Redacts envVars values — values must not appear, keys are retained' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/config" -ErrorAction Stop
+            $agent = $data.agents | Where-Object { $_.id -eq 'http-agent' }
+            $agent | Should -Not -BeNullOrEmpty
+            $agent.config.envVars | Should -Not -BeNullOrEmpty
+            # Values must be redacted
+            $values = @($agent.config.envVars.PSObject.Properties.Value)
+            $values | ForEach-Object { $_ | Should -Be '***' }
+            # Raw JSON must also not contain the real values
+            $agent.registration.rawJson | Should -Not -Match 'super-secret-value'
+            $agent.registration.rawJson | Should -Not -Match 'also-secret'
+        }
+
+        It 'Rejects non-.agent.md agent file references — content is not served' {
+            # Register an agent whose agent reference resolves to a non-.agent.md path.
+            # We use a file that exists but is not *.agent.md — the registration JSON itself.
+            @{
+                name     = 'Path Exploit Test'
+                prompt   = 'test'
+                agent    = 'http-agent'  # resolves to *.agent-registration.json, not *.agent.md
+                schedule = @{ type = 'daily'; time = '12:00' }
+            } | ConvertTo-Json -Depth 3 | Set-Content `
+                -LiteralPath (Join-Path $script:testEnv.AgentsDir 'exploit-test.agent-registration.json') `
+                -Encoding UTF8
+
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/config" -ErrorAction Stop
+            $agent = $data.agents | Where-Object { $_.id -eq 'exploit-test' }
+            $agent | Should -Not -BeNullOrEmpty
+            # Path validation should have blocked the read
+            $agent.customAgent.exists | Should -Be $false
+            $agent.customAgent.content | Should -BeNullOrEmpty
         }
     }
 
@@ -1100,6 +1164,7 @@ Describe 'Dashboard — File Integrity' {
         $content | Should -Match 'rel="icon"'
         $content | Should -Match 'image/svg\+xml'
         $content | Should -Match '/api/status'
+        $content | Should -Match '/api/config'
         $content | Should -Match '/api/runs'
         $content | Should -Match '/api/questions'
         $content | Should -Match '/api/pause'
@@ -1122,6 +1187,13 @@ Describe 'Dashboard — File Integrity' {
         $content | Should -Match 'clearFilteredRuns'
         $content | Should -Match 'clear-filtered-btn'
         $content | Should -Match '/api/runs/batch-delete'
+    }
+
+    It 'dashboard.html contains configuration tab elements' {
+        $content = Get-Content -LiteralPath $script:dashboardHtml -Raw
+        $content | Should -Match 'data-tab="config"'
+        $content | Should -Match 'config-list'
+        $content | Should -Match 'refreshConfig'
     }
 
     It 'Start-DashboardServer.ps1 exists' {
