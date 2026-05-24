@@ -162,20 +162,100 @@ function script:Get-StatusPayload {
     }
 }
 
+function script:Test-FileSystemItemIsLink {
+    [OutputType([bool])]
+    param([Parameter(Mandatory)]$Item)
+
+    $isReparsePoint = (($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
+    $hasLinkType = $Item.PSObject.Properties['LinkType'] -and
+        -not [string]::IsNullOrWhiteSpace([string]$Item.LinkType)
+    return [bool]($isReparsePoint -or $hasLinkType)
+}
+
+function script:Get-PathStringComparison {
+    [OutputType([System.StringComparison])]
+    param()
+
+    if ((Test-Path variable:IsWindows) -and $IsWindows) {
+        return [System.StringComparison]::OrdinalIgnoreCase
+    }
+    return [System.StringComparison]::Ordinal
+}
+
+function script:Test-PathContainsLinkedComponent {
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$StopAt
+    )
+
+    $trimChars = [char[]]@(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    $stopFull = [System.IO.Path]::GetFullPath($StopAt).TrimEnd($trimChars)
+    $currentPath = [System.IO.Path]::GetFullPath($Path)
+    $pathComparison = script:Get-PathStringComparison
+
+    while (-not [string]::IsNullOrWhiteSpace($currentPath)) {
+        $item = try { Get-Item -LiteralPath $currentPath -Force -ErrorAction Stop } catch { return $true }
+        if (script:Test-FileSystemItemIsLink -Item $item) { return $true }
+
+        $currentFull = $item.FullName.TrimEnd($trimChars)
+        if ([string]::Equals($currentFull, $stopFull, $pathComparison)) {
+            return $false
+        }
+
+        $parentInfo = [System.IO.Directory]::GetParent($currentFull)
+        if ($null -eq $parentInfo -or
+            [string]::Equals($parentInfo.FullName, $currentFull, $pathComparison)) {
+            break
+        }
+        $currentPath = $parentInfo.FullName
+    }
+
+    return $true
+}
+
 # Approved root directories for custom agent file reads.
 # Paths that do not descend from one of these are rejected.
 function script:Test-AgentFilePathSafe {
     [OutputType([bool])]
     param(
         [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][string[]]$ApprovedRoots
+        [Parameter(Mandatory)][object[]]$ApprovedRoots
     )
     if (-not ($Path -match '\.agent\.md$')) { return $false }
+    $item = try { Get-Item -LiteralPath $Path -Force -ErrorAction Stop } catch { return $false }
+    if (script:Test-FileSystemItemIsLink -Item $item) { return $false }
+
     $canonical = try { (Resolve-Path -LiteralPath $Path -ErrorAction Stop).Path } catch { return $false }
-    foreach ($root in $ApprovedRoots) {
-        $rootCanon = try { (Resolve-Path -LiteralPath $root -ErrorAction SilentlyContinue)?.Path } catch { $null }
-        if ($rootCanon -and $canonical.StartsWith($rootCanon, [System.StringComparison]::OrdinalIgnoreCase)) {
-            return $true
+    $pathComparison = script:Get-PathStringComparison
+    foreach ($approvedRoot in $ApprovedRoots) {
+        $root = if ($approvedRoot -is [string]) {
+            $approvedRoot
+        } else {
+            $approvedRoot.Root
+        }
+        $base = if ($approvedRoot -isnot [string] -and $approvedRoot.PSObject.Properties['Base']) {
+            $approvedRoot.Base
+        } elseif ($approvedRoot -is [System.Collections.IDictionary] -and $approvedRoot.Contains('Base')) {
+            $approvedRoot['Base']
+        } else {
+            $root
+        }
+        $rootCanon = try { (Resolve-Path -LiteralPath $root -ErrorAction Stop).Path } catch { $null }
+        $baseCanon = try { (Resolve-Path -LiteralPath $base -ErrorAction Stop).Path } catch { $null }
+        if (-not $rootCanon) { continue }
+        if (-not $baseCanon) { continue }
+
+        $trimChars = [char[]]@(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar
+        )
+        $rootPrefix = $rootCanon.TrimEnd($trimChars) + [System.IO.Path]::DirectorySeparatorChar
+        if ($canonical.StartsWith($rootPrefix, $pathComparison)) {
+            return -not (script:Test-PathContainsLinkedComponent -Path $canonical -StopAt $baseCanon)
         }
     }
     return $false
@@ -195,6 +275,9 @@ function script:Read-FileSafe {
     }
     try {
         $info = Get-Item -LiteralPath $Path -ErrorAction Stop
+        if (script:Test-FileSystemItemIsLink -Item $info) {
+            return @{ Content = $null; Error = "symbolic links are not permitted" }
+        }
         if ($info.Length -gt $MaxBytes) {
             return @{ Content = $null; Error = "file too large to display ($(($info.Length / 1024).ToString('F0')) KB)" }
         }
@@ -252,12 +335,12 @@ function script:Get-ConfigPayload {
     param()
 
     $approvedRoots = @(
-        (Join-Path $RepoRoot '.github' 'agents')
-        (Join-Path $RepoRoot '.github' 'copilot-agents')
-        (Join-Path $PersonalRepoPath '.github' 'agents')
-        (Join-Path $PersonalRepoPath '.github' 'copilot-agents')
-        (Join-Path $PersonalRepoPath '.cronagents' 'agents')
-        (Join-Path $RepoRoot '.cronagents' 'agents')
+        [pscustomobject]@{ Root = (Join-Path $RepoRoot '.github' 'agents'); Base = $RepoRoot }
+        [pscustomobject]@{ Root = (Join-Path $RepoRoot '.github' 'copilot-agents'); Base = $RepoRoot }
+        [pscustomobject]@{ Root = (Join-Path $PersonalRepoPath '.github' 'agents'); Base = $PersonalRepoPath }
+        [pscustomobject]@{ Root = (Join-Path $PersonalRepoPath '.github' 'copilot-agents'); Base = $PersonalRepoPath }
+        [pscustomobject]@{ Root = (Join-Path $PersonalRepoPath '.cronagents' 'agents'); Base = $PersonalRepoPath }
+        [pscustomobject]@{ Root = (Join-Path $RepoRoot '.cronagents' 'agents'); Base = $RepoRoot }
     )
 
     $agentDetails = @()
@@ -288,14 +371,12 @@ function script:Get-ConfigPayload {
             error     = $customReadError
         }
 
-        # Read registration JSON safely — generate redacted JSON from sanitized config
-        # so envVars values (which may contain secrets) are never exposed in rawJson.
-        $regResult = script:Read-FileSafe -Path $a.ConfigPath
+        # Generate redacted JSON from sanitized config; envVars values must not be
+        # exposed. rawJson is re-serialized from the safe in-memory object, not the file.
         $safeConfig = script:ConvertTo-SafeAgentConfig -Config $a.Config
         $registration = [ordered]@{
             path    = $a.ConfigPath
             rawJson = ConvertTo-Json -InputObject $safeConfig -Depth 10
-            error   = $regResult.Error
         }
 
         $agentDetails += [ordered]@{
@@ -309,7 +390,6 @@ function script:Get-ConfigPayload {
     }
 
     # Derive redacted global rawJson from the sanitized config object.
-    $globalResult = script:Read-FileSafe -Path $ConfigPath
     $safeGlobal = script:ConvertTo-SafeGlobalConfig -Config $GlobalConfig
 
     return [ordered]@{
@@ -320,7 +400,6 @@ function script:Get-ConfigPayload {
             runsRoot         = $RunsRoot
             config           = $safeGlobal
             rawJson          = ConvertTo-Json -InputObject $safeGlobal -Depth 10
-            rawJsonError     = $globalResult.Error
         }
         agents    = $agentDetails
         timestamp = [datetime]::UtcNow.ToString('o')
@@ -613,7 +692,8 @@ function script:Send-JsonResponse {
         [System.Net.HttpListenerResponse]$Response,
         [AllowNull()]
         $Body,
-        [int]$StatusCode = 200
+        [int]$StatusCode = 200,
+        [switch]$NoStore
     )
     # Handle empty arrays explicitly — ConvertTo-Json produces '' for @()
     if ($Body -is [System.Array] -and $Body.Count -eq 0) {
@@ -626,6 +706,11 @@ function script:Send-JsonResponse {
     $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
     $Response.StatusCode = $StatusCode
     $Response.ContentType = 'application/json; charset=utf-8'
+    if ($NoStore) {
+        $Response.Headers['Cache-Control'] = 'no-store, max-age=0'
+        $Response.Headers['Pragma'] = 'no-cache'
+        $Response.Headers['Expires'] = '0'
+    }
     $Response.ContentLength64 = $buffer.Length
     $Response.OutputStream.Write($buffer, 0, $buffer.Length)
     $Response.OutputStream.Close()
@@ -775,7 +860,7 @@ function script:Invoke-Route {
         # ── GET /api/config ──────────────────────────────────────
         if ($method -eq 'GET' -and $path -eq '/api/config') {
             $payload = script:Get-ConfigPayload
-            script:Send-JsonResponse -Response $response -Body $payload
+            script:Send-JsonResponse -Response $response -Body $payload -NoStore
             return
         }
 

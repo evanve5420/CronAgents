@@ -543,6 +543,7 @@ const pageLoadedAt = new Date().toISOString();
 // ── API helpers ──────────────────────────────────────────────────
 async function api(method, path, body) {
   const opts = { method, headers: {} };
+  if (path === '/api/config') opts.cache = 'no-store';
   if (body) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
@@ -1493,7 +1494,7 @@ async function refreshActivity() {
 async function refreshConfig(force = false) {
   const now = Date.now();
   if (!force && configDetails && now - lastConfigRefresh < 30000) {
-    // Cache is still fresh — do not re-render; avoids collapsing open <details>
+    // Cache is still fresh; do not re-render, which would collapse open <details>
     // and resetting scroll position while the user inspects config.
     return;
   }
