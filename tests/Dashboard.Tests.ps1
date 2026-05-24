@@ -121,9 +121,17 @@ Describe 'Dashboard — Data Layer' {
 Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
     BeforeAll {
         $script:testEnv = New-TestEnvironment -Name 'DashHTTP'
-        $null = New-TestAgentConfig -TestEnv $script:testEnv -AgentId 'http-agent' `
-            -Schedule @{ type = 'daily'; time = '10:00' } `
-            -Prompt 'HTTP test prompt' -Name 'HTTP Agent'
+        # Write http-agent registration with envVars so redaction tests have something to check.
+        @{
+            name     = 'HTTP Agent'
+            prompt   = 'HTTP test prompt'
+            agent    = 'http-profile'
+            schedule = @{ type = 'daily'; time = '10:00' }
+            envVars  = @{ MY_SECRET = 'super-secret-value'; OTHER = 'also-secret' }
+        } | ConvertTo-Json -Depth 5 | Set-Content `
+            -LiteralPath (Join-Path $script:testEnv.AgentsDir 'http-agent.agent-registration.json') -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path (Join-Path (Join-Path $script:testEnv.Root '.github') 'agents') 'http-profile.agent.md') `
+            -Value "# HTTP profile`n`nHTTP profile instructions" -Encoding UTF8
         @{
             name             = 'HTTP Working Dir Agent'
             agent            = 'http-working-dir'
@@ -287,6 +295,173 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             $agent.id | Should -Be 'http-agent'
             $agent.name | Should -Be 'HTTP Agent'
             $agent.enabled | Should -Be $true
+        }
+    }
+
+    Context 'GET /api/config' {
+        It 'Returns global configuration details' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/config" -ErrorAction Stop
+            $data.global.configPath | Should -Be $script:testEnv.ConfigPath
+            $data.global.personalRepoPath | Should -Be $script:testEnv.Root
+            $data.global.config.maxRunHistory | Should -Be 50
+            $data.global.rawJson | Should -Match '"maxRunHistory"'
+            $data.timestamp | Should -Not -BeNullOrEmpty
+        }
+
+        It 'Returns no-store cache headers' {
+            $response = Invoke-WebRequest -Uri "$($script:baseUrl)/api/config" -ErrorAction Stop
+            ($response.Headers['Cache-Control'] -join ',') | Should -Match 'no-store'
+            ($response.Headers['Pragma'] -join ',') | Should -Match 'no-cache'
+            ($response.Headers['Expires'] -join ',') | Should -Be '0'
+        }
+
+        It 'Returns agent registration, prompt, and custom agent file details' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/config" -ErrorAction Stop
+            $agent = $data.agents | Where-Object { $_.id -eq 'http-agent' }
+            $agent | Should -Not -BeNullOrEmpty
+            $agent.config.prompt | Should -Be 'HTTP test prompt'
+            $agent.config.agent | Should -Be 'http-profile'
+            $agent.registration.rawJson | Should -Match 'HTTP test prompt'
+            $agent.customAgent.exists | Should -Be $true
+            $agent.customAgent.path | Should -BeLike '*http-profile.agent.md'
+            $agent.customAgent.content | Should -Match 'HTTP profile instructions'
+        }
+
+        It 'Redacts envVars values — values must not appear, keys are retained' {
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/config" -ErrorAction Stop
+            $agent = $data.agents | Where-Object { $_.id -eq 'http-agent' }
+            $agent | Should -Not -BeNullOrEmpty
+            $agent.config.envVars | Should -Not -BeNullOrEmpty
+            # Values must be redacted
+            $values = @($agent.config.envVars.PSObject.Properties.Value)
+            $values | ForEach-Object { $_ | Should -Be '***' }
+            # Raw JSON must also not contain the real values
+            $agent.registration.rawJson | Should -Not -Match 'super-secret-value'
+            $agent.registration.rawJson | Should -Not -Match 'also-secret'
+        }
+
+        It 'Rejects non-.agent.md agent file references — content is not served' {
+            # Register an agent whose 'agent' reference resolves (via step 4 of Resolve-AgentFilePath)
+            # to an existing file that is NOT *.agent.md, simulating a path-traversal attempt.
+            # We point at cronagents.json which lives at the test root and always exists.
+            @{
+                name     = 'Path Exploit Test'
+                prompt   = 'test'
+                agent    = 'cronagents.json'   # existing file, but NOT *.agent.md
+                schedule = @{ type = 'daily'; time = '12:00' }
+            } | ConvertTo-Json -Depth 3 | Set-Content `
+                -LiteralPath (Join-Path $script:testEnv.AgentsDir 'exploit-test.agent-registration.json') `
+                -Encoding UTF8
+
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/config" -ErrorAction Stop
+            $agent = $data.agents | Where-Object { $_.id -eq 'exploit-test' }
+            $agent | Should -Not -BeNullOrEmpty
+            # Path validation must block the read; content stays null, exists is false.
+            $agent.customAgent.exists | Should -Be $false
+            $agent.customAgent.content | Should -BeNullOrEmpty
+        }
+
+        It 'Rejects .agent.md file references outside approved roots' {
+            Set-Content -LiteralPath (Join-Path $script:testEnv.Root 'outside-profile.agent.md') `
+                -Value '# Outside approved roots' -Encoding UTF8
+            @{
+                name     = 'Outside Root Test'
+                prompt   = 'test'
+                agent    = 'outside-profile.agent.md'
+                schedule = @{ type = 'daily'; time = '12:00' }
+            } | ConvertTo-Json -Depth 3 | Set-Content `
+                -LiteralPath (Join-Path $script:testEnv.AgentsDir 'outside-root.agent-registration.json') `
+                -Encoding UTF8
+
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/config" -ErrorAction Stop
+            $agent = $data.agents | Where-Object { $_.id -eq 'outside-root' }
+            $agent | Should -Not -BeNullOrEmpty
+            $agent.customAgent.exists | Should -Be $false
+            $agent.customAgent.content | Should -BeNullOrEmpty
+        }
+
+        It 'Rejects symlinked .agent.md files under approved roots' {
+            $outsideTarget = Join-Path $script:testEnv.Root 'outside-target.txt'
+            Set-Content -LiteralPath $outsideTarget -Value 'outside target secret' -Encoding UTF8
+            $linkPath = Join-Path (Join-Path (Join-Path $script:testEnv.Root '.github') 'agents') 'linked-profile.agent.md'
+            try {
+                $null = New-Item -ItemType SymbolicLink -Path $linkPath -Target $outsideTarget -ErrorAction Stop
+            }
+            catch {
+                Set-ItResult -Skipped -Because "Symbolic links are unavailable in this environment: $($_.Exception.Message)"
+                return
+            }
+
+            @{
+                name     = 'Linked Profile Test'
+                prompt   = 'test'
+                agent    = 'linked-profile'
+                schedule = @{ type = 'daily'; time = '12:00' }
+            } | ConvertTo-Json -Depth 3 | Set-Content `
+                -LiteralPath (Join-Path $script:testEnv.AgentsDir 'linked-profile.agent-registration.json') `
+                -Encoding UTF8
+
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/config" -ErrorAction Stop
+            $agent = $data.agents | Where-Object { $_.id -eq 'linked-profile' }
+            $agent | Should -Not -BeNullOrEmpty
+            $agent.customAgent.exists | Should -Be $false
+            $agent.customAgent.content | Should -BeNullOrEmpty
+        }
+
+        It 'Rejects .agent.md files under symlinked approved-root child directories' {
+            $outsideDir = Join-Path $script:testEnv.Root 'outside-agent-dir'
+            New-Item -ItemType Directory -Path $outsideDir -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $outsideDir 'secret.agent.md') `
+                -Value '# Outside linked directory' -Encoding UTF8
+            $linkDir = Join-Path (Join-Path (Join-Path $script:testEnv.Root '.github') 'agents') 'linked-dir'
+            try {
+                $null = New-Item -ItemType SymbolicLink -Path $linkDir -Target $outsideDir -ErrorAction Stop
+            }
+            catch {
+                Set-ItResult -Skipped -Because "Symbolic links are unavailable in this environment: $($_.Exception.Message)"
+                return
+            }
+
+            @{
+                name     = 'Linked Directory Test'
+                prompt   = 'test'
+                agent    = 'linked-dir/secret'
+                schedule = @{ type = 'daily'; time = '12:00' }
+            } | ConvertTo-Json -Depth 3 | Set-Content `
+                -LiteralPath (Join-Path $script:testEnv.AgentsDir 'linked-dir.agent-registration.json') `
+                -Encoding UTF8
+
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/config" -ErrorAction Stop
+            $agent = $data.agents | Where-Object { $_.id -eq 'linked-dir' }
+            $agent | Should -Not -BeNullOrEmpty
+            $agent.customAgent.exists | Should -Be $false
+            $agent.customAgent.content | Should -BeNullOrEmpty
+        }
+
+        It 'Rejects case-only approved-root lookalikes on case-sensitive filesystems' {
+            if ((Test-Path variable:IsWindows) -and $IsWindows) {
+                Set-ItResult -Skipped -Because 'Case-only sibling directories require a case-sensitive filesystem'
+                return
+            }
+
+            $lookalikeDir = Join-Path (Join-Path $script:testEnv.Root '.github') 'AGENTS'
+            New-Item -ItemType Directory -Path $lookalikeDir -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $lookalikeDir 'secret.agent.md') `
+                -Value '# Case-only lookalike directory' -Encoding UTF8
+            @{
+                name     = 'Case Lookalike Test'
+                prompt   = 'test'
+                agent    = '.github/AGENTS/secret.agent.md'
+                schedule = @{ type = 'daily'; time = '12:00' }
+            } | ConvertTo-Json -Depth 3 | Set-Content `
+                -LiteralPath (Join-Path $script:testEnv.AgentsDir 'case-lookalike.agent-registration.json') `
+                -Encoding UTF8
+
+            $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/config" -ErrorAction Stop
+            $agent = $data.agents | Where-Object { $_.id -eq 'case-lookalike' }
+            $agent | Should -Not -BeNullOrEmpty
+            $agent.customAgent.exists | Should -Be $false
+            $agent.customAgent.content | Should -BeNullOrEmpty
         }
     }
 
@@ -1010,6 +1185,92 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
     }
 }
 
+# ── Config security edge case (dedicated server instance) ─────────────
+# Uses a custom repo layout so an approved-root ancestor can be a symlink.
+
+Describe 'Dashboard — Config symlink ancestor security' -Tag 'Slow' {
+    It 'Rejects agent files beneath symlinked approved-root ancestors' {
+        $securityEnv = New-TestEnvironment -Name 'DashConfigAncestor'
+        $securityJob = $null
+        try {
+            $githubPath = Join-Path $securityEnv.Root '.github'
+            Remove-Item -LiteralPath $githubPath -Recurse -Force
+
+            $outsideGithub = Join-Path $securityEnv.Root 'outside-github'
+            $outsideAgents = Join-Path $outsideGithub 'agents'
+            New-Item -ItemType Directory -Path $outsideAgents -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $outsideAgents 'ancestor-secret.agent.md') `
+                -Value '# Outside linked ancestor' -Encoding UTF8
+
+            try {
+                $null = New-Item -ItemType SymbolicLink -Path $githubPath -Target $outsideGithub -ErrorAction Stop
+            }
+            catch {
+                Set-ItResult -Skipped -Because "Symbolic links are unavailable in this environment: $($_.Exception.Message)"
+                return
+            }
+
+            @{
+                name     = 'Linked Ancestor Test'
+                prompt   = 'test'
+                agent    = 'ancestor-secret'
+                schedule = @{ type = 'daily'; time = '12:00' }
+            } | ConvertTo-Json -Depth 3 | Set-Content `
+                -LiteralPath (Join-Path $securityEnv.AgentsDir 'linked-ancestor.agent-registration.json') `
+                -Encoding UTF8
+
+            $config = Get-Content -LiteralPath $securityEnv.ConfigPath -Raw | ConvertFrom-Json
+            $config.personalRepo.path = $securityEnv.Root
+            $config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $securityEnv.ConfigPath -Encoding UTF8
+
+            $portProbe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+            try {
+                $portProbe.Start()
+                $port = ([System.Net.IPEndPoint]$portProbe.LocalEndpoint).Port
+            }
+            finally {
+                $portProbe.Stop()
+            }
+
+            $baseUrl = "http://127.0.0.1:$port"
+            $dashScript = $script:dashboardScript
+            $securityJob = Start-Job -ScriptBlock {
+                param($s, $r, $p)
+                & $s -RepoRoot $r -Port $p -NoBrowser
+            } -ArgumentList $dashScript, $securityEnv.Root, $port
+
+            $deadline = (Get-Date).AddSeconds(60)
+            $ready = $false
+            while ((Get-Date) -lt $deadline) {
+                Start-Sleep -Milliseconds 300
+                try {
+                    $null = Invoke-RestMethod -Uri "$baseUrl/api/status" -TimeoutSec 2 -ErrorAction Stop
+                    $ready = $true
+                    break
+                } catch { }
+            }
+
+            if (-not $ready) {
+                $output = Receive-Job $securityJob 2>&1 | Out-String
+                throw "Config-security dashboard server did not become ready within 60 seconds. Output: $output"
+            }
+
+            $data = Invoke-RestMethod -Uri "$baseUrl/api/config" -ErrorAction Stop
+            $agent = $data.agents | Where-Object { $_.id -eq 'linked-ancestor' }
+            $agent | Should -Not -BeNullOrEmpty
+            $agent.customAgent.exists | Should -Be $false
+            $agent.customAgent.content | Should -BeNullOrEmpty
+        }
+        finally {
+            if ($securityJob) {
+                Stop-Job $securityJob -ErrorAction SilentlyContinue
+                Remove-Job $securityJob -Force -ErrorAction SilentlyContinue
+            }
+            Remove-TestEnvironment -TestEnv $securityEnv
+        }
+    }
+}
+
 # ── Restart Endpoint (dedicated server instance) ─────────────────────
 # The happy-path restart test triggers a real server shutdown, so it runs
 # against its own short-lived server to avoid killing the main test instance.
@@ -1100,6 +1361,7 @@ Describe 'Dashboard — File Integrity' {
         $content | Should -Match 'rel="icon"'
         $content | Should -Match 'image/svg\+xml'
         $content | Should -Match '/api/status'
+        $content | Should -Match '/api/config'
         $content | Should -Match '/api/runs'
         $content | Should -Match '/api/questions'
         $content | Should -Match '/api/pause'
@@ -1122,6 +1384,13 @@ Describe 'Dashboard — File Integrity' {
         $content | Should -Match 'clearFilteredRuns'
         $content | Should -Match 'clear-filtered-btn'
         $content | Should -Match '/api/runs/batch-delete'
+    }
+
+    It 'dashboard.html contains configuration tab elements' {
+        $content = Get-Content -LiteralPath $script:dashboardHtml -Raw
+        $content | Should -Match 'data-tab="config"'
+        $content | Should -Match 'config-list'
+        $content | Should -Match 'refreshConfig'
     }
 
     It 'Start-DashboardServer.ps1 exists' {

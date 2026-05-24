@@ -32,14 +32,13 @@ The scheduler already runs as a persistent polling process (`Start-CronAgents.ps
 |--------|--------------|---------|
 | View agent status / next runs | `GET /api/status` | `cronagents.ps1 status` |
 | List agents with schedules | `GET /api/agents` | `cronagents.ps1 list` |
+| View configuration details | `GET /api/config` | global `cronagents.json`, per-agent registration files, and custom `.agent.md` content. `envVars` values are redacted (`"***"`); custom agent files must be real `*.agent.md` files under approved roots, not symlinks or reparse points; files larger than 512 KB are not returned. HTTP responses use `no-store`; the client keeps an in-memory 30 s cache and avoids re-rendering while that cache is fresh. |
 | Trigger one-off run | `POST /api/run/:agent` | `cronagents.ps1 run <agent>` |
 | Pause an agent | `POST /api/pause/:agent` | `cronagents.ps1 pause <agent>` |
 | Resume an agent | `POST /api/resume/:agent` | `cronagents.ps1 resume <agent>` |
 | View run history | `GET /api/runs[?agent=X]` | reading `.cronstate/runs/` |
 | View run detail | `GET /api/runs/:id` | reading specific run directory |
 | Submit feedback | `POST /api/feedback/:runId` | writing to `feedback.md` in run directory |
-| Trigger feedback evaluator | `POST /api/evaluate` | `cronagents.ps1 evaluate` |
-| View pending feedback count | `GET /api/feedback/pending` | scanning `meta.json` files |
 
 ---
 

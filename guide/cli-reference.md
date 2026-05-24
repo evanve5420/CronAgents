@@ -229,7 +229,7 @@ Start the HTML dashboard server and open it in your browser.
 .\cronagents.ps1 dashboard
 ```
 
-Launches a lightweight HTTP server on `127.0.0.1:9077` serving an interactive HTML dashboard. The dashboard provides live status, agent controls (pause/resume/trigger), run history with details, feedback submission, and question answering — all through a browser UI. Auto-refreshes every 5 seconds.
+Launches a lightweight HTTP server on `127.0.0.1:9077` serving an interactive HTML dashboard. The dashboard provides live status, agent controls (pause/resume/trigger), configuration inspection, run history with details, feedback submission, and question answering — all through a browser UI. Auto-refreshes every 5 seconds.
 
 The server runs until you press Ctrl+C. Both the HTML dashboard and the static `dashboard.md` can coexist — they read from the same `.cronstate/` data.
 
