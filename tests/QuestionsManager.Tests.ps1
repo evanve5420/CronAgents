@@ -74,6 +74,26 @@ Describe 'Save-AgentQuestions' {
     }
 }
 
+# ===== Get-Questions =====
+
+Describe 'Get-Questions' {
+    It 'Returns pending and answered questions across agents' {
+        $stateRoot = Join-Path $TestDrive 'all-questions-test\.cronstate'
+        New-Item -ItemType Directory -Path (Join-Path $stateRoot 'pending-questions') -Force | Out-Null
+
+        Save-AgentQuestions -StateRoot $stateRoot -AgentId 'agent-a' `
+            -RunId 'run-a' -Questions @(@{ id = 'q1'; question = 'Pending?' })
+        Save-AgentQuestions -StateRoot $stateRoot -AgentId 'agent-b' `
+            -RunId 'run-b' -Questions @(@{ id = 'q2'; question = 'Answered?' })
+        Set-QuestionAnswer -StateRoot $stateRoot -AgentId 'agent-b' -QuestionId 'q2' -Answer 'Done'
+
+        $questions = Get-Questions -StateRoot $stateRoot
+        $questions.Count | Should -Be 2
+        ($questions | Where-Object { $_.id -eq 'q1' }).answer | Should -BeNullOrEmpty
+        ($questions | Where-Object { $_.id -eq 'q2' }).answer | Should -Be 'Done'
+    }
+}
+
 # ===== Get-PendingQuestions =====
 
 Describe 'Get-PendingQuestions' {
@@ -136,6 +156,24 @@ Describe 'Set-QuestionAnswer' {
 
         $pending = Get-PendingQuestions -StateRoot $stateRoot -AgentId 'test-agent'
         $pending.Count | Should -Be 0
+    }
+
+    It 'Returns answered questions across agents when no AgentId is specified' {
+        $stateRoot = Join-Path $TestDrive 'answer-all-test\.cronstate'
+        New-Item -ItemType Directory -Path (Join-Path $stateRoot 'pending-questions') -Force | Out-Null
+
+        Save-AgentQuestions -StateRoot $stateRoot -AgentId 'agent-a' `
+            -RunId 'run-a' -Questions @(@{ id = 'q1'; question = 'A?' })
+        Save-AgentQuestions -StateRoot $stateRoot -AgentId 'agent-b' `
+            -RunId 'run-b' -Questions @(@{ id = 'q2'; question = 'B?' })
+
+        Set-QuestionAnswer -StateRoot $stateRoot -AgentId 'agent-a' -QuestionId 'q1' -Answer 'Answer A'
+        Set-QuestionAnswer -StateRoot $stateRoot -AgentId 'agent-b' -QuestionId 'q2' -Answer 'Answer B'
+
+        $answered = Get-AnsweredQuestions -StateRoot $stateRoot
+        $answered.Count | Should -Be 2
+        @($answered | ForEach-Object { $_.answer }) | Should -Contain 'Answer A'
+        @($answered | ForEach-Object { $_.answer }) | Should -Contain 'Answer B'
     }
 }
 

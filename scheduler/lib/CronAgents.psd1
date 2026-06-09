@@ -89,6 +89,7 @@
         'Resolve-NotificationBackend',
         # QuestionsManager
         'Save-AgentQuestions',
+        'Get-Questions',
         'Get-PendingQuestions',
         'Get-AnsweredQuestions',
         'Set-QuestionAnswer',

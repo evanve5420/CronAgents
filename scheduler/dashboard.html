@@ -221,6 +221,19 @@
   }
   .choice-btn:hover { border-color: var(--accent); color: var(--accent); }
   .choice-btn.recommended { border-color: var(--green); }
+  .choice-btn.selected {
+    border-color: var(--accent); color: var(--accent);
+    background: rgba(88,166,255,0.1);
+  }
+  .question-card.answered { border-color: rgba(88,166,255,0.45); }
+  .answer-summary {
+    margin-top: 8px; color: var(--muted); font-size: 0.85rem;
+  }
+  .answer-summary strong { color: var(--text); }
+  .questions-group-title {
+    color: var(--muted); font-size: 0.8rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.03em; margin: 12px 0 8px;
+  }
 
   /* ── Toast ──────────────────────────────────── */
   .toast {
@@ -1192,42 +1205,56 @@ async function showRunDetail(runId) {
 function renderQuestions() {
   const container = document.getElementById('questions-list');
   const badge = document.getElementById('question-badge');
+  const pendingQuestions = questions.filter(q => !q.answer);
+  const answeredQuestions = questions.filter(q => q.answer);
 
-  badge.textContent = questions.length > 0 ? questions.length : '';
+  badge.textContent = pendingQuestions.length > 0 ? pendingQuestions.length : '';
   const questionsTab = document.querySelector('[data-tab="questions"]');
-  questionsTab.classList.toggle('has-questions', questions.length > 0);
+  questionsTab.classList.toggle('has-questions', pendingQuestions.length > 0);
 
   // Skip DOM re-render while the user is typing a custom answer or
   // selecting text — the cached data renders on the next cycle (fixes #84).
-  if (isUserInteracting(container)) return;
+  if (isUserInteracting(container, true)) return;
 
   if (questions.length === 0) {
     container.innerHTML = '<div class="empty-state">No pending questions</div>';
     return;
   }
 
-  container.innerHTML = questions.map(q => {
+  const renderQuestionCard = (q) => {
+    const isAnswered = !!q.answer;
     const choicesHtml = q.choices && q.choices.length > 0
       ? `<div class="choices">${q.choices.map(c =>
-          `<button class="choice-btn ${q.recommended === c ? 'recommended' : ''}"
-                   data-action="answerQuestion" data-agent-id="${esc(q.agentId)}" data-question-id="${esc(q.id)}" data-answer="${esc(c)}">${esc(c)}${q.recommended === c ? ' ✓' : ''}</button>`
+          `<button class="choice-btn ${!isAnswered && q.recommended === c ? 'recommended' : ''} ${q.answer === c ? 'selected' : ''}"
+                   ${isAnswered ? 'disabled' : ''}
+                   data-action="answerQuestion" data-agent-id="${esc(q.agentId)}" data-question-id="${esc(q.id)}" data-answer="${esc(c)}">${esc(c)}${(isAnswered ? q.answer : q.recommended) === c ? ' ✓' : ''}</button>`
         ).join('')}</div>`
       : '';
 
     return `
-      <div class="question-card">
+      <div class="question-card ${isAnswered ? 'answered' : ''}">
         <div class="agent-label">${esc(q.agentId || 'unknown')}</div>
         <div class="question-text">${esc(q.question)}</div>
         ${q.context ? `<p style="color:var(--muted);font-size:0.85rem;margin-bottom:8px">${esc(q.context)}</p>` : ''}
         ${choicesHtml}
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="answer-${esc(q.id)}" placeholder="Custom answer..." style="
-            flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;
-            padding:6px 10px;color:var(--text);font-size:0.85rem;">
-          <button class="btn btn-primary" data-action="answerQuestionCustom" data-agent-id="${esc(q.agentId)}" data-question-id="${esc(q.id)}">Answer</button>
-        </div>
+        ${isAnswered
+          ? `<div class="answer-summary"><span class="badge badge-info">Submitted</span> <strong>${esc(q.answer)}</strong> will be sent to the agent on its next run.</div>`
+          : `<div style="display:flex;gap:8px;align-items:center">
+              <input type="text" id="answer-${esc(q.id)}" placeholder="Custom answer..." style="
+                flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+                padding:6px 10px;color:var(--text);font-size:0.85rem;">
+              <button class="btn btn-primary" data-action="answerQuestionCustom" data-agent-id="${esc(q.agentId)}" data-question-id="${esc(q.id)}">Answer</button>
+            </div>`}
       </div>`;
-  }).join('');
+  };
+
+  const pendingHtml = pendingQuestions.length > 0
+    ? `<div class="questions-group-title">Pending questions</div>${pendingQuestions.map(renderQuestionCard).join('')}`
+    : '';
+  const answeredHtml = answeredQuestions.length > 0
+    ? `<div class="questions-group-title">Submitted answers pending delivery</div>${answeredQuestions.map(renderQuestionCard).join('')}`
+    : '';
+  container.innerHTML = pendingHtml + answeredHtml;
 }
 
 // ── Actions ─────────────────────────────────────────────────────
