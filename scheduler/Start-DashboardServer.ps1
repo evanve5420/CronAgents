@@ -625,7 +625,8 @@ function script:Get-QuestionsPayload {
     $params = @{ StateRoot = $StateRoot }
     if ($AgentId) { $params['AgentId'] = $AgentId }
     $pending = Get-PendingQuestions @params
-    return @($pending)
+    $answered = Get-AnsweredQuestions @params
+    return @($pending) + @($answered)
 }
 
 function script:Get-ActivityPayload {

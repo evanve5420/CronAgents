@@ -259,19 +259,32 @@ function Get-PendingQuestions {
 function Get-AnsweredQuestions {
     <#
     .SYNOPSIS
-        Returns answered questions for an agent.
+        Returns answered questions, optionally filtered by agent.
     #>
     [CmdletBinding()]
     [OutputType([hashtable[]])]
     param(
         [Parameter(Mandatory)][string]$StateRoot,
-        [Parameter(Mandatory)][string]$AgentId
+        [string]$AgentId
     )
 
-    $path = Get-AgentQuestionsPath -StateRoot $StateRoot -AgentId $AgentId
-    $questions = Read-QuestionsFile -Path $path
-    $answered = @($questions | Where-Object { $null -ne $_.answer })
-    Write-Output -NoEnumerate $answered
+    $dir = Get-QuestionsDir -StateRoot $StateRoot
+    $results = @()
+
+    if ($AgentId) {
+        $path = Get-AgentQuestionsPath -StateRoot $StateRoot -AgentId $AgentId
+        $questions = Read-QuestionsFile -Path $path
+        $results = @($questions | Where-Object { $null -ne $_.answer })
+    }
+    else {
+        $files = Get-ChildItem -LiteralPath $dir -Filter '*.json' -ErrorAction SilentlyContinue
+        foreach ($file in $files) {
+            $questions = Read-QuestionsFile -Path $file.FullName
+            $results += @($questions | Where-Object { $null -ne $_.answer })
+        }
+    }
+
+    Write-Output -NoEnumerate $results
 }
 
 function Set-QuestionAnswer {

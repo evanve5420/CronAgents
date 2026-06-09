@@ -137,6 +137,24 @@ Describe 'Set-QuestionAnswer' {
         $pending = Get-PendingQuestions -StateRoot $stateRoot -AgentId 'test-agent'
         $pending.Count | Should -Be 0
     }
+
+    It 'Returns answered questions across agents when no AgentId is specified' {
+        $stateRoot = Join-Path $TestDrive 'answer-all-test\.cronstate'
+        New-Item -ItemType Directory -Path (Join-Path $stateRoot 'pending-questions') -Force | Out-Null
+
+        Save-AgentQuestions -StateRoot $stateRoot -AgentId 'agent-a' `
+            -RunId 'run-a' -Questions @(@{ id = 'q1'; question = 'A?' })
+        Save-AgentQuestions -StateRoot $stateRoot -AgentId 'agent-b' `
+            -RunId 'run-b' -Questions @(@{ id = 'q2'; question = 'B?' })
+
+        Set-QuestionAnswer -StateRoot $stateRoot -AgentId 'agent-a' -QuestionId 'q1' -Answer 'Answer A'
+        Set-QuestionAnswer -StateRoot $stateRoot -AgentId 'agent-b' -QuestionId 'q2' -Answer 'Answer B'
+
+        $answered = Get-AnsweredQuestions -StateRoot $stateRoot
+        $answered.Count | Should -Be 2
+        @($answered | ForEach-Object { $_.answer }) | Should -Contain 'Answer A'
+        @($answered | ForEach-Object { $_.answer }) | Should -Contain 'Answer B'
+    }
 }
 
 # ===== Clear-AnsweredQuestions =====

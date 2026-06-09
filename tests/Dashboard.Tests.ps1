@@ -580,6 +580,28 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             $q.agentId | Should -Be 'http-agent'
             @($q.choices).Count | Should -Be 3
         }
+
+        It 'Returns a flat question array when pending and answered questions both exist' {
+            Save-AgentQuestions -StateRoot $script:testEnv.StatePath -AgentId 'http-agent' -RunId 'shape-test-run' `
+                -Questions @(
+                    @{ id = 'shape-pending'; question = 'Pending shape?'; choices = @('yes','no'); recommended = 'yes'; context = $null }
+                    @{ id = 'shape-answered'; question = 'Answered shape?'; choices = @('red','blue'); recommended = 'red'; context = $null }
+                )
+            Set-QuestionAnswer -StateRoot $script:testEnv.StatePath -AgentId 'http-agent' -QuestionId 'shape-answered' -Answer 'blue'
+
+            $response = Invoke-WebRequest -Uri "$($script:baseUrl)/api/questions" -UseBasicParsing -ErrorAction Stop
+            $data = $response.Content | ConvertFrom-Json
+            $shapeQuestions = @($data | Where-Object { $_.id -in @('shape-pending', 'shape-answered') })
+
+            $shapeQuestions.Count | Should -Be 2
+            $shapeQuestions | ForEach-Object {
+                $_ | Should -Not -BeOfType ([array])
+                $_.PSObject.Properties.Name | Should -Contain 'id'
+                $_.PSObject.Properties.Name | Should -Contain 'answer'
+            }
+            ($shapeQuestions | Where-Object { $_.id -eq 'shape-pending' }).answer | Should -BeNullOrEmpty
+            ($shapeQuestions | Where-Object { $_.id -eq 'shape-answered' }).answer | Should -Be 'blue'
+        }
     }
 
     Context 'GET /api/activity' {
@@ -745,16 +767,18 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
                 })
         }
 
-        It 'Answers a pending question' {
+        It 'Answers a pending question and keeps the submitted answer visible' {
             $body = @{ answer = '42' } | ConvertTo-Json
             $data = Invoke-RestMethod -Uri "$($script:baseUrl)/api/questions/http-agent/answer-q1" `
                 -Method Post -Body $body -ContentType 'application/json' -ErrorAction Stop
             $data.ok | Should -Be $true
 
-            # Verify the question is no longer pending
+            # Verify the selected answer remains visible until the next agent run consumes it.
             $questions = Invoke-RestMethod -Uri "$($script:baseUrl)/api/questions" -ErrorAction Stop
-            $remaining = @($questions) | Where-Object { $_.id -eq 'answer-q1' }
-            $remaining.Count | Should -Be 0
+            $answered = @($questions) | Where-Object { $_.id -eq 'answer-q1' } | Select-Object -First 1
+            $answered | Should -Not -BeNullOrEmpty
+            $answered.answer | Should -Be '42'
+            @($questions | Where-Object { $_.id -eq 'answer-q1' -and $null -eq $_.answer }).Count | Should -Be 0
         }
 
         It 'Returns 400 for missing answer field' {
