@@ -1402,6 +1402,8 @@ Describe 'Dashboard — File Integrity' {
         $deleteRun | Should -Match 'const retryButton = triggerButton\?\.isConnected'
         $deleteRun | Should -Match '\[data-action="deleteRun"\]'
         $deleteRun | Should -Match 'api\(''DELETE'', `/api/runs/'
+        $deleteRun | Should -Match 'runs = runs\.filter\(r => r\.id !== runId\)'
+        $deleteRun | Should -Match 'renderRuns\(\)'
         $content | Should -Match 'case ''deleteRun'':\s+deleteRun\(runId, btn\); break;'
         $content | Should -Match '#runs-body tr\[data-run-id\]:not\(\.run-detail-row\)'
         $content | Should -Match '\[data-action="showRunDetail"\][\s\S]*\[data-action="deleteRun"\]'

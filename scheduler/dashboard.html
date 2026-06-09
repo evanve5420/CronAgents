@@ -1383,6 +1383,8 @@ async function deleteRun(runId, triggerButton) {
     showToast(res.message || 'Run deleted');
     closeRunDetail();
     selectedRuns.delete(runId);
+    runs = runs.filter(r => r.id !== runId);
+    renderRuns();
     await refreshRuns();
     restoreFocus();
   } catch (err) {
