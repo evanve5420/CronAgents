@@ -235,6 +235,27 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             $response.StatusCode | Should -Be 200
             $response.Content | Should -Match 'CronAgents Dashboard'
         }
+
+        It 'Orders tabs with Recent Runs as the default home tab' {
+            $response = Invoke-WebRequest -Uri "$($script:baseUrl)/" -ErrorAction Stop
+            $tabMatches = [regex]::Matches(
+                $response.Content,
+                '<button\b(?=[^>]*\bclass="(?=[^"]*\btab\b)[^"]*")(?=[^>]*\bdata-action="switchTab")[^>]*>'
+            )
+
+            @($tabMatches | ForEach-Object {
+                if ($_.Value -match '\bdata-tab="([^"]+)"') { $Matches[1] }
+            }) |
+                Should -Be @('runs', 'questions', 'agents', 'config', 'activity')
+            $response.Content |
+                Should -Match '<button\b(?=[^>]*\bclass="(?=[^"]*\btab\b)(?=[^"]*\bactive\b)[^"]*")(?=[^>]*\bdata-tab="runs")(?=[^>]*\bdata-action="switchTab")[^>]*>\s*Recent Runs\s*</button>'
+            $response.Content |
+                Should -Match '<div\b(?=[^>]*\bid="tab-runs")(?=[^>]*\bclass="(?=[^"]*\btab-content\b)(?=[^"]*\bactive\b)[^"]*")[^>]*>'
+            $response.Content |
+                Should -Not -Match '<button\b(?=[^>]*\bclass="(?=[^"]*\btab\b)(?=[^"]*\bactive\b)[^"]*")(?=[^>]*\bdata-tab="agents")(?=[^>]*\bdata-action="switchTab")[^>]*>\s*Agents\s*</button>'
+            $response.Content |
+                Should -Not -Match '<div\b(?=[^>]*\bid="tab-agents")(?=[^>]*\bclass="(?=[^"]*\btab-content\b)(?=[^"]*\bactive\b)[^"]*")[^>]*>'
+        }
     }
 
     # ── GET Endpoints ────────────────────────────────────────────
