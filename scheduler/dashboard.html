@@ -535,6 +535,7 @@ let pollTimer = null;
 let filterAgent = '';
 let filterStatus = '';
 let selectedRuns = new Set();
+let deletingRuns = new Set();
 let freshness = null;
 let freshnessIssues = [];
 let lastConfigRefresh = 0;
@@ -1352,16 +1353,54 @@ function showConfirm(message, options = {}) {
 }
 
 // ── Delete Actions ──────────────────────────────────────────────
-async function deleteRun(runId) {
-  const ok = await showConfirm(`Delete run ${runId}?`);
-  if (!ok) return;
+function getPostDeleteFocusTarget(runId) {
+  const row = document.querySelector(`#runs-body tr[data-run-id="${CSS.escape(runId)}"]`);
+  const rows = [...document.querySelectorAll('#runs-body tr[data-run-id]:not(.run-detail-row)')];
+  const index = rows.indexOf(row);
+  const targetRunId = index >= 0 ? (rows[index + 1] || rows[index - 1])?.dataset.runId : null;
+
+  return () => {
+    const selector = targetRunId
+      ? `#runs-body tr[data-run-id="${CSS.escape(targetRunId)}"] [data-action="showRunDetail"],
+         #runs-body tr[data-run-id="${CSS.escape(targetRunId)}"] [data-action="deleteRun"]`
+      : null;
+    const target = selector ? document.querySelector(selector) : null;
+    (target || document.getElementById('select-all-runs') || document.querySelector('[data-tab="runs"]'))?.focus();
+  };
+}
+
+async function deleteRun(runId, triggerButton) {
+  if (deletingRuns.has(runId)) return;
+  deletingRuns.add(runId);
+  const restoreFocus = getPostDeleteFocusTarget(runId);
+  if (triggerButton) {
+    triggerButton.disabled = true;
+    triggerButton.setAttribute('aria-disabled', 'true');
+  }
+
   try {
     const res = await api('DELETE', `/api/runs/${encodeURIComponent(runId)}`);
     showToast(res.message || 'Run deleted');
     closeRunDetail();
     selectedRuns.delete(runId);
     await refreshRuns();
-  } catch (err) { showToast(err.message, 'error'); }
+    restoreFocus();
+  } catch (err) {
+    showToast(err.message, 'error');
+    const retryButton = triggerButton?.isConnected
+      ? triggerButton
+      : document.querySelector(`#runs-body tr[data-run-id="${CSS.escape(runId)}"] [data-action="deleteRun"]`);
+    if (triggerButton?.isConnected) {
+      triggerButton.disabled = false;
+      triggerButton.removeAttribute('aria-disabled');
+    }
+    (retryButton ||
+      document.querySelector(`#runs-body tr[data-run-id="${CSS.escape(runId)}"] [data-action="showRunDetail"]`) ||
+      document.getElementById('select-all-runs') ||
+      document.querySelector('[data-tab="runs"]'))?.focus();
+  } finally {
+    deletingRuns.delete(runId);
+  }
 }
 
 async function dismissAttention(runId) {
@@ -1756,7 +1795,7 @@ document.addEventListener('click', (e) => {
     case 'submitFeedback':    submitFeedback(runId); break;
     case 'answerQuestion':    answerQuestion(agentId, questionId, answer); break;
     case 'answerQuestionCustom': answerQuestionCustom(agentId, questionId); break;
-    case 'deleteRun':         deleteRun(runId); break;
+    case 'deleteRun':         deleteRun(runId, btn); break;
     case 'dismissAttention':  dismissAttention(runId); break;
     case 'deleteSelectedRuns':  deleteSelectedRuns(); break;
     case 'clearFilteredRuns':   clearFilteredRuns(); break;
