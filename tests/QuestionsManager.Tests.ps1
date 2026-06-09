@@ -74,6 +74,26 @@ Describe 'Save-AgentQuestions' {
     }
 }
 
+# ===== Get-Questions =====
+
+Describe 'Get-Questions' {
+    It 'Returns pending and answered questions across agents' {
+        $stateRoot = Join-Path $TestDrive 'all-questions-test\.cronstate'
+        New-Item -ItemType Directory -Path (Join-Path $stateRoot 'pending-questions') -Force | Out-Null
+
+        Save-AgentQuestions -StateRoot $stateRoot -AgentId 'agent-a' `
+            -RunId 'run-a' -Questions @(@{ id = 'q1'; question = 'Pending?' })
+        Save-AgentQuestions -StateRoot $stateRoot -AgentId 'agent-b' `
+            -RunId 'run-b' -Questions @(@{ id = 'q2'; question = 'Answered?' })
+        Set-QuestionAnswer -StateRoot $stateRoot -AgentId 'agent-b' -QuestionId 'q2' -Answer 'Done'
+
+        $questions = Get-Questions -StateRoot $stateRoot
+        $questions.Count | Should -Be 2
+        ($questions | Where-Object { $_.id -eq 'q1' }).answer | Should -BeNullOrEmpty
+        ($questions | Where-Object { $_.id -eq 'q2' }).answer | Should -Be 'Done'
+    }
+}
+
 # ===== Get-PendingQuestions =====
 
 Describe 'Get-PendingQuestions' {
