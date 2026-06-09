@@ -1431,6 +1431,32 @@ Describe 'Dashboard — File Integrity' {
         $content | Should -Match '/api/runs/batch-delete'
     }
 
+    It 'dashboard.html deletes a single run without prompting for confirmation' {
+        $content = Get-Content -LiteralPath $script:dashboardHtml -Raw
+        $match = [regex]::Match(
+            $content,
+            'async function deleteRun\(runId, triggerButton\)\s*\{(?<body>.*?)\r?\n\}',
+            [System.Text.RegularExpressions.RegexOptions]::Singleline
+        )
+        $match.Success | Should -Be $true
+        $deleteRun = $match.Groups['body'].Value
+
+        $deleteRun | Should -Not -Match 'showConfirm'
+        $deleteRun | Should -Match 'deletingRuns\.has\(runId\)'
+        $deleteRun | Should -Match 'triggerButton\.disabled = true'
+        $deleteRun | Should -Match 'const retryButton = triggerButton\?\.isConnected'
+        $deleteRun | Should -Match '\[data-action="deleteRun"\]'
+        $deleteRun | Should -Match 'api\(''DELETE'', `/api/runs/'
+        $deleteRun | Should -Match 'runs = runs\.filter\(r => r\.id !== runId\)'
+        $deleteRun | Should -Match 'renderRuns\(\)'
+        $content | Should -Match 'case ''deleteRun'':\s+deleteRun\(runId, btn\); break;'
+        $content | Should -Match '#runs-body tr\[data-run-id\]:not\(\.run-detail-row\)'
+        $content | Should -Match '\[data-action="showRunDetail"\][\s\S]*\[data-action="deleteRun"\]'
+        $content | Should -Match 'async function clearAllRuns\(\)\s*\{[\s\S]*?showConfirm'
+        $content | Should -Match 'async function deleteSelectedRuns\(\)\s*\{[\s\S]*?showConfirm'
+        $content | Should -Match 'async function clearFilteredRuns\(\)\s*\{[\s\S]*?showConfirm'
+    }
+
     It 'dashboard.html contains configuration tab elements' {
         $content = Get-Content -LiteralPath $script:dashboardHtml -Raw
         $content | Should -Match 'data-tab="config"'
