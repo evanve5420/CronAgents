@@ -235,6 +235,25 @@ Describe 'Dashboard — HTTP Server' -Tag 'Slow' {
             $response.StatusCode | Should -Be 200
             $response.Content | Should -Match 'CronAgents Dashboard'
         }
+
+        It 'Orders tabs with Recent Runs as the default home tab' {
+            $response = Invoke-WebRequest -Uri "$($script:baseUrl)/" -ErrorAction Stop
+            $tabMatches = [regex]::Matches(
+                $response.Content,
+                '<button class="tab(?: active)?" data-tab="([^"]+)" data-action="switchTab">'
+            )
+
+            @($tabMatches | ForEach-Object { $_.Groups[1].Value }) |
+                Should -Be @('runs', 'questions', 'agents', 'config', 'activity')
+            $response.Content |
+                Should -Match '<button class="tab active" data-tab="runs" data-action="switchTab">Recent Runs</button>'
+            $response.Content |
+                Should -Match '<div id="tab-runs" class="tab-content active">'
+            $response.Content |
+                Should -Not -Match '<button class="tab active" data-tab="agents" data-action="switchTab">Agents</button>'
+            $response.Content |
+                Should -Not -Match '<div id="tab-agents" class="tab-content active">'
+        }
     }
 
     # ── GET Endpoints ────────────────────────────────────────────

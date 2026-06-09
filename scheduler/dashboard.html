@@ -411,17 +411,17 @@
 <main>
   <div id="staleness-banner" class="staleness-banner" style="display:none;" role="status" aria-live="polite"></div>
   <div class="tab-bar">
-    <button class="tab active" data-tab="agents" data-action="switchTab">Agents</button>
-    <button class="tab" data-tab="config" data-action="switchTab">Configuration</button>
-    <button class="tab" data-tab="runs" data-action="switchTab">Recent Runs</button>
+    <button class="tab active" data-tab="runs" data-action="switchTab">Recent Runs</button>
     <button class="tab" data-tab="questions" data-action="switchTab">
       Questions <span id="question-badge"></span>
     </button>
+    <button class="tab" data-tab="agents" data-action="switchTab">Agents</button>
+    <button class="tab" data-tab="config" data-action="switchTab">Configuration</button>
     <button class="tab" data-tab="activity" data-action="switchTab">Activity</button>
   </div>
 
   <!-- ── Agents Tab ──────────────────────────── -->
-  <div id="tab-agents" class="tab-content active">
+  <div id="tab-agents" class="tab-content">
     <section>
       <table>
         <thead>
@@ -449,7 +449,7 @@
   </div>
 
   <!-- ── Runs Tab ────────────────────────────── -->
-  <div id="tab-runs" class="tab-content">
+  <div id="tab-runs" class="tab-content active">
     <div id="attention-banner" class="attention-banner" style="display:none">
       <h3>⚠️ Needs Attention</h3>
       <div id="attention-list"></div>
