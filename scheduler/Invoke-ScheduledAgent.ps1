@@ -179,7 +179,8 @@ function Invoke-CopilotRun {
     param(
         [Parameter(Mandatory)] [string]$RunDirectory,
         [Parameter(Mandatory)] [int]$TimeoutSeconds,
-        [Parameter(Mandatory)] [string[]]$Arguments
+        [Parameter(Mandatory)] [string[]]$Arguments,
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyCollection()] [string[]]$McpServers
     )
 
     $copilotPath = if ($GlobalConfig.copilotPath) { $GlobalConfig.copilotPath } else { 'copilot' }
@@ -189,7 +190,7 @@ function Invoke-CopilotRun {
     # guaranteed fresh — no contention with stale daemons from prior runs.
     $copilotEnvOverrides = @{} + $copilotEnvBase
     try {
-        $runCopilotHome = Initialize-RunCopilotHome -RunDirectory $RunDirectory
+        $runCopilotHome = Initialize-RunCopilotHome -RunDirectory $RunDirectory -McpServers $McpServers
         $copilotEnvOverrides['COPILOT_HOME'] = $runCopilotHome
     }
     catch {
@@ -587,6 +588,15 @@ try {
     $envKeys   = Set-AgentEnvVars
     $timeoutSec = ConvertTo-Seconds -Duration ($AgentConfig.timeout)
 
+    # MCP servers for this run (from the agent registration). $null => all
+    # servers from the user's ~/.copilot/mcp-config.json; @() => none. An empty
+    # array collapses to $null when emitted as an if-expression result, so read
+    # it explicitly into a variable to preserve the "no servers" opt-out.
+    $runMcpServers = $null
+    if ($AgentConfig.PSObject.Properties['mcpServers'] -and $null -ne $AgentConfig.mcpServers) {
+        $runMcpServers = [string[]]@($AgentConfig.mcpServers)
+    }
+
     # ------------------------------------------------------------------
     # Step 4 — Execute with retry logic
     # ------------------------------------------------------------------
@@ -606,7 +616,7 @@ try {
         $result = if ($isScriptMode) {
             Invoke-ScriptRun -RunDirectory $runDir -TimeoutSeconds $timeoutSec
         } else {
-            Invoke-CopilotRun -RunDirectory $runDir -TimeoutSeconds $timeoutSec -Arguments $cliArgs
+            Invoke-CopilotRun -RunDirectory $runDir -TimeoutSeconds $timeoutSec -Arguments $cliArgs -McpServers $runMcpServers
         }
 
         $exitCode  = $result.ExitCode

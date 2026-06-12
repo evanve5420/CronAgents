@@ -427,6 +427,28 @@ Supports built-in names (`edit`, `execute`), shell commands (`shell(rm)`), MCP t
 "extraCliFlags": ["--no-pager", "--quiet"]
 ```
 
+#### `mcpServers`
+
+| | |
+|---|---|
+| **Type** | `array` of `string`, or `null` |
+| **Default** | `null` |
+| **Description** | MCP servers to enable for this run, selected by name from the user's `~/.copilot/mcp-config.json`. |
+
+Each scheduled run gets its own isolated `COPILOT_HOME` whose MCP config is built from this field:
+
+- **`null`** (or omitted) — enable **all** servers from `~/.copilot/mcp-config.json`.
+- **`[]`** (empty array) — enable **no** MCP servers; the run uses built-in tools only.
+- **`["name", ...]`** — enable only the named servers (selected from `~/.copilot/mcp-config.json`, with their `inputs`). Names not found in that file are skipped with a warning.
+
+Declaring MCP tools in an agent's `.agent.md` `tools:` frontmatter is **not** sufficient on its own — the server must also be provisioned here (or via `null`), otherwise the tool will not be available in the unattended run.
+
+```json
+"mcpServers": ["ado-mcp", "teams", "mail"]
+```
+
+> **Security note.** When this field is `null` or names servers, the run copies the matching entries from `~/.copilot/mcp-config.json` into the run's own `copilot-home/mcp-config.json`, which is retained under the run directory for `retentionDays`. Avoid inlining secrets (tokens, passwords) directly in `~/.copilot/mcp-config.json` `command`/`args`/`env`; use the MCP config's `inputs` or environment-variable references instead so credentials aren't duplicated into per-run home directories.
+
 #### `envVars`
 
 | | |

@@ -197,6 +197,13 @@
       "default": [],
       "description": "Additional CLI flags passed to the Copilot CLI invocation."
     },
+    "mcpServers": {
+      "oneOf": [
+        { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        { "type": "null" }
+      ],
+      "description": "MCP servers to enable for this run, selected by name from the user's ~/.copilot/mcp-config.json. Omit or set null to enable ALL servers from that file. An explicit empty array ([]) disables all MCP servers (built-in tools only)."
+    },
     "workingDirectory": {
       "oneOf": [
         { "type": "string" },

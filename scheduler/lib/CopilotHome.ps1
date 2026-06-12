@@ -10,8 +10,9 @@
 
     This module creates a **unique COPILOT_HOME per run** inside the run
     directory, guaranteeing a fresh daemon every time with zero contention.
-    It also writes an empty MCP server config so unattended runs don't
-    spawn heavyweight MCP server processes.
+    It also writes the per-run MCP server config, selected from the user's
+    ~/.copilot/mcp-config.json according to the agent's `mcpServers`
+    registration field (all servers, a named subset, or none).
 #>
 
 function Initialize-RunCopilotHome {
@@ -21,6 +22,16 @@ function Initialize-RunCopilotHome {
         run so it gets its own daemon with no stale-process contention.
     .PARAMETER RunDirectory
         The run-specific directory (e.g., ~/.cronagents/.cronstate/runs/<runId>).
+    .PARAMETER McpServers
+        Which MCP servers the run should have, from the agent's registration:
+          * $null  => copy ALL servers from the source MCP config.
+          * @()    => no servers (built-in tools only).
+          * names  => only the named servers found in the source config.
+        Defaults to @() (no servers) when omitted, so a caller that forgets the
+        parameter gets the safe, built-in-tools-only behavior.
+    .PARAMETER McpConfigPath
+        Path to the source MCP config to select servers from. Defaults to the
+        user's ~/.copilot/mcp-config.json.
     .OUTPUTS
         The full path to the per-run copilot home directory.
     #>
@@ -28,7 +39,13 @@ function Initialize-RunCopilotHome {
     [OutputType([string])]
     param(
         [Parameter(Mandatory)]
-        [string]$RunDirectory
+        [string]$RunDirectory,
+
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [string[]]$McpServers = @(),
+
+        [string]$McpConfigPath
     )
 
     $copilotHome = Join-Path $RunDirectory 'copilot-home'
@@ -47,16 +64,134 @@ function Initialize-RunCopilotHome {
         [System.Text.Encoding]::UTF8
     )
 
-    # mcp-config.json — empty; agents use built-in tools only.
-    # Agents needing specific MCP servers can opt in via extraCliFlags.
+    # mcp-config.json — selected per the agent's `mcpServers` field. When no
+    # source path is given, fall back to the user's ~/.copilot/mcp-config.json.
+    if (-not $McpConfigPath) {
+        $McpConfigPath = Join-Path (Join-Path $HOME '.copilot') 'mcp-config.json'
+    }
+    $mcpJson = Resolve-RunMcpConfig -McpServers $McpServers -SourceConfigPath $McpConfigPath
     [System.IO.File]::WriteAllText(
         (Join-Path $copilotHome 'mcp-config.json'),
-        '{"mcpServers": {}}',
+        $mcpJson,
         [System.Text.Encoding]::UTF8
     )
 
     Write-CronAgentsLog -Level 'debug' -Message "Created per-run copilot home: $copilotHome"
     return $copilotHome
+}
+
+function Resolve-RunMcpConfig {
+    <#
+    .SYNOPSIS
+        Builds the mcp-config.json content for a single agent run.
+    .DESCRIPTION
+        Resolves which MCP servers a run should have based on the agent's
+        `mcpServers` registration field:
+          * $null             -> copy ALL servers from the source config (verbatim).
+          * empty array (@())  -> no servers ('{"mcpServers": {}}').
+          * array of names     -> only the named servers found in the source
+                                  config, plus the source's `inputs` (if any).
+        A missing source file, invalid JSON, or unknown server names degrade
+        gracefully to built-in tools only, logging a warning.
+    .PARAMETER McpServers
+        Server names to include, $null for all, or @() for none.
+    .PARAMETER SourceConfigPath
+        Path to the user's mcp-config.json (e.g. ~/.copilot/mcp-config.json).
+    .OUTPUTS
+        JSON string suitable for writing to a run's mcp-config.json.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [string[]]$McpServers,
+
+        [string]$SourceConfigPath
+    )
+
+    $emptyConfig = '{"mcpServers": {}}'
+
+    # Explicit empty array => built-in tools only.
+    if ($null -ne $McpServers -and $McpServers.Count -eq 0) {
+        return $emptyConfig
+    }
+
+    if ([string]::IsNullOrWhiteSpace($SourceConfigPath) -or
+        -not (Test-Path -LiteralPath $SourceConfigPath)) {
+        Write-CronAgentsLog -Level 'warn' -Message "MCP source config not found at '$SourceConfigPath' — run will use built-in tools only."
+        return $emptyConfig
+    }
+
+    try {
+        $raw = Get-Content -LiteralPath $SourceConfigPath -Raw -ErrorAction Stop
+    }
+    catch {
+        Write-CronAgentsLog -Level 'warn' -Message "Failed to read MCP source config '$SourceConfigPath': $_ — run will use built-in tools only."
+        return $emptyConfig
+    }
+
+    # $null => use every server from the source config. Validate the JSON first
+    # so a malformed, empty, or whitespace-only source — or one whose shape isn't
+    # an object carrying an `mcpServers` map — degrades to built-in tools only
+    # (per this function's contract) instead of copying unusable content into the
+    # run. The raw text is returned verbatim when valid to preserve its formatting.
+    if ($null -eq $McpServers) {
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            Write-CronAgentsLog -Level 'warn' -Message "MCP source config '$SourceConfigPath' is empty — run will use built-in tools only."
+            return $emptyConfig
+        }
+        try {
+            $parsedAll = $raw | ConvertFrom-Json -ErrorAction Stop
+        }
+        catch {
+            Write-CronAgentsLog -Level 'warn' -Message "MCP source config '$SourceConfigPath' is not valid JSON: $_ — run will use built-in tools only."
+            return $emptyConfig
+        }
+        # A valid-but-unexpected JSON value (e.g. [], a scalar, or an object
+        # without mcpServers) is treated as malformed and degrades to built-in
+        # tools only rather than writing an unusable config into the run.
+        if ($null -eq $parsedAll -or
+            -not $parsedAll.PSObject.Properties['mcpServers'] -or
+            $null -eq $parsedAll.mcpServers) {
+            Write-CronAgentsLog -Level 'warn' -Message "MCP source config '$SourceConfigPath' has no 'mcpServers' object — run will use built-in tools only."
+            return $emptyConfig
+        }
+        return $raw
+    }
+
+    # Named subset — select only the requested servers from the source config.
+    try {
+        $parsed = $raw | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        Write-CronAgentsLog -Level 'warn' -Message "MCP source config '$SourceConfigPath' is not valid JSON: $_ — run will use built-in tools only."
+        return $emptyConfig
+    }
+
+    $available = @{}
+    if ($parsed.PSObject.Properties['mcpServers'] -and $null -ne $parsed.mcpServers) {
+        foreach ($prop in $parsed.mcpServers.PSObject.Properties) {
+            $available[$prop.Name] = $prop.Value
+        }
+    }
+
+    $selected = [ordered]@{}
+    foreach ($name in $McpServers) {
+        if ($available.ContainsKey($name)) {
+            $selected[$name] = $available[$name]
+        }
+        else {
+            Write-CronAgentsLog -Level 'warn' -Message "Requested MCP server '$name' not found in '$SourceConfigPath' — skipping."
+        }
+    }
+
+    $result = [ordered]@{ mcpServers = $selected }
+    if ($parsed.PSObject.Properties['inputs'] -and $null -ne $parsed.inputs) {
+        $result['inputs'] = $parsed.inputs
+    }
+
+    return ($result | ConvertTo-Json -Depth 20)
 }
 
 # Keep the old name as a wrapper so existing callers don't break during

@@ -75,6 +75,20 @@ Tools to deny. Most useful in prompt-only mode (which gets `--allow-all-tools`).
 
 Additional flags passed to the Copilot CLI invocation.
 
+### `mcpServers` (array of string or null, default `null`)
+
+MCP servers to enable for this run, selected by name from the user's `~/.copilot/mcp-config.json`. Each scheduled run gets its own isolated `COPILOT_HOME`, so this controls which MCP servers exist for the run.
+
+- `null` (or omitted) — enable **all** servers from `~/.copilot/mcp-config.json`.
+- `[]` — enable **no** MCP servers (built-in tools only).
+- `["name", ...]` — enable only the named servers (with their `inputs`); unknown names are skipped with a warning.
+
+Listing MCP tools in the `.agent.md` `tools:` frontmatter is not enough by itself — the server must also be provisioned here (or via `null`), or the tool will be unavailable in the unattended run.
+
+```json
+"mcpServers": ["ado-mcp", "teams", "mail"]
+```
+
 ### `workingDirectory` (string or null)
 
 Override the working directory and scope for this agent. When set, the scheduler grants access to that directory plus the personal repo and infra repo with `--add-dir`. When `null`, the scheduler runs from the personal repo root if available, otherwise the infra repo root, with `--allow-all`. In all unattended runs, CronAgents also passes `--allow-all-tools`.

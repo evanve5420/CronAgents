@@ -197,6 +197,8 @@ You can reference MCP server tools in the `.agent.md` `tools:` frontmatter using
 
 Keep the list minimal. If you are unsure, omit `tools:` rather than guessing.
 
+> **MCP servers must be provisioned in the registration.** Each scheduled run gets a fresh, isolated `COPILOT_HOME`, so listing an MCP tool in the `.agent.md` `tools:` frontmatter is **not** enough — the run only sees servers selected by the registration's `mcpServers` field. Set `mcpServers` to an array of server names (e.g. `["ado-mcp", "teams", "mail"]`) to enable a subset from `~/.copilot/mcp-config.json`, use `null`/omit it to enable **all** of them, or `[]` for built-in tools only. Names not found in `~/.copilot/mcp-config.json` are skipped. Note that `ado-mcp` succeeds unattended because the `az` CLI is separately authenticated, whereas Graph-backed servers (Teams/Mail) and plugin servers (e.g. WorkIQ) also require their own auth/registration to return data.
+
 ## Validate
 
 - Agent mode: `.agent.md` lives in `~/.cronagents/.github/agents/` or `~/.copilot/agents/`, has explicit `tools` list (least-privilege), and `agent` in the registration matches the `.agent.md` name

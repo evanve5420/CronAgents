@@ -122,6 +122,174 @@ Describe 'Sync-McpConfig' {
     }
 }
 
+Describe 'Resolve-RunMcpConfig' {
+    BeforeEach {
+        $script:testDir = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-McpResolve-$(
+            [System.IO.Path]::GetRandomFileName().Replace('.', '')
+        )"
+        New-Item -ItemType Directory -Path $script:testDir -Force | Out-Null
+        $script:srcConfig = Join-Path $script:testDir 'mcp-config.json'
+        @'
+{
+  "mcpServers": {
+    "ado-mcp": { "type": "stdio", "command": "npx", "args": ["-y", "@azure-devops/mcp", "msazure"] },
+    "teams":   { "type": "stdio", "command": "agency", "args": ["mcp", "teams"] },
+    "mail":    { "type": "local", "command": "agency", "args": ["mcp", "mail"] }
+  },
+  "inputs": [ { "id": "tok", "type": "promptString" } ]
+}
+'@ | Set-Content -LiteralPath $script:srcConfig -Encoding UTF8
+
+        function Get-ServerCount {
+            param([string]$Json)
+            $cfg = $Json | ConvertFrom-Json
+            return ($cfg.mcpServers.PSObject.Properties | Measure-Object).Count
+        }
+    }
+    AfterEach {
+        if (Test-Path $script:testDir) {
+            Remove-Item $script:testDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'returns all servers verbatim when McpServers is $null' {
+        $json = Resolve-RunMcpConfig -McpServers $null -SourceConfigPath $script:srcConfig
+        Get-ServerCount $json | Should -Be 3
+        $cfg = $json | ConvertFrom-Json
+        $cfg.mcpServers.'ado-mcp' | Should -Not -BeNullOrEmpty
+        $cfg.mcpServers.teams     | Should -Not -BeNullOrEmpty
+        $cfg.mcpServers.mail      | Should -Not -BeNullOrEmpty
+    }
+
+    It 'returns no servers when McpServers is an empty array' {
+        $json = Resolve-RunMcpConfig -McpServers @() -SourceConfigPath $script:srcConfig
+        Get-ServerCount $json | Should -Be 0
+    }
+
+    It 'returns only the requested subset by name' {
+        $json = Resolve-RunMcpConfig -McpServers @('ado-mcp', 'teams') -SourceConfigPath $script:srcConfig
+        Get-ServerCount $json | Should -Be 2
+        $cfg = $json | ConvertFrom-Json
+        $cfg.mcpServers.'ado-mcp' | Should -Not -BeNullOrEmpty
+        $cfg.mcpServers.teams     | Should -Not -BeNullOrEmpty
+        $cfg.mcpServers.PSObject.Properties.Name | Should -Not -Contain 'mail'
+    }
+
+    It 'preserves server definition details in the subset' {
+        $json = Resolve-RunMcpConfig -McpServers @('ado-mcp') -SourceConfigPath $script:srcConfig
+        $cfg = $json | ConvertFrom-Json
+        $cfg.mcpServers.'ado-mcp'.command | Should -Be 'npx'
+        $cfg.mcpServers.'ado-mcp'.args    | Should -Contain '@azure-devops/mcp'
+    }
+
+    It 'skips unknown server names without failing' {
+        $json = Resolve-RunMcpConfig -McpServers @('ado-mcp', 'does-not-exist') -SourceConfigPath $script:srcConfig
+        Get-ServerCount $json | Should -Be 1
+        ($json | ConvertFrom-Json).mcpServers.'ado-mcp' | Should -Not -BeNullOrEmpty
+    }
+
+    It 'carries over inputs when subsetting' {
+        $json = Resolve-RunMcpConfig -McpServers @('ado-mcp') -SourceConfigPath $script:srcConfig
+        $cfg = $json | ConvertFrom-Json
+        $cfg.inputs[0].id | Should -Be 'tok'
+    }
+
+    It 'falls back to empty servers when the source file is missing' {
+        $missing = Join-Path $script:testDir 'nope.json'
+        $json = Resolve-RunMcpConfig -McpServers $null -SourceConfigPath $missing
+        Get-ServerCount $json | Should -Be 0
+    }
+
+    It 'falls back to empty servers when the source is invalid JSON' {
+        'not-valid-json{{{' | Set-Content -LiteralPath $script:srcConfig -Encoding UTF8
+        $json = Resolve-RunMcpConfig -McpServers @('ado-mcp') -SourceConfigPath $script:srcConfig
+        Get-ServerCount $json | Should -Be 0
+    }
+
+    It 'falls back to empty servers when the source is invalid JSON on the all-servers path' {
+        'not-valid-json{{{' | Set-Content -LiteralPath $script:srcConfig -Encoding UTF8
+        $json = Resolve-RunMcpConfig -McpServers $null -SourceConfigPath $script:srcConfig
+        $json | Should -Be '{"mcpServers": {}}'
+        Get-ServerCount $json | Should -Be 0
+    }
+
+    It 'falls back to empty servers when the source is empty/whitespace on the all-servers path' {
+        "   `n  " | Set-Content -LiteralPath $script:srcConfig -Encoding UTF8
+        $json = Resolve-RunMcpConfig -McpServers $null -SourceConfigPath $script:srcConfig
+        $json | Should -Be '{"mcpServers": {}}'
+        Get-ServerCount $json | Should -Be 0
+    }
+
+    It 'falls back to empty servers when the source has no mcpServers object on the all-servers path' {
+        '{"somethingElse": true}' | Set-Content -LiteralPath $script:srcConfig -Encoding UTF8
+        $json = Resolve-RunMcpConfig -McpServers $null -SourceConfigPath $script:srcConfig
+        $json | Should -Be '{"mcpServers": {}}'
+        Get-ServerCount $json | Should -Be 0
+    }
+
+    It 'falls back to empty servers when the source is a JSON array on the all-servers path' {
+        '[]' | Set-Content -LiteralPath $script:srcConfig -Encoding UTF8
+        $json = Resolve-RunMcpConfig -McpServers $null -SourceConfigPath $script:srcConfig
+        $json | Should -Be '{"mcpServers": {}}'
+        Get-ServerCount $json | Should -Be 0
+    }
+}
+
+Describe 'Initialize-RunCopilotHome' {
+    BeforeEach {
+        $script:testDir = Join-Path ([System.IO.Path]::GetTempPath()) "CronAgents-RunHome-$(
+            [System.IO.Path]::GetRandomFileName().Replace('.', '')
+        )"
+        New-Item -ItemType Directory -Path $script:testDir -Force | Out-Null
+        $script:runDir = Join-Path $script:testDir 'run'
+        New-Item -ItemType Directory -Path $script:runDir -Force | Out-Null
+        $script:srcConfig = Join-Path $script:testDir 'mcp-config.json'
+        @'
+{
+  "mcpServers": {
+    "ado-mcp": { "type": "stdio", "command": "npx", "args": ["-y", "@azure-devops/mcp"] },
+    "teams":   { "type": "stdio", "command": "agency", "args": ["mcp", "teams"] }
+  }
+}
+'@ | Set-Content -LiteralPath $script:srcConfig -Encoding UTF8
+
+        function Get-RunServerCount {
+            param([string]$CopilotHome)
+            $cfg = Get-Content (Join-Path $CopilotHome 'mcp-config.json') -Raw | ConvertFrom-Json
+            return ($cfg.mcpServers.PSObject.Properties | Measure-Object).Count
+        }
+    }
+    AfterEach {
+        if (Test-Path $script:testDir) {
+            Remove-Item $script:testDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'creates the copilot-home directory and config.json' {
+        $home_ = Initialize-RunCopilotHome -RunDirectory $script:runDir -McpServers @() -McpConfigPath $script:srcConfig
+        Test-Path $home_ | Should -BeTrue
+        $config = Get-Content (Join-Path $home_ 'config.json') -Raw | ConvertFrom-Json
+        $config.'ide.auto_connect' | Should -BeFalse
+    }
+
+    It 'writes all source servers when McpServers is $null' {
+        $home_ = Initialize-RunCopilotHome -RunDirectory $script:runDir -McpServers $null -McpConfigPath $script:srcConfig
+        Get-RunServerCount $home_ | Should -Be 2
+    }
+
+    It 'writes an empty mcp-config when McpServers is an empty array' {
+        $home_ = Initialize-RunCopilotHome -RunDirectory $script:runDir -McpServers @() -McpConfigPath $script:srcConfig
+        Get-RunServerCount $home_ | Should -Be 0
+    }
+
+    It 'writes only the named subset of servers' {
+        $home_ = Initialize-RunCopilotHome -RunDirectory $script:runDir -McpServers @('teams') -McpConfigPath $script:srcConfig
+        Get-RunServerCount $home_ | Should -Be 1
+        $cfg = Get-Content (Join-Path $home_ 'mcp-config.json') -Raw | ConvertFrom-Json
+        $cfg.mcpServers.teams | Should -Not -BeNullOrEmpty
+    }
+}
+
 Describe 'Get-CopilotAuthToken' {
     It 'returns env var when COPILOT_GITHUB_TOKEN is set' {
         $prev = $env:COPILOT_GITHUB_TOKEN
