@@ -431,6 +431,15 @@ function Import-SingleAgentConfig {
         [PSCustomObject]@{}
     }
 
+    # mcpServers: distinguish absent/null (=> $null, meaning all servers) from an
+    # explicit empty array (=> @(), meaning no servers). An empty array collapses
+    # to $null when emitted as an if-expression result, so compute it explicitly
+    # into a variable to preserve the zero-length array.
+    $mcpServersValue = $null
+    if ($parsed.PSObject.Properties['mcpServers'] -and $null -ne $parsed.mcpServers) {
+        $mcpServersValue = [string[]]@($parsed.mcpServers)
+    }
+
     $agentConfig = [PSCustomObject]@{
         name          = if ($parsed.PSObject.Properties['name'] -and -not [string]::IsNullOrWhiteSpace($parsed.name))
                         { $parsed.name } else { $fileName }
@@ -447,6 +456,7 @@ function Import-SingleAgentConfig {
                         { @($parsed.denyTools) } else { @() }
         extraCliFlags = if ($parsed.PSObject.Properties['extraCliFlags'] -and $null -ne $parsed.extraCliFlags)
                         { @($parsed.extraCliFlags) } else { @() }
+        mcpServers    = $mcpServersValue
         envVars       = $envVarsObj
         workingDirectory = if ($parsed.PSObject.Properties['workingDirectory'])
                            { $parsed.workingDirectory } else { $null }

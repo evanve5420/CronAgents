@@ -99,6 +99,7 @@
         'Write-AnswersFile',
         # CopilotHome
         'Initialize-RunCopilotHome',
+        'Resolve-RunMcpConfig',
         'Initialize-SchedulerCopilotHome',
         'Clear-CopilotDaemonState',
         'Get-CopilotAuthToken',

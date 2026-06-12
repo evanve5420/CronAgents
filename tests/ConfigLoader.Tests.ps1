@@ -690,6 +690,56 @@ Describe 'Get-AgentConfigs' {
         $agents | Should -HaveCount 0
     }
 
+    It 'Preserves mcpServers empty array as an explicit no-servers opt-out' {
+        $repoRoot = Join-Path $TestDrive 'repo-mcp-empty'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "go", "schedule": { "type": "daily", "time": "07:00" }, "mcpServers": [] }'
+        Set-Content -Path (Join-Path $agentDir 'mcp-empty.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 1
+        # Must remain an explicit empty array, NOT collapse to $null (which would
+        # mean "all servers"). This is the security-relevant opt-out.
+        $agents[0].Config.PSObject.Properties['mcpServers'] | Should -Not -BeNullOrEmpty
+        $null -eq $agents[0].Config.mcpServers | Should -BeFalse
+        @($agents[0].Config.mcpServers).Count | Should -Be 0
+    }
+
+    It 'Parses mcpServers named subset' {
+        $repoRoot = Join-Path $TestDrive 'repo-mcp-named'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "go", "schedule": { "type": "daily", "time": "07:00" }, "mcpServers": ["ado-mcp", "teams"] }'
+        Set-Content -Path (Join-Path $agentDir 'mcp-named.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents | Should -HaveCount 1
+        @($agents[0].Config.mcpServers) | Should -Be @('ado-mcp', 'teams')
+    }
+
+    It 'Maps omitted mcpServers to $null (all servers)' {
+        $repoRoot = Join-Path $TestDrive 'repo-mcp-absent'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "go", "schedule": { "type": "daily", "time": "07:00" } }'
+        Set-Content -Path (Join-Path $agentDir 'mcp-absent.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents[0].Config.mcpServers | Should -BeNullOrEmpty
+    }
+
+    It 'Maps explicit null mcpServers to $null (all servers)' {
+        $repoRoot = Join-Path $TestDrive 'repo-mcp-null'
+        $agentDir = Join-Path $repoRoot '.cronagents\agents'
+        New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+        $json = '{ "prompt": "go", "schedule": { "type": "daily", "time": "07:00" }, "mcpServers": null }'
+        Set-Content -Path (Join-Path $agentDir 'mcp-null.agent-registration.json') -Value $json -Encoding UTF8
+
+        $agents = Get-AgentConfigs -RepoRoot $repoRoot
+        $agents[0].Config.mcpServers | Should -BeNullOrEmpty
+    }
+
     It 'Validates prompt-only mode (no agent field)' {
         $repoRoot = Join-Path $TestDrive 'repo-promptonly'
         $agentDir = Join-Path $repoRoot '.cronagents\agents'
