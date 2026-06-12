@@ -180,7 +180,7 @@ function Invoke-CopilotRun {
         [Parameter(Mandatory)] [string]$RunDirectory,
         [Parameter(Mandatory)] [int]$TimeoutSeconds,
         [Parameter(Mandatory)] [string[]]$Arguments,
-        [AllowNull()] [AllowEmptyCollection()] [string[]]$McpServers
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyCollection()] [string[]]$McpServers
     )
 
     $copilotPath = if ($GlobalConfig.copilotPath) { $GlobalConfig.copilotPath } else { 'copilot' }

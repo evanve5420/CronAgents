@@ -219,6 +219,20 @@ Describe 'Resolve-RunMcpConfig' {
         $json | Should -Be '{"mcpServers": {}}'
         Get-ServerCount $json | Should -Be 0
     }
+
+    It 'falls back to empty servers when the source has no mcpServers object on the all-servers path' {
+        '{"somethingElse": true}' | Set-Content -LiteralPath $script:srcConfig -Encoding UTF8
+        $json = Resolve-RunMcpConfig -McpServers $null -SourceConfigPath $script:srcConfig
+        $json | Should -Be '{"mcpServers": {}}'
+        Get-ServerCount $json | Should -Be 0
+    }
+
+    It 'falls back to empty servers when the source is a JSON array on the all-servers path' {
+        '[]' | Set-Content -LiteralPath $script:srcConfig -Encoding UTF8
+        $json = Resolve-RunMcpConfig -McpServers $null -SourceConfigPath $script:srcConfig
+        $json | Should -Be '{"mcpServers": {}}'
+        Get-ServerCount $json | Should -Be 0
+    }
 }
 
 Describe 'Initialize-RunCopilotHome' {

@@ -132,20 +132,29 @@ function Resolve-RunMcpConfig {
     }
 
     # $null => use every server from the source config. Validate the JSON first
-    # so a malformed, empty, or whitespace-only source degrades to built-in tools
-    # only (per this function's contract) instead of copying invalid content into
-    # the run. The raw text is returned verbatim when valid to preserve any
-    # formatting/comments.
+    # so a malformed, empty, or whitespace-only source — or one whose shape isn't
+    # an object carrying an `mcpServers` map — degrades to built-in tools only
+    # (per this function's contract) instead of copying unusable content into the
+    # run. The raw text is returned verbatim when valid to preserve its formatting.
     if ($null -eq $McpServers) {
         if ([string]::IsNullOrWhiteSpace($raw)) {
             Write-CronAgentsLog -Level 'warn' -Message "MCP source config '$SourceConfigPath' is empty — run will use built-in tools only."
             return $emptyConfig
         }
         try {
-            $null = $raw | ConvertFrom-Json -ErrorAction Stop
+            $parsedAll = $raw | ConvertFrom-Json -ErrorAction Stop
         }
         catch {
             Write-CronAgentsLog -Level 'warn' -Message "MCP source config '$SourceConfigPath' is not valid JSON: $_ — run will use built-in tools only."
+            return $emptyConfig
+        }
+        # A valid-but-unexpected JSON value (e.g. [], a scalar, or an object
+        # without mcpServers) is treated as malformed and degrades to built-in
+        # tools only rather than writing an unusable config into the run.
+        if ($null -eq $parsedAll -or
+            -not $parsedAll.PSObject.Properties['mcpServers'] -or
+            $null -eq $parsedAll.mcpServers) {
+            Write-CronAgentsLog -Level 'warn' -Message "MCP source config '$SourceConfigPath' has no 'mcpServers' object — run will use built-in tools only."
             return $emptyConfig
         }
         return $raw
