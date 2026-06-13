@@ -1,13 +1,13 @@
 # CronAgents — Scheduled Copilot Agent Scaffolding
 
-A lightweight, agent scheduler for GitHub Copilot agents that runs recurring workflows, writes markdown dashboards, and uses human feedback to improve agent definitions over time.
+A lightweight, agent scheduler for GitHub Copilot agents that runs recurring workflows, surfaces results in a browser-based dashboard, and uses human feedback to improve agent definitions over time.
 
 ## Feature highlights
 
 - **Scheduled agent runs** — interval, daily, or weekly execution via a single background process
 - **Agent + prompt-only modes** — full `.agent.md` agents or simple prompt-only invocations
-- **Live markdown dashboard** — auto-generated `dashboard.md` with run summaries, status, and links
-- **HTML dashboard** — browser-based management UI at `127.0.0.1:9077` with live status, agent controls, configuration details, feedback, and questions
+- **HTML dashboard** — the primary management UI: a browser-based app at `127.0.0.1:9077` with live status, agent controls (pause/resume/trigger), configuration details, run history, feedback, and questions
+- **Markdown dashboard** — a lightweight `dashboard.md` snapshot for an at-a-glance summary when a browser isn't handy
 - **Human feedback loop** — write feedback on any run, an evaluator agent edits agent definitions accordingly
 - **Separate personal repo** — agent definitions live in `~/.cronagents/`, fully isolated from shared infrastructure
 - **CLI + interactive TUI** — `cronagents.ps1` with subcommands and a numbered menu
@@ -77,7 +77,7 @@ CronAgents/
 ├── cronagents.ps1              # CLI entry point
 ├── cronagents.json             # Global config (repo-level defaults)
 ├── scheduler/                  # Background scheduler + shared library
-│   ├── CronAgents-Scheduler.ps1
+│   ├── Start-CronAgents.ps1
 │   └── lib/                    # Shared PowerShell module (CronAgents.psd1)
 ├── templates/                  # Starter agent + config templates
 │   └── agents/                 # Example .agent.md files
