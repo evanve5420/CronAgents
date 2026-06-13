@@ -387,7 +387,7 @@ switching, sync step, or merge against the infra repo. See
 
 ### Personal repo missing or not initialized
 
-If the `doctor` "Agent configs" check finds no agents, or agent discovery comes up
+If the `doctor` "Agent Configs" check finds no agents, or agent discovery comes up
 empty, your personal repo may not be initialized. Re-run the installer, which
 creates the repo idempotently (it only initializes when the repo is missing or
 incomplete):
