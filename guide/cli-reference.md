@@ -158,12 +158,14 @@ Run health checks to verify the CronAgents installation.
 
 Checks include:
 
-- Task Scheduler entry is registered
-- Config files are valid JSON and pass schema validation
-- Copilot CLI is available and authenticated
-- State file integrity
-- Personal repo exists and is valid
-- Agent config discovery
+- Task Scheduler entry is registered (definition and triggers match)
+- Global config is valid JSON and passes schema validation
+- Agent configs are discoverable and reference existing `.agent.md` files
+- State file is readable and well-formed
+- The background scheduler process is running
+- Repository branch state is healthy
+- No orphaned run directories
+- A notification backend (BurntToast or native) is available
 
 Each check reports pass/fail with details on how to fix failures.
 

@@ -72,16 +72,16 @@ Still in the same terminal window:
 
 This does two things:
 
-1. **Registers a Windows Task Scheduler entry** that starts the scheduler automatically at logon. The task runs `Start-CronAgents.ps1` in a hidden PowerShell window — no terminal pops up.
+1. **Registers a Windows Task Scheduler entry** that starts the scheduler automatically at logon, and re-launches it every 15 minutes so it recovers from crashes without waiting for the next logon. The task runs `Start-CronAgents.ps1` in a hidden PowerShell window — no terminal pops up.
 2. **Initializes your personal repo** at `~/.cronagents/` — a standalone git repository where your agent definitions, registrations, and runtime data live. No branches to manage.
 
 You should see output like:
 
 ```
-  Task path  : \CronAgents\CronAgents
-  Trigger    : At logon (your-username)
-  Scheduler  : scheduler\Start-CronAgents.ps1
-  Personal   : ~/.cronagents/
+  Task path    : \CronAgents\CronAgents
+  Trigger      : At logon (your-username) + every 15 min
+  Scheduler    : ...\scheduler\Start-CronAgents.ps1
+  Personal repo: ~/.cronagents
 
 To start now:  Start-ScheduledTask -TaskName 'CronAgents' -TaskPath '\CronAgents\'
 ```
@@ -183,7 +183,7 @@ After the scheduler runs, it generates `dashboard.md` in the personal repo with 
 .\cronagents.ps1 doctor
 ```
 
-This verifies that the Task Scheduler entry is registered, configs are valid, Copilot CLI is reachable, and the personal repo is healthy.
+This verifies that the Task Scheduler entry is registered, configs are valid JSON, state files are well-formed, the scheduler process and a notification backend are healthy, and your agent configs and personal repo are in good shape.
 
 ## What happens at next logon
 

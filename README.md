@@ -77,7 +77,7 @@ CronAgents/
 ├── cronagents.ps1              # CLI entry point
 ├── cronagents.json             # Global config (repo-level defaults)
 ├── scheduler/                  # Background scheduler + shared library
-│   ├── CronAgents-Scheduler.ps1
+│   ├── Start-CronAgents.ps1
 │   └── lib/                    # Shared PowerShell module (CronAgents.psd1)
 ├── templates/                  # Starter agent + config templates
 │   └── agents/                 # Example .agent.md files

@@ -223,13 +223,14 @@ This verifies:
 
 | Check | What it tests |
 |-------|---------------|
-| Task Scheduler | Is the `\CronAgents\CronAgents` task registered? |
-| Config files | Are `cronagents.json` and agent configs valid? |
-| Copilot CLI | Is `copilot` available and authenticated? |
-| State integrity | Is `.cronstate/state.json` readable and well-formed? |
-| Agent discovery | Can agents be found in `.cronagents/agents/`? |
-| Branch health | Is the current branch a valid user branch? |
-| Git status | Is the repository in a clean state? |
+| Task Scheduler | Is the `\CronAgents\CronAgents` task registered with matching definition and triggers? |
+| Global config | Is `cronagents.json` valid JSON and schema-valid? |
+| Agent configs | Are agents discoverable and do referenced `.agent.md` files exist? |
+| State file | Is `.cronstate/state.json` readable and well-formed? |
+| Scheduler process | Is the background scheduler running? |
+| Branch state | Is the repository's git/branch state healthy? |
+| Orphaned runs | Are there run directories with no matching state entry? |
+| Notifications | Is a notification backend (BurntToast or native) available? |
 
 Each check reports pass or fail with a description of how to fix any issues.
 
