@@ -12,7 +12,7 @@ If you already have GitHub Copilot CLI installed and authenticated, that's all y
 Read https://github.com/evanve5420/CronAgents and set up CronAgents for me.
 ```
 
-Copilot will read the docs and drive the full setup — cloning, checking for Git and PowerShell, running the installer — asking you questions as needed.
+Copilot will read the docs and drive the full setup — cloning, checking for Git and PowerShell, running the installer, then using the [creating-agents skill](#using-the-creating-agents-skill-recommended) to scaffold your first agent and opening the [HTML dashboard](#check-the-dashboard) so you can manage it — asking you questions as needed.
 
 ---
 
@@ -96,21 +96,23 @@ Start-ScheduledTask -TaskName 'CronAgents' -TaskPath '\CronAgents\'
 
 ## Create your first agent
 
-The fastest way to get started is to copy a template and customize it.
+The recommended way to create an agent is the built-in **creating-agents skill**, which scaffolds the agent profile and registration in your personal repo for you.
 
-### Using the creating-agents skill
+### Using the creating-agents skill (recommended)
 
-If you're in a Copilot CLI session, use the built-in skill:
+In a Copilot CLI session, invoke the skill and describe what you want the agent to do:
 
 ```
-/creating-agents
+/creating-agents "review PRs every morning"
 ```
 
-It will walk you through an interview to set up your agent's name, schedule, prompt, and tool permissions.
+It walks you through an interview — agent name, schedule, prompt, and tool permissions — then writes the agent profile (`.github/agents/<id>.agent.md`) and registration (`.cronagents/agents/<id>.agent-registration.json`) into your personal repo. This is the fastest path and the one most users should start with.
 
-### Manual setup
+> If you're not already in a Copilot CLI session, start one in the cloned repo first (`copilot`), then run the skill.
 
-Create one agent profile in the personal repo's `.github/agents/` and one registration in `.cronagents/agents/`:
+### Manual setup (alternative)
+
+If you'd rather create the files by hand — or want to see what the skill produces under the hood — create one agent profile in the personal repo's `.github/agents/` and one registration in `.cronagents/agents/`:
 
 **`~/.cronagents/.github/agents/daily-review.agent.md`** — the agent definition:
 
