@@ -105,7 +105,6 @@ The filename stem must match the agent ID you're using. For example, `daily-revi
 
 3. Check field values:
    - `logLevel`: must be `"debug"`, `"info"`, `"warn"`, or `"error"`
-   - `syncPolicy`: must be `"auto"`, `"notify"`, or `"manual"`
    - `startupDelay`: must match `^[0-9]+(m|h|s)?$` or `"0"`
    - `retentionDays`, `maxRunHistory`: must be non-negative integers
    - `quietHours.start`, `quietHours.end`: must be `HH:MM` (24-hour)
@@ -380,38 +379,35 @@ For one agent, omit `quietHours` to inherit the global window, set `"quietHours"
 
 ---
 
-## Git/branch issues
+## Personal repo (git) issues
 
-### Wrong branch
+CronAgents uses a standalone personal repo at `~/.cronagents/` — there is no branch
+switching, sync step, or merge against the infra repo. See
+[Branching & Sync](branching-and-sync.md) for the full model.
 
-```powershell
-.\cronagents.ps1 branch
-```
+### Personal repo missing or not initialized
 
-If you're not on your user branch:
-
-```powershell
-git checkout personal-agents/<your-github-handle>
-```
-
-### Merge conflicts after sync
-
-If `cronagents.ps1 sync` fails with conflicts:
+The `doctor` "Branch State" check reports the personal repo isn't a git repository,
+or agent discovery finds nothing. Re-run the installer, which initializes the repo
+idempotently:
 
 ```powershell
-git merge origin/master          # Start the merge
-# Edit conflicted files
-git add .
-git commit                       # Complete the merge
+.\cronagents.ps1 install
 ```
 
-### Dirty working tree prevents operations
+### Feedback commits aren't being recorded
 
-```powershell
-git stash                        # Stash changes
-.\cronagents.ps1 sync           # Run the operation
-git stash pop                    # Restore changes
-```
+The feedback evaluator auto-commits agent edits only when
+`personalRepo.autoCommitFeedback` is `true` (the default). If commits are missing,
+verify the setting in `cronagents.json` and that git is configured with a
+`user.name` and `user.email` (the installer copies these from the infra repo when
+available).
+
+### Transferring or backing up agents
+
+The personal repo is local to each machine. To move your agents, copy
+`~/.cronagents/` to the other machine, or add a git remote and push/pull it like
+any other repository.
 
 ---
 

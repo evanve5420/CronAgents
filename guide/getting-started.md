@@ -175,7 +175,15 @@ You'll see a table like:
 
 ### Check the dashboard
 
-After the scheduler runs, it generates `dashboard.md` in the personal repo with a live summary of all agents, recent runs, and pending feedback.
+The primary way to manage and monitor agents is the HTML dashboard. Launch it and open it in your browser:
+
+```powershell
+.\cronagents.ps1 dashboard
+```
+
+It serves a browser UI at `127.0.0.1:9077` with live status, agent controls (pause/resume/trigger), configuration details, run history, feedback, and questions. See the [CLI reference](cli-reference.md#dashboard) for details.
+
+The scheduler also writes a lightweight `dashboard.md` snapshot in the personal repo for an at-a-glance summary when a browser isn't handy.
 
 ### Run the health check
 

@@ -148,6 +148,42 @@ See [Feedback System](feedback-system.md) for the full workflow.
 
 ---
 
+### `questions`
+
+List and interactively answer pending agent questions (human-in-the-loop decisions).
+
+```powershell
+# Answer pending questions across all agents
+.\cronagents.ps1 questions
+
+# Answer pending questions for a specific agent
+.\cronagents.ps1 questions daily-review
+```
+
+Agents can pause and ask a question instead of guessing. This command lists each
+pending question, lets you pick a provided choice or type a custom response, and
+records the answer so the agent receives it on its next run.
+
+---
+
+### `clear [agent-id]`
+
+Delete run history from `.cronstate/runs/`.
+
+```powershell
+# Clear run history for all agents
+.\cronagents.ps1 clear
+
+# Clear run history for a specific agent
+.\cronagents.ps1 clear daily-review
+```
+
+Prompts for confirmation before deleting. This removes captured run directories
+(output, summaries, metadata); it does not affect agent definitions, registrations,
+or config.
+
+---
+
 ### `doctor`
 
 Run health checks to verify the CronAgents installation.
@@ -181,7 +217,7 @@ Register the Windows Task Scheduler entry and initialize the personal repo.
 
 **What it does:**
 
-1. Registers a scheduled task (`\CronAgents\CronAgents`) that triggers at logon
+1. Registers a scheduled task (`\CronAgents\CronAgents`) that triggers at logon and re-launches every 15 minutes for crash recovery
 2. Initializes the personal repo at `~/.cronagents/` (or the configured `personalRepo.path`)
 
 The command is idempotent — running it again won't create duplicate tasks or reinitialize an existing personal repo. Use this after cloning the infra repo for the first time or if the task was accidentally removed.
@@ -300,6 +336,8 @@ Type the number and press Enter. After each action completes, the menu reappears
 .\cronagents.ps1 feedback daily-review  # Open feedback for agent
 .\cronagents.ps1 evaluate               # Process all pending feedback
 .\cronagents.ps1 questions              # View and answer pending questions
+.\cronagents.ps1 clear                  # Clear run history (all agents)
+.\cronagents.ps1 clear daily-review     # Clear run history for an agent
 .\cronagents.ps1 dashboard              # Open HTML dashboard in browser
 .\cronagents.ps1 doctor                 # Run health checks
 .\cronagents.ps1 install                # Register Task Scheduler + personal repo
