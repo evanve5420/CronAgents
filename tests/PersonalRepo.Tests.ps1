@@ -306,6 +306,54 @@ Describe 'Import-PersonalRepoConfig' {
         $result.logLevel | Should -Be 'info'
     }
 
+    It 'Applies explicit quietHours null to disable inherited quiet hours' {
+        $quietDir = Join-Path $script:configBaseDir 'quiet-null-override'
+        New-Item $quietDir -ItemType Directory -Force | Out-Null
+        $json = '{ "quietHours": null }'
+        Set-Content -Path (Join-Path $quietDir 'cronagents.json') -Value $json -Encoding UTF8
+
+        $baseWithQuiet = [PSCustomObject]@{
+            logLevel   = 'info'
+            quietHours = [PSCustomObject]@{ start = '17:00'; end = '08:00' }
+        }
+
+        $result = Import-PersonalRepoConfig -PersonalRepoPath $quietDir -BaseConfig $baseWithQuiet
+        # The override is explicit: the property remains but its value is null.
+        $result.PSObject.Properties['quietHours'] | Should -Not -BeNullOrEmpty
+        $result.quietHours | Should -BeNullOrEmpty
+        # Unrelated inherited settings are untouched.
+        $result.logLevel | Should -Be 'info'
+    }
+
+    It 'Adds explicit quietHours null override when base omits quietHours' {
+        $quietDir = Join-Path $script:configBaseDir 'quiet-null-add'
+        New-Item $quietDir -ItemType Directory -Force | Out-Null
+        $json = '{ "quietHours": null }'
+        Set-Content -Path (Join-Path $quietDir 'cronagents.json') -Value $json -Encoding UTF8
+
+        $result = Import-PersonalRepoConfig -PersonalRepoPath $quietDir -BaseConfig $script:baseConfig
+        # The property must be added (present-but-null) so it reads as an
+        # explicit override rather than an absent/inherited value.
+        $result.PSObject.Properties['quietHours'] | Should -Not -BeNullOrEmpty
+        $result.quietHours | Should -BeNullOrEmpty
+        $result.logLevel | Should -Be 'info'
+    }
+
+    It 'Overrides inherited quietHours object with a personal object' {
+        $quietDir = Join-Path $script:configBaseDir 'quiet-object-override'
+        New-Item $quietDir -ItemType Directory -Force | Out-Null
+        $json = '{ "quietHours": { "start": "22:00", "end": "06:00" } }'
+        Set-Content -Path (Join-Path $quietDir 'cronagents.json') -Value $json -Encoding UTF8
+
+        $baseWithQuiet = [PSCustomObject]@{
+            quietHours = [PSCustomObject]@{ start = '17:00'; end = '08:00' }
+        }
+
+        $result = Import-PersonalRepoConfig -PersonalRepoPath $quietDir -BaseConfig $baseWithQuiet
+        $result.quietHours.start | Should -Be '22:00'
+        $result.quietHours.end   | Should -Be '06:00'
+    }
+
     It 'Merges personalRepo sub-object at property level' {
         $mergeDir = Join-Path $script:configBaseDir 'merge-subrepo'
         New-Item $mergeDir -ItemType Directory -Force | Out-Null

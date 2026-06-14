@@ -414,9 +414,21 @@ function Import-PersonalRepoConfig {
     # Deep-clone base config to avoid mutating the original
     $merged = $BaseConfig | ConvertTo-Json -Depth 20 | ConvertFrom-Json
 
+    # Top-level fields where an explicit JSON null is a meaningful override
+    # (e.g. "quietHours": null disables inherited quiet hours) rather than a
+    # "leave the inherited value alone" signal. For every other field a null
+    # personal value is ignored so users don't accidentally blank out scalars.
+    $nullableOverrideFields = @('quietHours')
+
     foreach ($prop in $personalConfig.PSObject.Properties) {
-        # Skip $schema and null values
-        if ($prop.Name -eq '$schema' -or $null -eq $prop.Value) {
+        # Always skip the schema reference.
+        if ($prop.Name -eq '$schema') {
+            continue
+        }
+
+        # Skip null values unless the field treats null as an intentional
+        # override that disables the inherited setting.
+        if ($null -eq $prop.Value -and $prop.Name -notin $nullableOverrideFields) {
             continue
         }
 
