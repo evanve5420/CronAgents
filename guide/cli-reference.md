@@ -199,7 +199,6 @@ Checks include:
 - Agent configs are discoverable and reference existing `.agent.md` files
 - State file is readable and well-formed
 - The background scheduler process is running
-- Repository branch state is healthy
 - No orphaned run directories
 - A notification backend (BurntToast or native) is available
 

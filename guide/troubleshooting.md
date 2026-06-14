@@ -227,7 +227,6 @@ This verifies:
 | Agent configs | Are agents discoverable and do referenced `.agent.md` files exist? |
 | State file | Is `.cronstate/state.json` readable and well-formed? |
 | Scheduler process | Is the background scheduler running? |
-| Branch state | Is the repository's git/branch state healthy? |
 | Orphaned runs | Are there run directories with no matching state entry? |
 | Notifications | Is a notification backend (BurntToast or native) available? |
 

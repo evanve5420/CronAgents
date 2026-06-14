@@ -255,86 +255,7 @@ function Test-SchedulerProcess {
 }
 
 # ===================================================================
-# Check 6: Branch State
-# ===================================================================
-function Test-BranchState {
-    param([string]$RepoRoot)
-
-    try {
-        if (-not (Test-Path (Join-Path $RepoRoot '.git'))) {
-            return New-CheckResult -Name 'Branch State' -Status 'Warn' `
-                -Message 'Not a git repository'
-        }
-
-        # Load config to get branch prefix and userName
-        $config = $null
-        try {
-            $config = Import-CronAgentsConfig -ConfigPath (Join-Path $RepoRoot 'cronagents.json')
-        }
-        catch { }
-
-        $versioningConfig = $null
-        if ($config -and $config.PSObject.Properties['versioning'] -and $null -ne $config.versioning) {
-            $versioningConfig = $config.versioning
-        }
-
-        $branchPrefix = if ($versioningConfig -and
-                            $versioningConfig.PSObject.Properties['branchPrefix'] -and
-                            $versioningConfig.branchPrefix) {
-            $versioningConfig.branchPrefix
-        } else { 'agents' }
-
-        $userName = $null
-        if ($versioningConfig -and
-            $versioningConfig.PSObject.Properties['userName'] -and
-            $versioningConfig.userName) {
-            $userName = $versioningConfig.userName
-        }
-
-        $branchInfo = Get-CronAgentsBranch -RepoRoot $RepoRoot -BranchPrefix $branchPrefix -UserName $userName
-
-        if ($branchInfo.IsUserBranch) {
-            # Check divergence from master
-            $divergence = Get-BranchDivergence -RepoRoot $RepoRoot -UserBranch $branchInfo.CurrentBranch
-            $behindMsg = "$($divergence.Behind) behind master"
-
-            if ($divergence.Behind -gt 10) {
-                return New-CheckResult -Name 'Branch State' -Status 'Warn' `
-                    -Message "On $($branchInfo.CurrentBranch), $behindMsg (consider syncing)"
-            }
-
-            return New-CheckResult -Name 'Branch State' -Status 'Pass' `
-                -Message "On $($branchInfo.CurrentBranch), $behindMsg"
-        }
-
-        # On master or other branch
-        $current = $branchInfo.CurrentBranch
-        if ($current -eq 'master' -or $current -eq 'main') {
-            # Check if customization files exist (indicates should be on user branch)
-            $agentDir = Join-Path $RepoRoot '.cronagents\agents'
-            $hasCustom = (Test-Path $agentDir) -and
-                         @(Get-ChildItem $agentDir -Filter '*.agent-registration.json' -ErrorAction SilentlyContinue).Count -gt 0
-
-            if ($hasCustom) {
-                return New-CheckResult -Name 'Branch State' -Status 'Warn' `
-                    -Message "On $current with agent configs present (expected $($branchInfo.ExpectedBranch))"
-            }
-
-            return New-CheckResult -Name 'Branch State' -Status 'Pass' `
-                -Message "On $current (no agent configs, branch not needed yet)"
-        }
-
-        return New-CheckResult -Name 'Branch State' -Status 'Warn' `
-            -Message "On unexpected branch '$current' (expected $($branchInfo.ExpectedBranch))"
-    }
-    catch {
-        return New-CheckResult -Name 'Branch State' -Status 'Warn' `
-            -Message "Could not check branch state: $_"
-    }
-}
-
-# ===================================================================
-# Check 7: Orphaned Runs
+# Check 6: Orphaned Runs
 # ===================================================================
 function Test-OrphanedRuns {
     param(
@@ -391,7 +312,7 @@ function Test-OrphanedRuns {
 }
 
 # ===================================================================
-# Check 8: Notification Backend
+# Check 7: Notification Backend
 # ===================================================================
 function Test-NotificationBackend {
     param([string]$RepoRoot)
@@ -460,7 +381,6 @@ $runsRoot = Join-Path $stateRoot 'runs'
 $checks.Add((Test-AgentConfigs -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath))
 $checks.Add((Test-StateFile -StateRoot $stateRoot))
 $checks.Add((Test-SchedulerProcess))
-$checks.Add((Test-BranchState -RepoRoot $RepoRoot))
 $checks.Add((Test-OrphanedRuns -RepoRoot $RepoRoot -PersonalRepoPath $personalRepoPath -RunsRoot $runsRoot))
 $checks.Add((Test-NotificationBackend -RepoRoot $RepoRoot))
 
