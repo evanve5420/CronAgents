@@ -332,6 +332,9 @@ Describe 'Import-PersonalRepoConfig' {
         Set-Content -Path (Join-Path $quietDir 'cronagents.json') -Value $json -Encoding UTF8
 
         $result = Import-PersonalRepoConfig -PersonalRepoPath $quietDir -BaseConfig $script:baseConfig
+        # The property must be added (present-but-null) so it reads as an
+        # explicit override rather than an absent/inherited value.
+        $result.PSObject.Properties['quietHours'] | Should -Not -BeNullOrEmpty
         $result.quietHours | Should -BeNullOrEmpty
         $result.logLevel | Should -Be 'info'
     }
