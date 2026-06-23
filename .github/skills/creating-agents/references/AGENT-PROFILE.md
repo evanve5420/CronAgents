@@ -51,9 +51,9 @@ The `model` field in `.agent.md` sets the preferred model at the agent-definitio
 | Where | What it does | Precedence |
 |-------|-------------|------------|
 | `.agent.md` `model:` | Declares the agent's preferred model. VS Code respects this directly. In CLI, it acts as a model hint. | Lower — overridden by registration or CLI flags |
-| Registration `model:` | Passed to Copilot CLI as `--model`. Overrides the agent profile preference. | Higher — explicit CLI flag |
+| Registration `model:` | Passed to Copilot CLI as `--model`. Overrides the agent profile preference. Accepts a single name or an ordered fallback chain (array). | Higher — explicit CLI flag |
 
-If both are set, the registration's `model` wins (it becomes an explicit `--model` CLI flag). Use the `.agent.md` `model` when you want a default preference that can be overridden per-invocation, and the registration `model` when you want a hard override.
+If both are set, the registration's `model` wins (it becomes an explicit `--model` CLI flag). Use the `.agent.md` `model` when you want a default preference that can be overridden per-invocation, and the registration `model` when you want a hard override. The registration `model` may also be an ordered array — a fallback chain that CronAgents tries in order when a model is unavailable (see [REGISTRATION-FIELDS.md](REGISTRATION-FIELDS.md#model-string-array-of-string-or-null)).
 
 **Prioritized model lists:** You can specify an array of model names. The runtime tries each in order until it finds one that's available:
 

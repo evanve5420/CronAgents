@@ -661,3 +661,89 @@ Describe 'Invoke-ScheduledAgent — Mode in Metadata' {
         $meta.mode | Should -Be 'prompt'
     }
 }
+
+Describe 'Invoke-ScheduledAgent — Model Fallback Chain' {
+    BeforeEach {
+        $testEnv = New-TestEnvironment -Name 'InvokeAgentModelFallback'
+    }
+    AfterEach {
+        Remove-TestEnvironment -TestEnv $testEnv
+        Remove-Item Env:\CRONAGENTS_MOCK_UNAVAILABLE_MODELS -ErrorAction SilentlyContinue
+    }
+
+    It 'Passes a single string model through to the CLI' {
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'single-model' `
+            -Agent 'single-model' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Prompt 'Do stuff' `
+            -Model 'claude-opus-4.8-1m'
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'single-model'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Be 0
+
+        $attempts = @(Get-MockInvocations -LogPath $testEnv.MockLogPath |
+            Where-Object { $_.agent -eq 'single-model' })
+        $attempts.Count | Should -Be 1
+        $attempts[0].model | Should -Be 'claude-opus-4.8-1m'
+    }
+
+    It 'Falls back to the next model when the first is unavailable' {
+        $env:CRONAGENTS_MOCK_UNAVAILABLE_MODELS = 'model-a-unavailable'
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'model-fallback' `
+            -Agent 'model-fallback' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Prompt 'Do stuff' `
+            -Model @('model-a-unavailable', 'model-b-good')
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'model-fallback'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Be 0
+
+        $attempts = @(Get-MockInvocations -LogPath $testEnv.MockLogPath |
+            Where-Object { $_.agent -eq 'model-fallback' })
+        $attempts.Count | Should -Be 2
+        $attempts[0].model | Should -Be 'model-a-unavailable'
+        $attempts[1].model | Should -Be 'model-b-good'
+    }
+
+    It 'Fails after the whole chain when every model is unavailable' {
+        $env:CRONAGENTS_MOCK_UNAVAILABLE_MODELS = 'model-a-unavailable,model-b-unavailable'
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'model-all-bad' `
+            -Agent 'model-all-bad' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Prompt 'Do stuff' `
+            -Model @('model-a-unavailable', 'model-b-unavailable')
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'model-all-bad'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Not -Be 0
+
+        $attempts = @(Get-MockInvocations -LogPath $testEnv.MockLogPath |
+            Where-Object { $_.agent -eq 'model-all-bad' })
+        $attempts.Count | Should -Be 2
+        $attempts[0].model | Should -Be 'model-a-unavailable'
+        $attempts[1].model | Should -Be 'model-b-unavailable'
+    }
+}

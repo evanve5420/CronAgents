@@ -244,6 +244,9 @@ function New-TestAgentConfig {
         Optional timeout string (e.g. '10m').
     .PARAMETER Name
         Optional display name. Defaults to AgentId.
+    .PARAMETER Model
+        Optional model override. A single model name (string) or an ordered
+        fallback chain (array of strings).
     .OUTPUTS
         PSCustomObject with the agent config.
     #>
@@ -257,7 +260,8 @@ function New-TestAgentConfig {
         [string]$Timeout,
         [string]$Name,
         [string]$Script,
-        $RunIf
+        $RunIf,
+        $Model
     )
 
     $agentConfig = [ordered]@{
@@ -269,6 +273,7 @@ function New-TestAgentConfig {
 
     if ($Agent) { $agentConfig['agent'] = $Agent }
     if ($Timeout) { $agentConfig['timeout'] = $Timeout }
+    if ($PSBoundParameters.ContainsKey('Model')) { $agentConfig['model'] = $Model }
     if ($PSBoundParameters.ContainsKey('RunIf')) { $agentConfig['runIf'] = $RunIf }
 
     $filePath = Join-Path $TestEnv.AgentsDir "$AgentId.agent-registration.json"

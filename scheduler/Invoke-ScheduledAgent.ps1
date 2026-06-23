@@ -180,11 +180,20 @@ function Invoke-CopilotRun {
         [Parameter(Mandatory)] [string]$RunDirectory,
         [Parameter(Mandatory)] [int]$TimeoutSeconds,
         [Parameter(Mandatory)] [string[]]$Arguments,
-        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyCollection()] [string[]]$McpServers
+        [Parameter(Mandatory)] [AllowNull()] [AllowEmptyCollection()] [string[]]$McpServers,
+        [AllowNull()] [AllowEmptyString()] [string]$Model
     )
 
     $copilotPath = if ($GlobalConfig.copilotPath) { $GlobalConfig.copilotPath } else { 'copilot' }
     $outputFile  = Join-Path $RunDirectory 'output.md'
+
+    # Apply the model override for this attempt. The chosen model comes from the
+    # caller (the model fallback chain) rather than being baked into $Arguments.
+    $effectiveArgs = if (-not [string]::IsNullOrWhiteSpace($Model)) {
+        @($Arguments) + "--model=$Model"
+    } else {
+        @($Arguments)
+    }
 
     # Create a unique COPILOT_HOME for this run so the copilot daemon is
     # guaranteed fresh — no contention with stale daemons from prior runs.
@@ -197,11 +206,11 @@ function Invoke-CopilotRun {
         Write-CronAgentsLog -Level 'warn' -Message "Failed to create per-run copilot home: $_ — using default."
     }
 
-    Write-CronAgentsLog -Level 'debug' -Message "Copilot command: $copilotPath $($Arguments -join ' ')"
+    Write-CronAgentsLog -Level 'debug' -Message "Copilot command: $copilotPath $($effectiveArgs -join ' ')"
 
     $psi = New-CommandProcessStartInfo -CommandLine $copilotPath `
         -WorkingDirectory $(if ($PersonalRepoPath) { $PersonalRepoPath } else { $RepoRoot }) `
-        -Arguments $Arguments `
+        -Arguments $effectiveArgs `
         -EnvironmentOverrides $(if ($copilotEnvOverrides.Count -gt 0) { $copilotEnvOverrides } else { $null })
 
     $proc = [System.Diagnostics.Process]::new()
@@ -256,11 +265,23 @@ function Invoke-CopilotRun {
     $code = if ($didTimeout) { -1 } else { $proc.ExitCode }
     $proc.Dispose()
 
+    # Detect the Copilot CLI "model unavailable" failure so the caller can fall
+    # back to the next model in the chain. The CLI emits, on stderr:
+    #   Error: Model "<name>" from --model flag is not available.
+    $modelUnavailable = $false
+    if ($code -ne 0 -and -not $didTimeout) {
+        $combinedText = "$stderrText`n$stdoutText"
+        if ($combinedText -match 'from --model flag is not available') {
+            $modelUnavailable = $true
+        }
+    }
+
     return @{
-        ExitCode  = $code
-        TimedOut  = $didTimeout
-        StartTime = $attemptStart
-        EndTime   = $attemptEnd
+        ExitCode         = $code
+        TimedOut         = $didTimeout
+        StartTime        = $attemptStart
+        EndTime          = $attemptEnd
+        ModelUnavailable = $modelUnavailable
     }
 }
 
@@ -441,11 +462,9 @@ function Build-CopilotArguments {
     $sharePath = Join-Path $runDir 'session.md'
     $args_.Add("--share=$sharePath")
 
-    # Model override
-    if ($AgentConfig.PSObject.Properties['model'] -and
-        -not [string]::IsNullOrWhiteSpace($AgentConfig.model)) {
-        $args_.Add("--model=$($AgentConfig.model)")
-    }
+    # NOTE: The --model flag is intentionally NOT added here. It is applied
+    # per-attempt by Invoke-CopilotRun so the model fallback chain (see the
+    # execute-with-retry step) can switch models between attempts.
 
     # Deny tools
     $denyTools = @($AgentConfig.denyTools)
@@ -598,31 +617,41 @@ try {
     }
 
     # ------------------------------------------------------------------
-    # Step 4 — Execute with retry logic
+    # Step 4 — Execute with retry logic and model fallback
     # ------------------------------------------------------------------
     $maxRetries = if ($AgentConfig.PSObject.Properties['retryCount'] -and $AgentConfig.retryCount -gt 0) {
         [int]$AgentConfig.retryCount
     } else { 0 }
 
+    # The model fallback chain: each model is tried in order, and the next one is
+    # used when the Copilot CLI reports the current model as unavailable. Model
+    # fallbacks are distinct from retries (retryCount) — they do not consume the
+    # retry budget — so a retired/unavailable model never silently fails the run
+    # when a working alternative is configured.
+    $modelChain = @(Resolve-ModelChain -Model $AgentConfig.model)
+    $modelIndex = 0
+
     $retryAttempt = 0
     $result = $null
 
-    for ($attempt = 0; $attempt -le $maxRetries; $attempt++) {
+    $attempt = 0
+    while ($true) {
         if ($attempt -gt 0) {
-            $retryAttempt = $attempt
             Write-CronAgentsLog -Level 'warn' -Message "Retrying agent '$AgentId' — attempt $attempt of $maxRetries"
         }
+
+        $currentModel = if ($modelChain.Count -gt 0) { $modelChain[$modelIndex] } else { $null }
 
         $result = if ($isScriptMode) {
             Invoke-ScriptRun -RunDirectory $runDir -TimeoutSeconds $timeoutSec
         } else {
-            Invoke-CopilotRun -RunDirectory $runDir -TimeoutSeconds $timeoutSec -Arguments $cliArgs -McpServers $runMcpServers
+            Invoke-CopilotRun -RunDirectory $runDir -TimeoutSeconds $timeoutSec -Arguments $cliArgs -McpServers $runMcpServers -Model $currentModel
         }
 
         $exitCode  = $result.ExitCode
         $processExitCode = $exitCode
         $timedOut  = $result.TimedOut
-        $startTime = if ($attempt -eq 0) { $result.StartTime } else { $startTime }
+        if (-not $startTime) { $startTime = $result.StartTime }
         $endTime   = $result.EndTime
 
         if ($exitCode -eq 0) {
@@ -630,14 +659,26 @@ try {
             break
         }
 
+        # Model unavailable → fall back to the next model in the chain. This is
+        # not counted as a retry and is independent of the retry budget.
+        if (-not $isScriptMode -and $result.ModelUnavailable -and $modelIndex -lt ($modelChain.Count - 1)) {
+            $failedModel = $currentModel
+            $modelIndex++
+            Write-CronAgentsLog -Level 'warn' -Message "Model '$failedModel' is not available for agent '$AgentId' — falling back to '$($modelChain[$modelIndex])'."
+            continue
+        }
+
         if ($attempt -lt $maxRetries) {
             Write-CronAgentsLog -Level 'warn' -Message "Agent '$AgentId' failed with exit code $exitCode — will retry."
+            $attempt++
+            $retryAttempt = $attempt
+            continue
         }
-        else {
-            $level = if ($timedOut) { 'warn' } else { 'error' }
-            $reason = if ($timedOut) { 'timed out' } else { "exit code $exitCode" }
-            Write-CronAgentsLog -Level $level -Message "Agent '$AgentId' failed after $($attempt + 1) attempt(s): $reason."
-        }
+
+        $level = if ($timedOut) { 'warn' } else { 'error' }
+        $reason = if ($timedOut) { 'timed out' } else { "exit code $exitCode" }
+        Write-CronAgentsLog -Level $level -Message "Agent '$AgentId' failed after $($attempt + 1) attempt(s): $reason."
+        break
     }
 
     # ------------------------------------------------------------------

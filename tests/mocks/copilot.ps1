@@ -81,6 +81,20 @@ $entry = [ordered]@{
 
 $entry | ConvertTo-Json -Compress | Out-File -FilePath $logPath -Append -Encoding utf8
 
+# --- Simulated model unavailability ---
+# When CRONAGENTS_MOCK_UNAVAILABLE_MODELS (comma-separated) contains the model
+# passed via --model, emit the real CLI's "model unavailable" error to stderr
+# and exit non-zero, mirroring:
+#   Error: Model "<name>" from --model flag is not available.
+$unavailableModels = [System.Environment]::GetEnvironmentVariable('CRONAGENTS_MOCK_UNAVAILABLE_MODELS')
+if ($unavailableModels -and $Model) {
+    $unavailableList = $unavailableModels -split ',' | ForEach-Object { $_.Trim() }
+    if ($unavailableList -contains $Model) {
+        [Console]::Error.WriteLine("Error: Model `"$Model`" from --model flag is not available.")
+        exit 1
+    }
+}
+
 # --- Session file ---
 if ($Share) {
     $sessionContent = @"

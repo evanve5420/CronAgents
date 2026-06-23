@@ -55,13 +55,23 @@ Skip when the machine is on battery power.
 
 Number of retries on process failure (non-zero exit code or timeout). Each retry is a full re-invocation. Summary-derived functional failures are detected after the final attempt and are not retried.
 
-### `model` (string or null)
+### `model` (string, array of string, or null)
 
-Override Copilot CLI model. `null` uses the CLI default.
+Override the Copilot CLI model. `null` (or omitted) uses the CLI default.
+
+A single model name pins the run to that model:
 
 ```json
-"model": "claude-sonnet-4"
+"model": "claude-opus-4.8-1m"
 ```
+
+An ordered array defines a **fallback chain**. Each model is tried in order; if the Copilot CLI reports a model as unavailable (e.g. it has been retired), the next one in the list is used automatically. This keeps scheduled, unattended runs working when a pinned model disappears.
+
+```json
+"model": ["claude-opus-4.7-1m", "claude-opus-4.8-1m", "gpt-5.5"]
+```
+
+Model fallback is independent of `retryCount`: switching to the next model on unavailability does **not** consume the retry budget. `retryCount` still governs retries for other (non–model-availability) failures, re-using whichever model the run had reached.
 
 ### `denyTools` (array of string, default `[]`)
 

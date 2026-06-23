@@ -31,6 +31,7 @@
         'Test-CronAgentsConfig',
         'Test-CronAgentsSafeIdentifier',
         'Get-AgentConfigs',
+        'Resolve-ModelChain',
         # RunIf
         'ConvertTo-AgentRunIfDefinition',
         'Get-AgentRunIfExecutionRoot',

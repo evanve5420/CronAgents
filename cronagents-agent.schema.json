@@ -181,9 +181,14 @@
     "model": {
       "oneOf": [
         { "type": "string" },
+        {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        },
         { "type": "null" }
       ],
-      "description": "Model override for the Copilot CLI invocation."
+      "description": "Model override for the Copilot CLI invocation. Either a single model name, or an ordered array of model names forming a fallback chain: each is tried in order, and the next is used when the Copilot CLI reports a model as unavailable. Model fallbacks are independent of retryCount."
     },
     "denyTools": {
       "type": "array",

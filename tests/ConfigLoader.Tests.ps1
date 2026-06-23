@@ -896,4 +896,54 @@ Describe 'JSON Schema Files' {
         $schemaPath = Join-Path $repoRoot 'cronagents-agent.schema.json'
         { Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8 | ConvertFrom-Json } | Should -Not -Throw
     }
+
+    It 'cronagents-agent.schema.json allows model as a string or an array' {
+        $schemaPath = Join-Path $repoRoot 'cronagents-agent.schema.json'
+        $schema = Get-Content -LiteralPath $schemaPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $modelTypes = @($schema.properties.model.oneOf | ForEach-Object { $_.type })
+        $modelTypes | Should -Contain 'string'
+        $modelTypes | Should -Contain 'array'
+        $modelTypes | Should -Contain 'null'
+    }
+}
+
+# ===== Resolve-ModelChain =====
+
+Describe 'Resolve-ModelChain' {
+    It 'Returns an empty array for $null' {
+        $chain = @(Resolve-ModelChain -Model $null)
+        $chain.Count | Should -Be 0
+    }
+
+    It 'Wraps a single string into a one-element chain' {
+        $chain = @(Resolve-ModelChain -Model 'claude-opus-4.8-1m')
+        $chain.Count | Should -Be 1
+        $chain[0] | Should -Be 'claude-opus-4.8-1m'
+    }
+
+    It 'Preserves the order of an array of models' {
+        $chain = @(Resolve-ModelChain -Model @('claude-opus-4.7-1m', 'claude-opus-4.8-1m', 'gpt-5.5'))
+        $chain.Count | Should -Be 3
+        $chain[0] | Should -Be 'claude-opus-4.7-1m'
+        $chain[1] | Should -Be 'claude-opus-4.8-1m'
+        $chain[2] | Should -Be 'gpt-5.5'
+    }
+
+    It 'Drops blank and whitespace-only entries and trims values' {
+        $chain = @(Resolve-ModelChain -Model @('  gpt-5.5  ', '', '   ', 'claude-opus-4.8-1m'))
+        $chain.Count | Should -Be 2
+        $chain[0] | Should -Be 'gpt-5.5'
+        $chain[1] | Should -Be 'claude-opus-4.8-1m'
+    }
+
+    It 'Returns an empty array when an array contains only blanks' {
+        $chain = @(Resolve-ModelChain -Model @('', '   '))
+        $chain.Count | Should -Be 0
+    }
+
+    It 'Returns string elements' {
+        $chain = @(Resolve-ModelChain -Model @('gpt-5.5', 'claude-opus-4.8-1m'))
+        $chain[0] | Should -BeOfType [string]
+        $chain[1] | Should -BeOfType [string]
+    }
 }

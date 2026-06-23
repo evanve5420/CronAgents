@@ -508,6 +508,45 @@ function Import-SingleAgentConfig {
 }
 
 # -------------------------------------------------------------------
+# Resolve-ModelChain
+# -------------------------------------------------------------------
+function Resolve-ModelChain {
+    <#
+    .SYNOPSIS
+        Normalizes an agent 'model' config value into an ordered model fallback
+        chain.
+    .DESCRIPTION
+        Accepts the raw 'model' value from an agent registration, which may be a
+        single model name (string), an ordered array of model names, or $null.
+        Returns a [string[]] of trimmed, non-empty model names in order. Returns
+        an empty array when no usable model is configured (caller then lets the
+        Copilot CLI pick its default).
+    .PARAMETER Model
+        The raw model value (string, array, or $null).
+    .OUTPUTS
+        [string[]] — ordered model names; possibly empty.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowNull()]
+        $Model
+    )
+
+    if ($null -eq $Model) { return @() }
+
+    $chain = [System.Collections.Generic.List[string]]::new()
+    foreach ($entry in @($Model)) {
+        if ($entry -is [string] -and -not [string]::IsNullOrWhiteSpace($entry)) {
+            $chain.Add($entry.Trim())
+        }
+    }
+
+    return [string[]]$chain.ToArray()
+}
+
+# -------------------------------------------------------------------
 # Get-AgentConfigs
 # -------------------------------------------------------------------
 function Get-AgentConfigs {
