@@ -71,7 +71,7 @@ An ordered array defines a **fallback chain**. Each model is tried in order; if 
 "model": ["claude-opus-4.7-1m", "claude-opus-4.8-1m", "gpt-5.5"]
 ```
 
-Model fallback is independent of `retryCount`: switching to the next model on unavailability does **not** consume the retry budget. `retryCount` still governs retries for other (non–model-availability) failures, re-using whichever model the run had reached.
+Model fallback is independent of `retryCount`: switching to the next model on unavailability does **not** consume the retry budget. `retryCount` still governs retries for other failures, re-using whichever model the run had reached. If the **last** model in the chain is itself unavailable, the run fails immediately rather than retrying a model that has been retired (so `retryCount` is not spent on it).
 
 ### `denyTools` (array of string, default `[]`)
 

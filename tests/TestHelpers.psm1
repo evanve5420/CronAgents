@@ -247,6 +247,8 @@ function New-TestAgentConfig {
     .PARAMETER Model
         Optional model override. A single model name (string) or an ordered
         fallback chain (array of strings).
+    .PARAMETER RetryCount
+        Optional retry budget for the agent run.
     .OUTPUTS
         PSCustomObject with the agent config.
     #>
@@ -261,7 +263,8 @@ function New-TestAgentConfig {
         [string]$Name,
         [string]$Script,
         $RunIf,
-        $Model
+        $Model,
+        [int]$RetryCount
     )
 
     $agentConfig = [ordered]@{
@@ -274,6 +277,7 @@ function New-TestAgentConfig {
     if ($Agent) { $agentConfig['agent'] = $Agent }
     if ($Timeout) { $agentConfig['timeout'] = $Timeout }
     if ($PSBoundParameters.ContainsKey('Model')) { $agentConfig['model'] = $Model }
+    if ($PSBoundParameters.ContainsKey('RetryCount')) { $agentConfig['retryCount'] = $RetryCount }
     if ($PSBoundParameters.ContainsKey('RunIf')) { $agentConfig['runIf'] = $RunIf }
 
     $filePath = Join-Path $TestEnv.AgentsDir "$AgentId.agent-registration.json"

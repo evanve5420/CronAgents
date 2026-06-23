@@ -719,6 +719,48 @@ Describe 'Invoke-ScheduledAgent — Model Fallback Chain' {
         $attempts.Count | Should -Be 2
         $attempts[0].model | Should -Be 'model-a-unavailable'
         $attempts[1].model | Should -Be 'model-b-good'
+
+        # Falling back must NOT consume the retry budget.
+        $result.RetryAttempts | Should -Be 0
+    }
+
+    It 'Does not consume the retry budget on fallback; retries reuse the reached model' {
+        $env:CRONAGENTS_MOCK_UNAVAILABLE_MODELS = 'model-a-unavailable'
+        $env:CRONAGENTS_MOCK_EXIT_CODE = '1'
+        try {
+            $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'model-fallback-retry' `
+                -Agent 'model-fallback-retry' `
+                -Schedule @{ type = 'interval'; every = '1h' } `
+                -Prompt 'Do stuff' `
+                -Model @('model-a-unavailable', 'model-b-fails') `
+                -RetryCount 1
+
+            $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+            $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'model-fallback-retry'
+
+            $result = & $invokeScript -AgentId $agent.Id `
+                -AgentConfig $agent.Config `
+                -GlobalConfig $globalConfig `
+                -RepoRoot $testEnv.Root `
+                -RunsRoot $testEnv.RunsRoot
+
+            $result.ExitCode | Should -Not -Be 0
+
+            $attempts = @(Get-MockInvocations -LogPath $testEnv.MockLogPath |
+                Where-Object { $_.agent -eq 'model-fallback-retry' })
+            # model-a unavailable (1, no retry) → fall back to model-b, which fails
+            # normally and is retried once (retryCount=1) → model-b invoked twice.
+            $attempts.Count | Should -Be 3
+            $attempts[0].model | Should -Be 'model-a-unavailable'
+            $attempts[1].model | Should -Be 'model-b-fails'
+            $attempts[2].model | Should -Be 'model-b-fails'
+
+            # Retries were spent on the reached model, not on the unavailable one.
+            $result.RetryAttempts | Should -Be 1
+        }
+        finally {
+            Remove-Item Env:\CRONAGENTS_MOCK_EXIT_CODE -ErrorAction SilentlyContinue
+        }
     }
 
     It 'Fails after the whole chain when every model is unavailable' {
@@ -745,5 +787,33 @@ Describe 'Invoke-ScheduledAgent — Model Fallback Chain' {
         $attempts.Count | Should -Be 2
         $attempts[0].model | Should -Be 'model-a-unavailable'
         $attempts[1].model | Should -Be 'model-b-unavailable'
+    }
+
+    It 'Does not burn the retry budget when the only/last model is unavailable' {
+        $env:CRONAGENTS_MOCK_UNAVAILABLE_MODELS = 'only-model-unavailable'
+        $null = New-TestAgentConfig -TestEnv $testEnv -AgentId 'model-terminal-bad' `
+            -Agent 'model-terminal-bad' `
+            -Schedule @{ type = 'interval'; every = '1h' } `
+            -Prompt 'Do stuff' `
+            -Model 'only-model-unavailable' `
+            -RetryCount 2
+
+        $globalConfig = Import-CronAgentsConfig -ConfigPath $testEnv.ConfigPath
+        $agent = Get-AgentConfigs -RepoRoot $testEnv.Root | Where-Object Id -eq 'model-terminal-bad'
+
+        $result = & $invokeScript -AgentId $agent.Id `
+            -AgentConfig $agent.Config `
+            -GlobalConfig $globalConfig `
+            -RepoRoot $testEnv.Root `
+            -RunsRoot $testEnv.RunsRoot
+
+        $result.ExitCode | Should -Not -Be 0
+
+        $attempts = @(Get-MockInvocations -LogPath $testEnv.MockLogPath |
+            Where-Object { $_.agent -eq 'model-terminal-bad' })
+        # Despite retryCount=2, the unavailable terminal model is invoked only once.
+        $attempts.Count | Should -Be 1
+        $attempts[0].model | Should -Be 'only-model-unavailable'
+        $result.RetryAttempts | Should -Be 0
     }
 }

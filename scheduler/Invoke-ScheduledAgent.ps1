@@ -266,12 +266,15 @@ function Invoke-CopilotRun {
     $proc.Dispose()
 
     # Detect the Copilot CLI "model unavailable" failure so the caller can fall
-    # back to the next model in the chain. The CLI emits, on stderr:
-    #   Error: Model "<name>" from --model flag is not available.
+    # back to the next model in the chain. The CLI prints this to stderr at
+    # startup, e.g.:
+    #   Error: Model "claude-opus-4.6-1m" from --model flag is not available.
+    # Match stderr only (never the agent's own stdout) with a line-anchored,
+    # case-sensitive pattern to avoid false positives from agent output that
+    # happens to quote this phrase.
     $modelUnavailable = $false
     if ($code -ne 0 -and -not $didTimeout) {
-        $combinedText = "$stderrText`n$stdoutText"
-        if ($combinedText -match 'from --model flag is not available') {
+        if ($stderrText -cmatch '(?m)^Error: Model .+ from --model flag is not available') {
             $modelUnavailable = $true
         }
     }
@@ -330,20 +333,22 @@ function Invoke-ScriptRun {
     if (-not $scriptPath.StartsWith("$execRootFull$sep", $comparison)) {
         Write-CronAgentsLog -Level 'error' -Message "Script path escapes execution root: $($AgentConfig.script)"
         return @{
-            ExitCode  = -1
-            TimedOut  = $false
-            StartTime = [datetime]::UtcNow
-            EndTime   = [datetime]::UtcNow
+            ExitCode         = -1
+            TimedOut         = $false
+            StartTime        = [datetime]::UtcNow
+            EndTime          = [datetime]::UtcNow
+            ModelUnavailable = $false
         }
     }
 
     if (-not (Test-Path -LiteralPath $scriptPath)) {
         Write-CronAgentsLog -Level 'error' -Message "Script not found: $scriptPath"
         return @{
-            ExitCode  = -1
-            TimedOut  = $false
-            StartTime = [datetime]::UtcNow
-            EndTime   = [datetime]::UtcNow
+            ExitCode         = -1
+            TimedOut         = $false
+            StartTime        = [datetime]::UtcNow
+            EndTime          = [datetime]::UtcNow
+            ModelUnavailable = $false
         }
     }
 
@@ -423,10 +428,11 @@ function Invoke-ScriptRun {
     $proc.Dispose()
 
     return @{
-        ExitCode  = $code
-        TimedOut  = $didTimeout
-        StartTime = $attemptStart
-        EndTime   = $attemptEnd
+        ExitCode         = $code
+        TimedOut         = $didTimeout
+        StartTime        = $attemptStart
+        EndTime          = $attemptEnd
+        ModelUnavailable = $false
     }
 }
 
@@ -666,6 +672,14 @@ try {
             $modelIndex++
             Write-CronAgentsLog -Level 'warn' -Message "Model '$failedModel' is not available for agent '$AgentId' — falling back to '$($modelChain[$modelIndex])'."
             continue
+        }
+
+        # The (only / last) configured model is unavailable. Retrying the same
+        # retired model would just fail instantly, so fail now rather than
+        # burning the retry budget on a model that will not come back in seconds.
+        if (-not $isScriptMode -and $result.ModelUnavailable) {
+            Write-CronAgentsLog -Level 'error' -Message "Model '$currentModel' is not available for agent '$AgentId' and no further fallback models are configured — failing run."
+            break
         }
 
         if ($attempt -lt $maxRetries) {
