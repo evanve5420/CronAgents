@@ -221,6 +221,10 @@
   }
   .choice-btn:hover { border-color: var(--accent); color: var(--accent); }
   .choice-btn.recommended { border-color: var(--green); }
+  .choice-btn .rec-tag {
+    margin-left: 6px; font-size: 0.65rem; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--green); font-weight: 600;
+  }
   .choice-btn.selected {
     border-color: var(--accent); color: var(--accent);
     background: rgba(88,166,255,0.1);
@@ -1228,7 +1232,7 @@ function renderQuestions() {
       ? `<div class="choices">${q.choices.map(c =>
           `<button class="choice-btn ${!isAnswered && q.recommended === c ? 'recommended' : ''} ${q.answer === c ? 'selected' : ''}"
                    ${isAnswered ? 'disabled' : ''}
-                   data-action="answerQuestion" data-agent-id="${esc(q.agentId)}" data-question-id="${esc(q.id)}" data-answer="${esc(c)}">${esc(c)}${(isAnswered ? q.answer : q.recommended) === c ? ' ✓' : ''}</button>`
+                   data-action="answerQuestion" data-agent-id="${esc(q.agentId)}" data-question-id="${esc(q.id)}" data-answer="${esc(c)}">${esc(c)}${q.answer === c ? ' ✓' : (!isAnswered && q.recommended === c ? '<span class="rec-tag">Recommended</span>' : '')}</button>`
         ).join('')}</div>`
       : '';
 
